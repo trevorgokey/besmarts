@@ -282,11 +282,6 @@ atom_to_atom = transcode_topology(
     {((0,),) : ((0,),)}
 )
 
-# CC:1 + CO:1(-N=C) -> C with left_conditional_intersect
-# C_:1 >&+ CO:1(-N=C) = CON=C
-
-# transform 1,2,3,4 to 1 with [@1_]
-
 torsion_to_bond = transcode_topology(
     torsion,
     bond,

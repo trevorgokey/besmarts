@@ -240,11 +240,6 @@ class outofplane_assignment_str(structure_assignment_str):
 def make_structure_assignment_type(name):
     return type("structure_assignment_"+name, stucture_assignment)
 
-# I will have a sag with positions, where I will have a function:
-# objective(sag, cst) -> graph_assignment
-# but we know we have to use a ff instead of cst
-# an ff is just a smarts with data assignments
-    
 
 def smiles_assignment_copy(sa: smiles_assignment) -> smiles_assignment:
     smiles = sa.smiles

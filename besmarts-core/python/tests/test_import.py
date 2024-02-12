@@ -19,6 +19,7 @@ from besmarts.core import (
     hierarchies,
     hierarchy_merge,
     mapper,
+    mm,
     optimization,
     primitives,
     returns,
@@ -41,5 +42,13 @@ from besmarts.cluster import (
 
 from besmarts.assign import (
     hierarchy_assign_native,
+)
+from besmarts.mm import (
+    force_harmonic,
+    force_pairwise,
+    force_periodic,
+    masses,
+    smirnoff_models,
+    smirnoff_xml,
 )
 

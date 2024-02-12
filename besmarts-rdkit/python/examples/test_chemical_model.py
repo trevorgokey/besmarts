@@ -229,17 +229,7 @@ def make_electrostatic_model_ethane():
     ############################################################################
     # the terms are determined by a smarts matching
     proc = mm.chemical_model_procedure_smarts_assignment(pcp, cm.topology_terms)
-    # define the perception model for this force
 
-
-    # we descend into the unit hierarchy when the SMARTS matches at least once,
-    # and I think we only search superSMARTS here and so disable all atomic
-    # primitives
-    # we may want to provide an explicit mapping here
-
-    # proc.unit_hierarchy.smarts[u.index] = "[*:1]"
-
-    # this is the hierarchy within the first main hierarchy node
     proc.smarts_hierarchies = {
         0: hierarchies.structure_hierarchy(
             trees.tree_index(), {}, {}, topology.atom
@@ -250,33 +240,19 @@ def make_electrostatic_model_ethane():
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "q1"
     proc.smarts_hierarchies[0].smarts[i.index] = "[#6:1]"
-
-    # define the parameter order for this force
     proc.topology_parameters[(0, i.name)] = {"q": i.name}
-
-    # add the term values
     cm.topology_terms["q"].values[i.name] = [-0.09386999811977148]
 
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "q2"
     proc.smarts_hierarchies[0].smarts[i.index] = "[#1:1]"
-
-    # define the parameter order for this force
     proc.topology_parameters[(0, i.name)] = {"q": i.name}
-
-    # add the term values
     cm.topology_terms["q"].values[i.name] = [.03128999937325716]
-    # define the perception model for this force
-    # the main hierarchy is first searched, then the inner hierarchy is searched
 
     cm.procedures.append(proc)
 
 
-    proc = force_pairwise.chemical_model_procedure_combine_coulomb(cm.topology_terms)
-    proc.name = "Electrostatics combine"
-    cm.procedures.append(proc)
     # add the scaling
-
     proc = mm.chemical_model_procedure_smarts_assignment(pcp, cm.topology_terms)
     proc.smarts_hierarchies = {
         0: hierarchies.structure_hierarchy(
@@ -325,6 +301,11 @@ def make_electrostatic_model_ethane():
     # add the term values
     cm.topology_terms["s"].values[i.name] = [1/1.2]
     cm.procedures.append(proc)
+
+    proc = force_pairwise.chemical_model_procedure_combine_coulomb(cm.topology_terms)
+    proc.name = "Electrostatics combine"
+    cm.procedures.append(proc)
+
     return cm
 
 def make_vdw_model_ethane():
@@ -529,6 +510,7 @@ torsion = assignments.smiles_assignment_geometry_torsions(pos[0], graphs.graph_d
 system_terms = {k: v.values for k, v in csys.models[2].system_terms.items()}
 ene = mm.smiles_assignment_function(csys.models[2].energy_function, system_terms, params, torsion)
 pprint(ene)
+
 total=0
 for k, enes in ene.items():
     total += sum([y for x in enes for y in x])
@@ -546,6 +528,7 @@ oop = assignments.smiles_assignment_geometry_outofplanes(pos[0], graphs.graph_im
 system_terms = {k: v.values for k, v in csys.models[3].system_terms.items()}
 ene = mm.smiles_assignment_function(csys.models[3].energy_function, system_terms, params, oop)
 pprint(ene)
+
 total=0
 for k, enes in ene.items():
     total += sum([y for x in enes for y in x])

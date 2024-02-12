@@ -185,7 +185,7 @@ def smirnoff_dihedral_load(cm, pcp, d):
         for key, val in param.items():
             val = val.split()[0]
             if key.startswith("phase"):
-                pdict[int(key[5:])] = float(val)
+                pdict[int(key[5:])] = math.radians(float(val))
             if key.startswith("periodicity"):
                 ndict[int(key[11:])] = int(val)
             if key.startswith("k"):
@@ -243,7 +243,7 @@ def chemical_model_outofplane_periodic_smirnoff(d: Dict, pcp) -> mm.chemical_mod
     cm.topology_terms = {
         "n": mm.topology_term("periodicity", "n", "int", "", {}, "", {}),
         "k": mm.topology_term("height", "k", "float", "kcal/mol", {}, "", {}),
-        "p": mm.topology_term("phase", "p", "float", "deg", {}, "", {}),
+        "p": mm.topology_term("phase", "p", "float", "rad", {}, "", {}),
     }
     smirnoff_dihedral_load(cm, pcp, d)
 
