@@ -1,0 +1,4 @@
+CLI examples
+------------
+
+hi
