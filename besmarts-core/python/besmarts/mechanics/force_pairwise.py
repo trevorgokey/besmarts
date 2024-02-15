@@ -1,8 +1,7 @@
 """
-besmarts.mm.force_pairwise
+besmarts.mechanics.force_pairwise
 """
 
-from besmarts.core import mm
 from besmarts.core import topology
 from besmarts.core import assignments
 from besmarts.core import trees
@@ -10,10 +9,29 @@ from besmarts.core import codecs
 from besmarts.core import hierarchies
 from besmarts.core import primitives
 from besmarts.core import graphs
+from besmarts.core import perception
+
+from besmarts.mechanics import molecular_models as mm
 
 import subprocess
 import math
 
+
+# electrostatics
+def energy_function_coulomb_mix(*, eps, c, s, qq, x) -> float:
+    return [s[0]*eps[0]*q/xi if xi < c[0] else 0.0 for q, xi in zip(qq, x)]
+
+def force_function_coulomb_mix(*, eps, c, s, qq, x) -> float:
+    return [-s[0]*eps[0]*q/(xi*xi) if xi < c[0] else 0.0 for q, xi in zip(qq, x)]
+
+# vdW
+def energy_function_lennard_jones_combined(*, s, c, ee, rr, x) -> float:
+    xx = [math.pow(rr[0]/xi, 6) if xi < c[0] else 0.0 for xi in x]
+    return [4.0*s[0]*ee[0]*(xi*xi - xi) for xi in xx]
+
+def force_function_lennard_jones_combined(*, s, c, ee, rr, x) -> float:
+    xx = [math.pow(rr[0]/x, 6) if xi < c[0] else 0.0 for xi in x]
+    return [-24.0*ee[0]*s[0]*(2.0*y*y - y)/x for y in xx]
 
 class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
     """
@@ -22,11 +40,10 @@ class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
     def __init__(self, topology_terms):
         self.name = ""
         self.topology_terms = topology_terms
+        self.procedure_parameters = {}
 
     def assign(self, cm: mm.chemical_model, pm: mm.physical_model) -> mm.physical_model:
         """
-        this would set the parameter to am1bcc and the values
-        go in and look for mass procedure
         """
         symbol = "qq"
         pm.values = []
@@ -35,13 +52,20 @@ class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
             
             charges = {}
             labels = {}
-            # charges = {k: [] for  k in pos.selections}
-            # labels = {k: "" for  k in pos.selections}
+
             q = int(cdc.count_charge_smiles(pos.graph.nodes))
             nconfs = min((len(x) for x in pos.selections.values()))
             for i in range(nconfs):
                 with open("mdin", "w") as f:
-                    f.write(f"\n&qmmm\nqm_theory='AM1', maxcyc=0, grms_tol=0.0005, scfconv=1.d-10, ndiis_attempts=700, qmcharge={q:d},\n /\n")
+                    f.write(f"\n&qmmm\n")
+                    f.write(f"qm_theory='AM1', maxcyc=0, grms_tol=0.0005, scfconv=1.d-10, ndiis_attempts=700, qmcharge={q:d},\n")
+
+                    if "sqm" in self.procedure_parameters:
+                        sqm_opts = procedure_parameters['sqm']
+                        f.write(f"{sqm_opts}\n")
+
+                    f.write(" /\n")
+
                     for j, (n, xyz) in enumerate(pos.selections.items(), 1): 
                         x,y,z = xyz[i]
                         elem = pos.graph.nodes[n[0]].primitives["element"].on()[0]
@@ -106,7 +130,6 @@ class chemical_model_procedure_combine_coulomb(mm.chemical_model_procedure):
         assert "qq" in top_parm
 
     def assign(self, cm, pm):
-
         params = pm.values
         pos = pm.positions
 
@@ -171,23 +194,7 @@ class chemical_model_procedure_combine_lj_lorentz_berthelot(mm.chemical_model_pr
             param.update(mixed)
         return pm
 
-# electrostatics
-def energy_function_coulomb_mix(*, eps, c, s, qq, x) -> float:
-    return [s[0]*eps[0]*q/xi if xi < c[0] else 0.0 for q, xi in zip(qq, x)]
-
-def force_function_coulomb_mix(*, eps, c, s, qq, x) -> float:
-    return [-s[0]*eps[0]*q/(xi*xi) if xi < c[0] else 0.0 for q, xi in zip(qq, x)]
-
-# vdW
-def energy_function_lennard_jones_combined(*, s, c, ee, rr, x) -> float:
-    xx = [math.pow(rr[0]/xi, 6) if xi < c[0] else 0.0 for xi in x]
-    return [4.0*s[0]*ee[0]*(xi*xi - xi) for xi in xx]
-
-def force_function_lennard_jones_combined(*, s, c, ee, rr, x) -> float:
-    xx = [math.pow(rr[0]/x, 6) if xi < c[0] else 0.0 for xi in x]
-    return [-24.0*ee[0]*s[0]*(2.0*y*y - y)/x for y in xx]
-
-def chemical_model_coulomb_smarts(perception):
+def chemical_model_coulomb(perception):
 
     cm = mm.chemical_model("Q", "electrostatics", topology.pair)
 
@@ -208,7 +215,7 @@ def chemical_model_coulomb_smarts(perception):
 
     return cm
 
-def chemical_model_lennard_jones_smarts(perception) -> mm.chemical_model:
+def chemical_model_lennard_jones(perception) -> mm.chemical_model:
 
     cm = mm.chemical_model("N", "vdw", topology.pair)
 
@@ -227,7 +234,5 @@ def chemical_model_lennard_jones_smarts(perception) -> mm.chemical_model:
     cm.system_terms = {
         "c": mm.system_term("cutoff", "c", "float", "A", [9.0], ""),
     }
-
-
 
     return cm

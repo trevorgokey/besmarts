@@ -2,27 +2,28 @@
 besmarts.assign.hierarchy_assign_rdkit
 """
 
-from besmarts.core import hierarchies
-from besmarts.core import trees
-from besmarts.core import assignments
-from besmarts.cluster import cluster_assignment
-from besmarts.core import tree_iterators
-
-from besmarts.core import graphs
-from besmarts.core import geometry
-from besmarts.core import topology
-from besmarts.core import configs
-
-from besmarts.codecs import codec_rdkit
-
 import multiprocessing
 import datetime
 
 from rdkit import Chem
 
+from besmarts.core import configs
+from besmarts.core import geometry
+from besmarts.core import topology
+from besmarts.core import graphs
+from besmarts.core import trees
+from besmarts.core import tree_iterators
+from besmarts.core import hierarchies
+from besmarts.core import assignments
+
+from besmarts.cluster import cluster_assignment
+from besmarts.codecs import codec_rdkit
+
 class smarts_hierarchy_assignment_rdkit(
     assignments.smarts_hierarchy_assignment
 ):
+    __slots__ = tuple()
+
     def assign(
         self, shier: hierarchies.smarts_hierarchy, gcd, smiles, topo
     ):
@@ -37,15 +38,15 @@ class smarts_hierarchy_assignment_rdkit(
     def assign_angles(self, shier: hierarchies.smarts_hierarchy, gcd, smiles):
         return smarts_hierarchy_assign_angles(shier, gcd, smiles)
 
-    def assign_dihedrals(
+    def assign_torsions(
         self, shier: hierarchies.smarts_hierarchy, gcd, smiles
     ):
-        return smarts_hierarchy_assign_dihedrals(shier, gcd, smiles)
+        return smarts_hierarchy_assign_torsions(shier, gcd, smiles)
 
-    def assign_impropers(
+    def assign_outofplanes(
         self, shier: hierarchies.smarts_hierarchy, gcd, smiles
     ):
-        return smarts_hierarchy_assign_impropers(shier, gcd, smiles)
+        return smarts_hierarchy_assign_outofplanes(shier, gcd, smiles)
 
 class smarts_hierarchy_assign_ctx:
     hier = None
@@ -62,8 +63,8 @@ def smarts_hierarchy_assign_smiles(smiles):
         topology.atom: lambda x: x,
         topology.bond: geometry.bond,
         topology.angle: geometry.angle,
-        topology.dihedral: geometry.dihedral,
-        topology.improper: geometry.improper,
+        topology.torsion: geometry.torsion,
+        topology.outofplane: geometry.outofplane,
         topology.pair: geometry.bond
     }[topo]
 
@@ -73,15 +74,6 @@ def smarts_hierarchy_assign_smiles(smiles):
     mol = make_rdmol(gcd.smiles_config, smiles)
 
     indices = selections
-    # mapped_to_seq = {mapped_i: seq_i for seq_i, mapped_i in enumerate(g.nodes, 1)}
-    # indices = {tuple((mapped_to_seq[x] for x in y)): tuple(y) for y in selections}
-    # from pprint import pprint
-    # print("INDICES ARE unmapped:mapped")
-    # pprint(indices)
-    # print("SORTED ARE")
-    # indices_sorted = {
-    #     tuple(sorter([mapped_to_seq[x] for x in y])): tuple(y) for y in selections
-    # }
 
     match = {}
     roots = [shier.index.nodes[i] for i, x in shier.index.above.items() if x is None]
@@ -96,81 +88,7 @@ def smarts_hierarchy_assign_smiles(smiles):
                 if y is not None:
                     match[x] = y
         
-    # match = assign(hidx, root, mol, indices, lambda x: x)
-    # mapped_match = {}
-    # for ic, lbl in match.items():
-    #     mapped_ic = indices_sorted[ic]
-    #     mapped_match[mapped_ic] = lbl
     return cluster_assignment.smiles_assignment_str(smiles, match)
-
-
-def smarts_hierarchy_assign_v1(
-    shier: hierarchies.smarts_hierarchy, gcd, smiles_list, topo
-    ) -> assignments.smiles_assignment_group:
-
-    smarts_hierarchy_assign_ctx.hier = shier
-    smarts_hierarchy_assign_ctx.gcd = gcd
-    smarts_hierarchy_assign_ctx.topo = topo
-
-    work = []
-    sa = []
-    # print(datetime.datetime.now(), "Labeling")
-    procs = configs.processors
-    if procs is not None and procs > 1:
-        with multiprocessing.Pool(procs) as pool:
-            for smiles in smiles_list:
-                work.append(pool.apply_async(smarts_hierarchy_assign_smiles, (smiles,)))
-            for unit in work:
-                sa.append(unit.get())
-    else:
-        for smiles in smiles_list:
-            sa.append(smarts_hierarchy_assign_smiles(smiles))
-
-    smarts_hierarchy_assign_ctx.hier = None
-    smarts_hierarchy_assign_ctx.gcd = None
-    smarts_hierarchy_assign_ctx.topo = None
-
-    sag = assignments.smiles_assignment_group(sa, topo)
-    return sag
-
-    sa = []
-    for smiles in smiles_list:
-        g = gcd.smiles_decode(smiles)
-        selections = [s.select for s in graphs.graph_to_structure_topology(g, topo)]
-        mol = make_rdmol(gcd.smiles_config, smiles)
-
-        mapped_to_seq = {mapped_i: seq_i for seq_i, mapped_i in enumerate(g.nodes, 1)}
-        indices = {tuple((mapped_to_seq[x] for x in y)): tuple(y) for y in selections}
-        # from pprint import pprint
-        # print("INDICES ARE unmapped:mapped")
-        # pprint(indices)
-        # print("SORTED ARE")
-        indices_sorted = {
-            tuple(sorter([mapped_to_seq[x] for x in y])): tuple(y) for y in selections
-        }
-
-        match = {}
-        roots = [shier.index.nodes[i] for i, x in shier.index.above.items() if x is None]
-        for root in roots:
-            new_matches = assign(
-                shier, root, mol, indices, lambda x: tuple(sorter(x))
-            )
-            if not match:
-                match = new_matches
-            else:
-                for x,y in new_matches.items():
-                    if y is not None:
-                        match[x] = y
-            
-        # match = assign(hidx, root, mol, indices, lambda x: x)
-        mapped_match = {}
-        for ic, lbl in match.items():
-            mapped_ic = indices_sorted[ic]
-            mapped_match[mapped_ic] = lbl
-        sa.append(cluster_assignment.smiles_assignment_str(smiles, mapped_match))
-
-    sag = assignments.smiles_assignment_group(sa, topo)
-    return sag
 
 def smarts_hierarchy_assign(
     shier: hierarchies.smarts_hierarchy, gcd, smiles_list, topo
@@ -196,51 +114,11 @@ def smarts_hierarchy_assign(
             for unit in work:
                 sa.append(unit.get())
     else:
-        for smiles in smiles_list:
-            sa.append(smarts_hierarchy_assign_smiles(smiles))
+        sa.extend(map(smarts_hierarchy_assign_smiles, smiles_list))
 
     smarts_hierarchy_assign_ctx.hier = None
     smarts_hierarchy_assign_ctx.gcd = None
     smarts_hierarchy_assign_ctx.topo = None
-
-    sag = assignments.smiles_assignment_group(sa, topo)
-    return sag
-
-    sa = []
-    for smiles in smiles_list:
-        g = gcd.smiles_decode(smiles)
-        indices = [s.select for s in graphs.graph_to_structure_topology(g, topo)]
-        mol = make_rdmol(gcd.smiles_config, smiles)
-
-        mapped_to_seq = {mapped_i: seq_i for seq_i, mapped_i in enumerate(g.nodes, 1)}
-        indices = {tuple((mapped_to_seq[x] for x in y)): tuple(y) for y in selections}
-        # from pprint import pprint
-        # print("INDICES ARE unmapped:mapped")
-        # pprint(indices)
-        # print("SORTED ARE")
-        # indices_sorted = {
-        #     tuple(sorter([mapped_to_seq[x] for x in y])): tuple(y) for y in selections
-        # }
-
-        match = {}
-        roots = [shier.index.nodes[i] for i, x in shier.index.above.items() if x is None]
-        for root in roots:
-            new_matches = assign(
-                shier, root, mol, indices, lambda x: tuple(sorter(x))
-            )
-            if not match:
-                match = new_matches
-            else:
-                for x,y in new_matches.items():
-                    if y is not None:
-                        match[x] = y
-            
-        # match = assign(hidx, root, mol, indices, lambda x: x)
-        mapped_match = {}
-        for ic, lbl in match.items():
-            mapped_ic = indices_sorted[ic]
-            mapped_match[mapped_ic] = lbl
-        sa.append(cluster_assignment.smiles_assignment_str(smiles, mapped_match))
 
     sag = assignments.smiles_assignment_group(sa, topo)
     return sag
@@ -310,7 +188,7 @@ def smarts_hierarchy_assign_angles(
     return mapped_match
 
 
-def smarts_hierarchy_assign_dihedrals(
+def smarts_hierarchy_assign_torsions(
     shier: hierarchies.smarts_hierarchy, gcd, smiles
 ):
 
@@ -318,8 +196,8 @@ def smarts_hierarchy_assign_dihedrals(
     mol = make_rdmol(gcd.smiles_config, smiles)
 
     idx_map = {x: i for i, x in enumerate(g.nodes, 1)}
-    # indices = {(i,j,k,l): (i,j,k,l) for i,j,k,l in graphs.graph_dihedrals(g)}
-    ijkl_mapped = geometry.dihedral((idx_map[i], idx_map[j], idx_map[k], idx_map[l]))
+    # indices = {(i,j,k,l): (i,j,k,l) for i,j,k,l in graphs.graph_torsions(g)}
+    ijkl_mapped = geometry.torsion((idx_map[i], idx_map[j], idx_map[k], idx_map[l]))
     indices = {
         ijkl_mapped : (
             i,
@@ -327,10 +205,10 @@ def smarts_hierarchy_assign_dihedrals(
             k,
             l,
         )
-        for i, j, k, l in graphs.graph_dihedrals(g)
+        for i, j, k, l in graphs.graph_torsions(g)
     }
 
-    match = assign_dihedrals(shier, shier.index.nodes[0], mol, indices)
+    match = assign_torsions(shier, shier.index.nodes[0], mol, indices)
 
     mapped_match = {}
     for ic, lbl in match.items():
@@ -340,7 +218,7 @@ def smarts_hierarchy_assign_dihedrals(
     return mapped_match
 
 
-def smarts_hierarchy_assign_impropers(
+def smarts_hierarchy_assign_outofplanes(
     shier: hierarchies.smarts_hierarchy, gcd, smiles
 ):
 
@@ -350,15 +228,15 @@ def smarts_hierarchy_assign_impropers(
     idx_map = {x: i for i, x in enumerate(g.nodes, 1)}
 
     indices = {
-        geometry.improper((idx_map[i], idx_map[j], idx_map[k], idx_map[l])): (
+        geometry.outofplane((idx_map[i], idx_map[j], idx_map[k], idx_map[l])): (
             i,
             j,
             k,
             l,
         )
-        for i, j, k, l in graphs.graph_impropers(g)
+        for i, j, k, l in graphs.graph_outofplanes(g)
     }
-    match = assign_impropers(shier, shier.index.nodes[0], mol, indices)
+    match = assign_outofplanes(shier, shier.index.nodes[0], mol, indices)
 
     mapped_match = {}
     for ic, lbl in match.items():
@@ -389,64 +267,6 @@ def make_rdmol(pcp, smi):
 
     return mol
 
-def assign_v1(
-    hidx: hierarchies.smarts_hierarchy,
-    root: trees.tree_node,
-    mol,
-    indices,
-    sorter,
-):
-
-    cur = root
-    if len(indices) == 0:
-        return {}
-
-    indices = list(indices)
-
-    l = len(indices[0])
-    matches = {sorter(x): None for x in indices}
-
-    ordering = {
-        h.name: i
-        for i, h in enumerate(tree_iterators.tree_iter_dive(hidx.index, root))
-    }
-
-    # print("orderings")
-    # print(ordering)
-    checked = 0
-    for cur in tree_iterators.tree_iter_dive_reverse(hidx.index, root):
-
-        sma = hidx.smarts.get(cur.index)
-        if sma is None:
-            continue
-        lbl = cur.name
-        # print("Checking", cur.name, sma)
-        unmatched = sum([0] + [int(lbl is None) for lbl in matches.values()])
-        if unmatched == 0:
-            break
-        if sma is None:
-            continue
-        checked += 1
-        S = Chem.MolFromSmarts(sma)
-
-        this_matches = mol.GetSubstructMatches(S, uniquify=False)
-        # print(checked, len(ordering), "Param", cur.name, "unmatched:", unmatched, sma, "num_matches", len(this_matches))
-
-        for match in this_matches:
-            ic = tuple(sorter([x + 1 for x in match[:l]]))
-            lbl = cur.name
-            if ic not in matches:
-                # print(f"WARNING: RDKit identified {ic} matched {sma} for mol {Chem.MolToSmiles(mol)} but it is not valid! Skipping")
-                continue
-            if matches[ic] is None:
-                # print("new match to", lbl, "for", match)
-                matches[ic] = lbl
-            elif ordering[lbl] > ordering[matches[ic]]:
-                # print("better match to", lbl, "for", match, "old", ordering[matches[ic]])
-                matches[ic] = lbl
-
-    return matches
-
 def assign(
     hidx: hierarchies.smarts_hierarchy,
     root: trees.tree_node,
@@ -470,18 +290,17 @@ def assign(
     }
 
     idx2tag = codec_rdkit.get_indices(mol)
-    # tag2idx = {v:k in k,v in mapping.items()}
-    # idx_indices = sorter([tag2idx[x] for x in indices])
 
-    # print("orderings")
-    # print(ordering)
     checked = 0
+
     for cur in tree_iterators.tree_iter_dive_reverse(hidx.index, root):
 
         sma = hidx.smarts.get(cur.index)
         if sma is None:
             continue
+
         lbl = cur.name
+
         #print("Checking", cur.name, sma)
         unmatched = sum([0] + [int(lbl is None) for lbl in matches.values()])
         if unmatched == 0:
@@ -489,6 +308,7 @@ def assign(
 
         checked += 1
         S = Chem.MolFromSmarts(sma)
+
         s_idx2tags = codec_rdkit.get_indices(S)
         s_idx2tags_r = [k for k,v in s_idx2tags.items() if v in range(1,l+1)]
 
@@ -501,12 +321,12 @@ def assign(
             mapped_match = [idx2tag[x] for x in match]
             mapped_match = sorter(mapped_match)
             ic = mapped_match
-            # ic = tuple(sorter([x + 1 for x in match[:l]]))
             lbl = cur.name
+
             if ic not in matches:
-                breakpoint()
                 print(f"WARNING: RDKit identified {ic} matched {sma} for mol {Chem.MolToSmiles(mol)} but it is not valid! Skipping")
                 continue
+
             if matches[ic] is None:
                 # print("new match to", lbl, "for", match)
                 matches[ic] = lbl
@@ -529,117 +349,10 @@ def assign_angles(hidx, root, mol, indices):
     return assign(hidx, root, mol, indices, geometry.angle)
 
 
-def assign_dihedrals(hidx, root, mol, indices):
-    return assign(hidx, root, mol, indices, geometry.dihedral)
+def assign_torsions(hidx, root, mol, indices):
+    return assign(hidx, root, mol, indices, geometry.torsion)
 
 
-def assign_impropers(hidx, root, mol, indices):
-    return assign(hidx, root, mol, indices, geometry.improper)
+def assign_outofplanes(hidx, root, mol, indices):
+    return assign(hidx, root, mol, indices, geometry.outofplane)
 
-
-# def assign_smiles_rdkit(ff: hierarchies.smarts_hierarchy, gcd, smi: str):
-
-#     g = gcd.smiles_decode(smi)
-
-#     mol = make_rdmol(gcd.smiles_config, smi)
-#     matches = {}
-#     idx_map = {x:i for i,x in enumerate(g.nodes,1)}
-
-#     key = "vdW"
-#     idx = ff.force_entry_idx.get(key)
-#     if idx:
-#         root = ff[idx]
-#         if root.down:
-#             indices = {(idx_map[x],): (x,)  for x in g.nodes}
-
-#             match = assign_atoms(ff, root, mol, indices)
-
-#             mapped_match = {}
-#             for ic, lbl in match.items():
-#                 mapped_ic = indices[ic]
-#                 mapped_match[mapped_ic] = lbl
-
-#             matches[key] = mapped_match
-
-
-#     key = "LibraryCharges"
-#     idx = ff.force_entry_idx.get(key)
-#     if idx:
-#         root = ff[idx]
-#         if root.down:
-#             indices = {(idx_map[x],): (x,)  for x in g.nodes}
-
-#             match = assign_atoms(ff, root, mol, indices)
-
-#             mapped_match = {}
-#             for ic, lbl in match.items():
-#                 mapped_ic = indices[ic]
-#                 mapped_match[mapped_ic] = lbl
-
-#             matches[key] = mapped_match
-
-#     key = "Bonds"
-#     idx = ff.force_entry_idx.get(key)
-#     if idx:
-#         root = ff[idx]
-#         if root.down:
-#             indices = {geometry.bond((idx_map[i],idx_map[j])): (i,j) for i,j in g.edges}
-
-#             match = assign_bonds(ff, root, mol, indices)
-
-#             mapped_match = {}
-#             for ic, lbl in match.items():
-#                 mapped_ic = indices[ic]
-#                 mapped_match[mapped_ic] = lbl
-
-#             matches[key] = mapped_match
-
-#     key = "Angles"
-#     idx = ff.force_entry_idx.get(key)
-#     if idx:
-#         root = ff[idx]
-#         if root.down:
-#             # indices = list(graphs.graph_angles(g))
-#             indices = {geometry.angle((idx_map[i],idx_map[j], idx_map[k])): (i,j,k) for i,j,k in graphs.graph_angles(g)}
-
-#             match = assign_angles(ff, root, mol, indices)
-
-#             mapped_match = {}
-#             for ic, lbl in match.items():
-#                 mapped_ic = indices[ic]
-#                 mapped_match[mapped_ic] = lbl
-
-#             matches[key] = mapped_match
-
-#     key = "ProperTorsions"
-#     idx = ff.force_entry_idx.get(key)
-#     if idx:
-#         root = ff[idx]
-#         if root.down:
-#             # indices = list(graphs.graph_dihedrals(g))
-#             indices = {geometry.dihedral((idx_map[i],idx_map[j], idx_map[k], idx_map[l])): (i,j,k,l) for i,j,k,l in graphs.graph_dihedrals(g)}
-#             match = assign_torsions(ff, root, mol, indices)
-#             mapped_match = {}
-#             for ic, lbl in match.items():
-#                 mapped_ic = indices[ic]
-#                 mapped_match[mapped_ic] = lbl
-
-#             matches[key] = mapped_match
-
-#     key = "ImproperTorsions"
-#     idx = ff.force_entry_idx.get(key)
-#     if idx:
-#         root = ff[idx]
-#         if root.down:
-#             # indices = list(graphs.graph_impropers(g))
-#             indices = {geometry.improper((idx_map[i],idx_map[j], idx_map[k], idx_map[l])): (i,j,k,l) for i,j,k,l in graphs.graph_impropers(g)}
-#             match = assign_impropers(ff, root, mol, indices)
-
-#             mapped_match = {}
-#             for ic, lbl in match.items():
-#                 mapped_ic = indices[ic]
-#                 mapped_match[mapped_ic] = lbl
-
-#             matches[key] = mapped_match
-
-#     return matches

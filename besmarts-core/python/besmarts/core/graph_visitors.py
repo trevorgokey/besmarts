@@ -373,7 +373,7 @@ def longest_path(tagged, paths, visited, source=None, avoid=None):
         avoid = []
 
     pair = [None, [], 0]
-    # tagged = primary
+
     # prefer the path with all tagged atoms if it is available
     tag_path = all([x not in visited for x in tagged])
 

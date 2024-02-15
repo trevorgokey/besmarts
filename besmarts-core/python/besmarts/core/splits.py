@@ -544,11 +544,6 @@ def make_branches(
             datetime.datetime.now(),
             f"Generating branched for depth={depth} trunks={len(trunks)}",
         )
-        # prims_pruned = [
-        #     graphs.structure_up_to_depth(prim, depth) for prim in prims
-        # ]
-        # for p in prims_pruned:
-        #     print("pp:", gcd.smarts_encode(p))
 
         for _, ref in list(trunks):
             print(
@@ -772,8 +767,6 @@ def process_split(pack):
 
     general = process_split_intersect(pack, T1)
     specific = process_split_difference(pack, T2)
-    # work1 = process_split_difference(pack, T2)
-    # work2 = process_split_intersect(pack, T2)
 
     # print("RETURNING", general[2], general[4], specific[2], specific[4])
 
@@ -788,19 +781,6 @@ def split_shm_load(shm):
     process_split_ctx.splitter = shm.get_splitter()
     process_split_ctx.S0 = shm.get_S0()
 
-
-class shm_split_subgraphs(compute.shm_local):
-    def __init__(self, splitter, S0, A):
-        self.splitter = splitter
-        self.S0 = S0
-        self.A = A
-
-    def remote_init(self):
-        return shm_split_subgraphs_init
-
-    def get(self):
-        return self.__dict__
-        return {"splitter": self.splitter, "S0": self.S0, "A": self.A}
 
 
 def process_split_general_distributed(pack, shm=None):
@@ -1062,9 +1042,7 @@ def process_split_matches(Sj, A, selections, icd: codecs.intvec_codec, return_ma
 
     for i, (idx, sel) in enumerate(selections):
         ai = graphs.graph_as_structure(icd.graph_decode(A[idx]), sel, Sj.topology)
-        # T = mapper.map_to(
-        #     ai, Sj, strict=True, equality=False, add_nodes=1, fill=True
-        # )
+
         if mapper.mapper_match(ai, Sj):
             yes = 1
             # matches[i] = True
@@ -1375,16 +1353,6 @@ def split_subgraphs(
 
     return S, shards, matched
 
-
-def shm_split_subgraphs_init(shm_proxy: shm_split_subgraphs):
-    data = shm_proxy.get()
-    shm = shm_split_subgraphs(
-        data["splitter"],
-        data["S0"],
-        data["A"],
-    )
-    return shm
-
 def split_subgraphs_distributed(
     topology: structure_topology,
     splitter: smarts_splitter_config,
@@ -1412,7 +1380,6 @@ def split_subgraphs_distributed(
     print(datetime.datetime.now(), "Generating splits")
     single_bits = split_single_bits(topology, splitter, S0, G, selections, icd, Q=Q)
     print(datetime.datetime.now(), f"Generated {len(single_bits)} splits")
-    # single_bits.extend([(, m.copy()) for (b,m) in single_bits])
 
     max_bits = splitter.bit_search_limit
     min_bits = min(splitter.bit_search_min, len(single_bits))
@@ -1428,6 +1395,7 @@ def split_subgraphs_distributed(
     single_bits_red = list()
     single_bits_gra = list()
     single_bits_sma = list()
+
     if True:
 
         cdcs = codec_native.primitive_codecs_get()

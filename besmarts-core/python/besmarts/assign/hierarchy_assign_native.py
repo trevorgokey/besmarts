@@ -71,13 +71,13 @@ class smarts_hierarchy_assignment_native(
     ) -> assignments.smiles_assignment_group:
         return smarts_hierarchy_assign_angles(shier, gcd, smi)
 
-    def assign_dihedrals(
+    def assign_torsions(
         self,
         shier: hierarchies.smarts_hierarchy,
         gcd: codecs.graph_codec,
         smi: List[str],
     ) -> assignments.smiles_assignment_group:
-        return smarts_hierarchy_assign_dihedrals(shier, gcd, smi)
+        return smarts_hierarchy_assign_torsions(shier, gcd, smi)
 
     def assign_impropers(
         self,
@@ -173,17 +173,17 @@ def smarts_hierarchy_assign_angles(
     return assignments.smiles_assignment_group(sag, topo)
 
 
-def smarts_hierarchy_assign_dihedrals(
+def smarts_hierarchy_assign_torsions(
     sh: hierarchies.smarts_hierarchy, gcd: codecs.graph_codec, smiles: str
 ):
 
-    topo = topology.dihedral_topology()
+    topo = topology.torsion_topology()
     sh = hierarchies.smarts_hierarchy_to_structure_hierarchy(sh, gcd, topo)
     sag = []
 
     for smi in smiles:
         g = gcd.smiles_decode(smiles)
-        ics = graphs.graph_to_structure_dihedrals(g)
+        ics = graphs.graph_to_structure_torsions(g)
         selections = structure_hierarchy_assign(sh, sh.index.nodes[0], ics)
         sa = cluster_assignment.smiles_assignment_str(smi, selections)
         sag.append(sa)

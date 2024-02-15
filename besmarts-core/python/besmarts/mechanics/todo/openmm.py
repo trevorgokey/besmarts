@@ -104,3 +104,15 @@ def minimization_openmm(pm: forces.physical_model) -> systems.system_state:
     if self.minimize:
         pos = state.getPositions(asNumpy=True) / simtk.unit.angstroms
 
+
+def physical_model_procedure_init_openmm_system(psys, config) -> Dict[str, topology_assignment]:
+    """
+    creates a system and stores it as a null topology assignment
+    """
+    pass
+
+def physical_model_procedure_single_point_openmm(psys, config):
+    """
+    will grab the precomputed openmm system and then calculate the next props
+    """
+    pass

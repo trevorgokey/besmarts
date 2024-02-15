@@ -5,13 +5,15 @@ BESMARTS graph encoding using the RDKit perception model
 """
 
 from typing import Dict, Sequence
+
+from rdkit import Chem
+
+from besmarts.core import configs
 from besmarts.core.arrays import bitvec as array
 from besmarts.core.arrays import array_dtype
-
-
 from besmarts.core.chem import bechem
-from besmarts.core.configs import smiles_perception_config
-from besmarts.core.graphs import graph, subgraph
+from besmarts.core import graphs
+from besmarts.core.graphs import graph
 from besmarts.core.primitives import primitive_key, primitive_codec
 from besmarts.core.codecs import graph_codec
 from besmarts.core.codecs import (
@@ -28,13 +30,12 @@ from besmarts.core.codecs import (
     primitive_codec_bond_ring,
 )
 
-from rdkit import Chem
 
 
 class graph_codec_rdkit(graph_codec):
     def __init__(self, atom_primitives=None, bond_primitives=None):
 
-        smiles_config = smiles_perception_config(
+        smiles_config = configs.smiles_perception_config(
             False,
             True,
             False,
@@ -76,7 +77,7 @@ class graph_codec_rdkit(graph_codec):
             bond_primitives,
         )
 
-    def smiles_decode(self, smi) -> graph:
+    def smiles_decode(self, smi) -> graphs.graph:
         return rdkit_smiles_decode(
             self.smiles_config,
             self.primitive_codecs,
@@ -86,7 +87,7 @@ class graph_codec_rdkit(graph_codec):
             smi,
         )
 
-    def smarts_decode(self, sma) -> graph:
+    def smarts_decode(self, sma) -> graphs.graph:
         return rdkit_smarts_decode(
             self.primitive_codecs,
             self.array,
@@ -106,7 +107,7 @@ class graph_codec_rdkit(graph_codec):
 
 def rdkit_smarts_decode(
     codecs, arr: array, atom_primitives, bond_primitives, sma
-) -> graph:
+) -> graphs.graph:
 
     if r"$" in sma:
         return sma
@@ -175,11 +176,9 @@ def rdkit_smarts_decode(
     for bond in mol.GetBonds():
         idx_i = indices[bond.GetBeginAtom().GetIdx()]
         idx_j = indices[bond.GetEndAtom().GetIdx()]
-        if idx_j < idx_i:
-            idx_i, idx_j = idx_j, idx_i
 
         primitives = parse_bond(chem_codecs, arr, bond)
-        edges[(idx_i, idx_j)] = bechem(primitives, bond_primitives)
+        edges[graphs.edge((idx_i, idx_j))] = bechem(primitives, bond_primitives)
 
     if selection:
         select = tuple(
@@ -188,14 +187,14 @@ def rdkit_smarts_decode(
                 *(i for i in sorted(nodes) if i not in selection.values()),
             )
         )
-        return subgraph(nodes, edges, select)
+        return graphs.subgraph(nodes, edges, select)
     else:
-        return graph(nodes, edges)
+        return graphs.graph(nodes, edges)
 
 
 def rdkit_smiles_decode(
     pcp, codecs, arr: array, atom_primitives, bond_primitives, smi
-) -> graph:
+) -> graphs.graph:
 
     mol = Chem.MolFromSmiles(smi, sanitize=False)
 
@@ -237,15 +236,13 @@ def rdkit_smiles_decode(
     for bond in mol.GetBonds():
         idx_i = indices[bond.GetBeginAtom().GetIdx()]
         idx_j = indices[bond.GetEndAtom().GetIdx()]
-        if idx_j < idx_i:
-            idx_i, idx_j = idx_j, idx_i
         primitives = {}
         for name in bond_primitives:
             codec: primitive_codec = codecs[name]
             primitives[name] = codec.decode_smiles(arr, bond)
 
         chem = bechem(primitives, bond_primitives)
-        edges[(idx_i, idx_j)] = chem
+        edges[graphs.edge((idx_i, idx_j))] = chem
 
     if selection:
         select = tuple(
@@ -254,9 +251,9 @@ def rdkit_smiles_decode(
                 *(i for i in sorted(nodes) if i not in selection.values()),
             )
         )
-        return subgraph(nodes, edges, select)
+        return graphs.subgraph(nodes, edges, select)
     else:
-        return graph(nodes, edges)
+        return graphs.graph(nodes, edges)
 
 
 def list_atom_primitives() -> Sequence[primitive_key]:
@@ -366,7 +363,6 @@ class primitive_codec_connectivity_total_rdkit(
     primitive_codec_connectivity_total
 ):
     def decode_smiles(self, dtype: array_dtype, obj) -> array:
-        # x = sum([0] + [1 for _ in obj.GetBonds()])
         x = obj.GetTotalDegree()
         array = dtype()
         array[self.encode_int(x)] = True
@@ -389,7 +385,7 @@ class primitive_codec_ring_smallest_rdkit(primitive_codec_ring_smallest):
     def decode_smiles(self, dtype: array_dtype, obj) -> array:
         ring = 0
         if obj.IsInRing():
-            for i in range(3, 10000):
+            for i in range(3, 103):
                 if obj.IsInRingSize(i):
                     ring = i
                     break

@@ -62,42 +62,6 @@ class graph_codec:
 
         raise NotImplementedError()
 
-    def supersmarts_decode(self, smarts: str, units, variables) -> graphs.graph:
-        """
-        Transform a SuperSMARTS string into a graph
-        These graphs can handle nodes with the @ primitive
-
-        Parameters
-        ----------
-        smiles : str
-            The SMILES string to decode
-
-        Returns
-        -------
-        graph
-            The graph representation of the SMILES string
-        """
-
-        raise NotImplementedError()
-
-    def supersmarts_encode(self, g: graphs.graph) -> str:
-        """
-        Transform a BESMARTS graph into a SMARTS pattern
-        These graphs can handle nodes with nonstandard primitives
-
-        Parameters
-        ----------
-        g : graphs.graph
-            The graph to transform into a SMARTS string
-
-        Returns
-        -------
-        str
-            The string representation of the Super SMARTS
-        """
-
-        raise NotImplementedError()
-
     def smarts_decode(self, smarts: str) -> graphs.graph:
         """
         Transform a SMARTS string into a subgraph or structure depending if there are

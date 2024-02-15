@@ -12,10 +12,8 @@ from besmarts.core import graphs
 from besmarts.core import trees
 from besmarts.core import codecs
 from besmarts.core import topology
-# from besmarts.core import assignments
 
 hierarchy_id = int
-
 
 class smarts_hierarchy:
     __slots__ = "index", "smarts"

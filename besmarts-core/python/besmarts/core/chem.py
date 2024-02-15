@@ -353,11 +353,11 @@ def bechem_copy(bc: bechem) -> bechem:
        The new chem_type object
     """
 
-    _primitives = bc.primitives.copy()
-    for field in _primitives:
-        _primitives[field] = arrays.bitvec_copy(bc.primitives[field])
+    primitives = bc.primitives.copy()
+    for field in primitives:
+        primitives[field] = arrays.bitvec_copy(bc.primitives[field])
 
-    return bechem(_primitives, tuple(bc.select))
+    return bechem(primitives, tuple(bc.select))
 
 
 def bechem_to_fragments(bc: bechem) -> Sequence[bechem]:

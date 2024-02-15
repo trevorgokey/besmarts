@@ -108,63 +108,8 @@ def structure_hierarchy_merge(
 
     assert hA.topology == hB.topology
 
-    # force_counts = hindex_assign_counts(hA, hB, gcd, smi_list)
-
-    # PRUNE = (smi_list is not None) and smi_list
-    # force_counts = {'Bonds': force_counts['Bonds']}
-
-    # The marginals inform whether there is a parameter in either
-    # force that is not covered by intersections, A > A&B or B > A&B
-    # marginals = {}
-    # for force, counts in force_counts.items():
-    #     marginals[force] = {}
-    #     for (lblA, lblB), n in counts.items():
-    #         if lblA is None:
-    #             if lblB is None:
-    #                 marginals[force][(None, None)] = (
-    #                     marginals[force].get((None, None), 0) + n
-    #                 )
-    #             else:
-    #                 marginals[force][(None, lblB)] = (
-    #                     marginals[force].get((None, lblB), 0) + n
-    #                 )
-    #         else:
-    #             if lblB is None:
-    #                 marginals[force][(lblA, None)] = (
-    #                     marginals[force].get((lblA, None), 0) + n
-    #                 )
-    #             else:
-    #                 marginals[force][(lblA, None)] = (
-    #                     marginals[force].get((lblA, None), 0) - n
-    #                 )
-    #                 marginals[force][(None, lblB)] = (
-    #                     marginals[force].get((None, lblB), 0) - n
-    #                 )
-    # print("Marginals")
-    # pprint.pprint(marginals)
-
-    # print("Counts")
-    # pprint.pprint(force_counts)
-
-    # hidx = hierarchies.structure_hierarchy_copy(hA)
     hidx = hierarchies.structure_hierarchy(trees.tree_index(), {}, {}, topo)
-    # hidx.db = {"SMIRNOFF": {"version": "0.3", "aromaticity_model": "OEAroModel_MDL"}}
-    # for idx in hA.root.down:
-    #     if idx in hA.force_entry_idx.values():
-    #         continue
-    #     hent = hidx.hentry_add(0, hentry())
-    #     hent.key = hA[idx].key
-    #     attrib = hA.db[hent.key]
-    #     hidx.db[hent.key] = dict(attrib)
 
-    # opers = {
-    #     "|": mapper.union,
-    #     "l": take_left,
-    #     "r": take_right,
-    #     ":-": mapper.subtract_conditional_left,
-    #     "-:": mapper.subtract_conditional_right,
-    #     "^": mapper.intersection,
-    # }
     opers = {
         "|": functools.partial(
             mapper.union, config=configs.mapper_config(1, False, "high")
@@ -183,32 +128,13 @@ def structure_hierarchy_merge(
             mapper.intersection, config=configs.mapper_config(1, True, "high")
         ),
     }
-    # mergers = {
-    #     "|": parameter_terms_merge,
-    #     "l": parameter_terms_merge_left,
-    #     "r": parameter_terms_merge_right,
-    #     ":-": parameter_terms_merge_left,
-    #     "-:": parameter_terms_merge_right,
-    #     "^": parameter_terms_merge,
-    # }
 
     rootsA = [hA.index.nodes[i] for i, x in hA.index.above.items() if x is None]
-    # next((x for x in hA.entries.values() if x.key == force))
     rootsB = [hB.index.nodes[i] for i, x in hB.index.above.items() if x is None]
-    # rootB = hB.index.nodes[
-    #     0
-    # ]  # next((x for x in hB.entries.values() if x.key == force))
 
     print(f"Forming product on <{len(rootsA)}|{len(rootsB)}>")
-    # hidx.force_entry_idx[force] = fhent.index
-    # hidx.db[force] = dict(hA.db[rootA.key])
 
     hentA = None
-
-    # fhent = trees.tree_node(0, "parameter", "", "NULL")
-    # fhent = hidx.index.node_add(None, fhent)
-    # hidx.smarts[fhent.index] = None
-    # hidx.subgraphs[fhent.index] = None
 
     total = len(list(tree_iterators.tree_iter_dive(hA.index, rootsA)))
     for sym, oper in opers.items():
@@ -219,9 +145,7 @@ def structure_hierarchy_merge(
             hidx.smarts[fhent.index] = hA.smarts[rootA.index]
             hidx.subgraphs[fhent.index] = hA.subgraphs[rootA.index]
             entriesA = list(tree_iterators.tree_iter_dive(hA.index, rootA))
-            # hentB = next(tree_iter_breadth_first(hB, rootB))
 
-            # mapping = {rootA.index: fhent.index}
             for ei, hentA in enumerate(entriesA, 1):
                 print(
                     f"{count:4d}/{total:4d}",
@@ -231,19 +155,13 @@ def structure_hierarchy_merge(
                     sym,
                 )
                 count += 1
-                # fhent = hidx[mapping[hentA.up]]
 
                 # breakpoint()
                 for rootB in rootsB:
-                    # for bidx in hB.index.below[rootB.index]:
-                    # hentB = hB.index.nodes[bidx]
-                    # if hentB.index == 132:
-                    #     breakpoint()
 
                     hidx = structure_hierarchy_add_hierarchy(
                         hidx, fhent, hB, rootB
                     )
-                    # hidx = tree_merge(hidx, fhent, hB, hentB)
 
                 new_desc = list(
                     tree_iterators.tree_iter_breadth_first(hidx.index, fhent)
@@ -263,17 +181,16 @@ def structure_hierarchy_merge(
                     _pool = multiprocessing.pool.ThreadPool
                 else:
                     _pool = multiprocessing.Pool
-                # with multiprocessing.pool.ThreadPool(configs.processors) as pool:
                 with _pool(configs.processors) as pool:
                     for hent in new_desc:
                         if hent.name in seen:
                             # print("Continue", hent.name)
                             continue
                         # print("Consider", hent.name)
-                        g1 = hA.subgraphs[hentA.index]  # .db[lblA].get("graph")
+                        g1 = hA.subgraphs[hentA.index] 
                         g2 = hidx.subgraphs[
                             hent.index
-                        ]  # .db[lblA].get("graph")
+                        ]  
 
                         g = None
                         if g1:
@@ -293,8 +210,6 @@ def structure_hierarchy_merge(
                                         ),
                                     ),
                                 )
-                                # g = graphs.structure_to_subgraph(g)
-                                # print("    B:", gcd.smarts_encode(g2))
                             else:
                                 work[hent.index] = (
                                     hentA.index,
@@ -307,7 +222,6 @@ def structure_hierarchy_merge(
                                 hentA.index,
                                 pool.apply_async(return_g, (g2,)),
                             )
-                            # g = g2
                         # print(hent.key, counts.get(hent.key, 0), gcd.smarts_encode(g))
                     for idx, (idxb, unit) in work.items():
                         if idx in seen:
@@ -348,8 +262,6 @@ def structure_hierarchy_merge(
     with multiprocessing.Pool(configs.processors) as pool:
         for ai, a in enumerate(nodes, 1):
             break
-            # if a.index in removed:
-            #     continue
 
             if hidx.index.above[a.index] is None:
                 continue
@@ -360,12 +272,10 @@ def structure_hierarchy_merge(
             ga = graphs.subgraph_to_structure(ga, topo)
 
             gb = hidx.subgraphs[hidx.index.above[a.index]]
-            # gb = hidx.db[hidx[a.up].key].get("graph")
             if not gb:
                 continue
 
             gb = graphs.subgraph_to_structure(gb, topo)
-            # print("Consider", a, hidx.db[a.key].get('smirks'), gcd.smarts_encode(ga))
             work[a.index] = pool.apply_async(mapper_match, (gb, ga))
 
         for idx, matched in work.items():
@@ -378,13 +288,9 @@ def structure_hierarchy_merge(
 
             if idx in hidx.index.nodes:
                 if matched.get():
-                    # print("Removing due to duplicate:", a, hidx.db[a.key]['smirks'], "b:", b, hidx.db[hidx[a.up].key]['smirks'])
-                    # print("Removing local occlusion due to duplicate:", a, a.key)
-                    # hidx.tree.hentry_remove(a.index)
                     hidx.index.node_remove(idx)
                     hidx.subgraphs.pop(idx)
                     hidx.smarts.pop(idx)
-                    # removed.add(idx)
         pool.terminate()
 
     removed = set()
@@ -404,12 +310,10 @@ def structure_hierarchy_merge(
         )
         if a.index in removed:
             continue
-        # ga = hidx.db[a.key].get("graph")
         ga = hidx.subgraphs[a.index]
         if not ga:
             continue
         ga = graphs.subgraph_to_structure(ga, topo)
-        # print("Consider", a, hidx.db[a.key].get('smirks'), gcd.smarts_encode(ga))
         work = {}
         with multiprocessing.Pool(configs.processors) as pool:
             rootsB = [
@@ -424,32 +328,17 @@ def structure_hierarchy_merge(
                     continue
                 if ordering[a.index] > ordering[b.index]:
                     continue
-                # if b.name not in hidx.db:
-                #     hidx.hentry_remove(b.index)
-                #     continue
                 gb = hidx.subgraphs[b.index]
                 if not gb:
                     continue
                 gb = graphs.subgraph_to_structure(gb, topo)
-                # if (hidx.db[a.key]['smirks'] == hidx.db[b.key]['smirks']):
                 work[b.index] = (
                     a.index,
                     pool.apply_async(mapper_match, (ga, gb)),
                 )
             for idx, (idxa, matched) in work.items():
                 if idx in hidx.index.nodes:
-                    # print("Consider is", idx, hidx.smarts[idx], gcd.smarts_encode(hidx.subgraphs[idx]), "subset of", idxa, hidx.smarts[idxa], gcd.smarts_encode(hidx.subgraphs[idxa]))
-                    # print("###")
-                    # graphs.subgraph_print(hidx.subgraphs[idx])
-                    # print("###")
-                    # graphs.subgraph_print(hidx.subgraphs[idxa])
-                    # if idx == 511 and idxa == 427:
-                    #     breakpoint()
                     if matched.get():
-                        # if b.key == ('n3', '^', 'n3'):
-                        #     breakpoint()
-                        # print("Yes, Removing due to duplicate")
-                        # print("Removing nonlocal occlusion due to duplicate:", b, b.key, "kept", a.key)
                         hidx.index.node_remove(idx)
                         hidx.subgraphs.pop(idx)
                         hidx.smarts.pop(idx)

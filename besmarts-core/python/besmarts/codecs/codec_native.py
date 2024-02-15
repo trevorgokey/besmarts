@@ -206,7 +206,7 @@ class graph_codec_native(codecs.graph_codec):
     def smiles_encode(self, g: graphs.graph) -> str:
         """
         Transform a graph into a SMILES string. The graph must be a fragment, i.e. all
-        primitives have exactly one value set.
+        primitives have exactly one value set (one-hot encoding).
 
         Parameters
         ----------

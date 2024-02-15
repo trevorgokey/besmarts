@@ -1,14 +1,16 @@
 """
-besmarts.mm.force_periodic
+besmarts.mechanics.force_periodic
 """
 
-from besmarts.core import mm
+import math
+
 from besmarts.core import topology
 from besmarts.core import assignments
 from besmarts.core import trees
 from besmarts.core import codecs
 from besmarts.core import hierarchies
-import math
+from besmarts.core import perception
+from besmarts.mechanics import molecular_models as mm
 
 # dihedrals
 def energy_function_periodic_cosine_2term(*, k, n, p, x) -> float:
@@ -18,7 +20,7 @@ def force_function_periodic_cosine_2term(*, k, n, p, x) -> float:
     return [[ki*ni*math.sin(ni * xi - pi) for ki, ni, pi in zip(k, n, p)] for xi in x]
 
 # chemical models
-def chemical_model_torsion_periodic_smarts(pcp: mm.perception_model) -> mm.chemical_model:
+def chemical_model_torsion_periodic(pcp: perception.perception_model) -> mm.chemical_model:
     """
     """
 
@@ -37,7 +39,7 @@ def chemical_model_torsion_periodic_smarts(pcp: mm.perception_model) -> mm.chemi
 
     return cm
 
-def chemical_model_outofplane_periodic_smarts(pcp: mm.perception_model) -> mm.chemical_model:
+def chemical_model_outofplane_periodic(pcp: perception.perception_model) -> mm.chemical_model:
     """
     """
 

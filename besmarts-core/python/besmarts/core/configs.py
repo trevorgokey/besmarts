@@ -8,6 +8,7 @@ processors = os.cpu_count()
 remote_compute_enable = True
 workqueue_port = 55555
 
+enable_numpy = False
 
 class smiles_perception_config:
     def __init__(

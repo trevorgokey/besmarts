@@ -6,14 +6,14 @@ from besmarts.core import geometry
 from besmarts.core import hierarchies
 from besmarts.core import trees
 from besmarts.core import topology
-from besmarts.core import mm
+from besmarts.core import perception
+from besmarts.mechanics import molecular_models as mm
+from besmarts.mechanics import force_harmonic
+from besmarts.mechanics import force_periodic
+from besmarts.mechanics import force_pairwise
+from besmarts.mechanics import masses
+from besmarts.mechanics import smirnoff_models
 
-from besmarts.mm import force_harmonic
-from besmarts.mm import force_periodic
-from besmarts.mm import force_pairwise
-from besmarts.mm import masses
-
-from besmarts.mm import smirnoff_models
 
 from besmarts.codecs import codec_rdkit
 from besmarts.assign import hierarchy_assign_rdkit
@@ -35,7 +35,6 @@ def make_water():
     return pos
 
 def make_ethane():
-
 
     # unit: kJ/mol
     # Frame,NonbondedForce,PeriodicTorsionForce,HarmonicAngleForce,HarmonicBondForce,TotalEnergy
@@ -62,89 +61,58 @@ def make_ethane():
 def make_bond_model_ethane():
 
     pcp = make_pcp()
-    cm = force_harmonic.chemical_model_bond_harmonic_smarts(pcp)
+    cm = force_harmonic.chemical_model_bond_harmonic(pcp)
 
-    ############################################################################
-    # the terms are determined by a smarts matching
     proc = mm.chemical_model_procedure_smarts_assignment(pcp, cm.topology_terms)
-
     proc.smarts_hierarchies = {
         0: hierarchies.structure_hierarchy(
             trees.tree_index(), {}, {}, topology.bond
         )
     }
 
-    # # create a default param
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "b1"
     proc.smarts_hierarchies[0].smarts[i.index] = "[#6:1]~[*:2]"
-
-    # define the parameter order for this force
     proc.topology_parameters[(0, i.name)] = {"k": i.name, "l": i.name}
-
-    # add the term values
     cm.topology_terms["k"].values[i.name] = [529.2429715351]
     cm.topology_terms["l"].values[i.name] = [1.52190126495]
 
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "b2"
     proc.smarts_hierarchies[0].smarts[i.index] = "[#6:1]~[#1:2]"
-
-    # define the parameter order for this force
     proc.topology_parameters[(0, i.name)] = {"k": i.name, "l": i.name}
-
-    # add the term values
-    cm.topology_terms["k"].values[i.name] = [0] # shake is on
+    cm.topology_terms["k"].values[i.name] = [0.0] # shake is on
     cm.topology_terms["l"].values[i.name] = [1.093899492634]
+
     cm.procedures.append(proc)
     return cm
 
 def make_angle_model_ethane():
 
     pcp = make_pcp()
-    cm = force_harmonic.chemical_model_angle_harmonic_smarts(pcp)
-    ############################################################################
-    # the terms are determined by a smarts matching
+    cm = force_harmonic.chemical_model_angle_harmonic(pcp)
+
     proc = mm.chemical_model_procedure_smarts_assignment(pcp, cm.topology_terms)
-    # define the perception model for this force
-
-
-    # we descend into the unit hierarchy when the SMARTS matches at least once,
-    # and I think we only search superSMARTS here and so disable all atomic
-    # primitives
-    # we may want to provide an explicit mapping here
-
-    # proc.unit_hierarchy.smarts[u.index] = "[*:1]"
-
-    # this is the hierarchy within the first main hierarchy node
     proc.smarts_hierarchies = {
         0: hierarchies.structure_hierarchy(
             trees.tree_index(), {}, {}, topology.angle
         )
     }
 
-    # # create a default param
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "a1"
     proc.smarts_hierarchies[0].smarts[i.index] = "[#6:1]~[#6:2]~[#1:3]"
-
-    # define the parameter order for this force
     proc.topology_parameters[(0, i.name)] = {"k": i.name, "l": i.name}
-
-    # add the term values
     cm.topology_terms["k"].values[i.name] = [106.4106325309]
     cm.topology_terms["l"].values[i.name] = [2.034139115548445]
 
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "a2"
     proc.smarts_hierarchies[0].smarts[i.index] = "[#1:1]~[#6:2]~[#1:3]"
-
-    # define the parameter order for this force
     proc.topology_parameters[(0, i.name)] = {"k": i.name, "l": i.name}
-
-    # add the term values
     cm.topology_terms["k"].values[i.name] = [97.55298529519]
     cm.topology_terms["l"].values[i.name] = [2.017654719697188]
+
     cm.procedures.append(proc)
 
     return cm
@@ -152,7 +120,7 @@ def make_angle_model_ethane():
 def make_torsion_model_ethane():
 
     pcp = make_pcp()
-    cm = force_periodic.chemical_model_torsion_periodic_smarts(pcp)
+    cm = force_periodic.chemical_model_torsion_periodic(pcp)
     ############################################################################
     # the terms are determined by a smarts matching
     proc = mm.chemical_model_procedure_smarts_assignment(
@@ -166,18 +134,14 @@ def make_torsion_model_ethane():
         )
     }
 
-    # # create a default param
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "t1"
     proc.smarts_hierarchies[0].smarts[i.index] = "[*:1]~[#6X4:2]~[#6X4:3]~[*:4]"
-
-    # define the parameter order for this force
     proc.topology_parameters[(0, i.name)] = {"n": i.name, "k": i.name, "p": i.name}
-
-    # add the term values
     cm.topology_terms["n"].values[i.name] = [3]
     cm.topology_terms["k"].values[i.name] = [0.1911926717192]
     cm.topology_terms["p"].values[i.name] = [0]
+
     cm.procedures.append(proc)
     return cm
 
@@ -186,7 +150,7 @@ def make_outofplane_model_ethane():
 
     pcp = make_pcp()
 
-    cm = force_periodic.chemical_model_outofplane_periodic_smarts(pcp)
+    cm = force_periodic.chemical_model_outofplane_periodic(pcp)
 
     ############################################################################
     # the terms are determined by a smarts matching
@@ -221,14 +185,16 @@ def make_outofplane_model_ethane():
 def make_electrostatic_model_ethane():
 
     pcp = make_pcp()
-    cm = force_pairwise.chemical_model_coulomb_smarts(pcp)
+    cm = force_pairwise.chemical_model_coulomb(pcp)
 
     proc = force_pairwise.chemical_model_procedure_antechamber(cm.topology_terms)
+    proc.name = "Electrostatics AM1BCC antechamber"
     cm.procedures.append(proc)
 
     ############################################################################
     # the terms are determined by a smarts matching
     proc = mm.chemical_model_procedure_smarts_assignment(pcp, cm.topology_terms)
+    proc.name = "Electrostatics SMARTS assignment"
 
     proc.smarts_hierarchies = {
         0: hierarchies.structure_hierarchy(
@@ -254,6 +220,7 @@ def make_electrostatic_model_ethane():
 
     # add the scaling
     proc = mm.chemical_model_procedure_smarts_assignment(pcp, cm.topology_terms)
+    proc.name = "Electrostatics scaling"
     proc.smarts_hierarchies = {
         0: hierarchies.structure_hierarchy(
             trees.tree_index(), {}, {}, topology.pair
@@ -310,7 +277,7 @@ def make_electrostatic_model_ethane():
 
 def make_vdw_model_ethane():
     pcp = make_pcp()
-    cm = force_pairwise.chemical_model_lennard_jones_smarts(pcp)
+    cm = force_pairwise.chemical_model_lennard_jones(pcp)
 
     proc = mm.chemical_model_procedure_smarts_assignment(
         pcp,
@@ -339,7 +306,7 @@ def make_vdw_model_ethane():
     proc.smarts_hierarchies[0].smarts[i.index] = "[#6:1]"
 
     cm.topology_terms["e"].values[i.name] = [0.1088406109251]
-    cm.topology_terms["r"].values[i.name] = [2.37953176162662]
+    cm.topology_terms["r"].values[i.name] = [3.37953176162662]
 
     # define the parameters for this force
     proc.topology_parameters[(0, i.name)] = {"e": i.name, "r": i.name}
@@ -410,62 +377,45 @@ def make_chemical_system_ethane():
     return csys
 
 
-def make_ref():
-    smi = "[N:1]#[N:2]"
-    sel = {(1,): [[0.0, 0.0, 0.0]], (2,): [[1.2, 0.0, 0.0]]}
-    pos = assignments.smiles_assignment_float(smi, sel)
-    return pos
-
 def make_pcp():
     gcd = codec_rdkit.graph_codec_rdkit()
     labeler = hierarchy_assign_rdkit.smarts_hierarchy_assignment_rdkit()
-    pcp = mm.perception_model(gcd, labeler)
+    pcp = perception.perception_model(gcd, labeler)
     return pcp
 
-
-pos = make_ethane()
-ref = make_ethane()
-
 pcp = make_pcp()
-pos = assignments.smiles_assignment_to_graph_assignment(pos, pcp.gcd)
-ref = assignments.smiles_assignment_to_graph_assignment(ref, pcp.gcd)
+pos = make_ethane()
 
-print("Loading...")
+pos = assignments.smiles_assignment_to_graph_assignment(pos, pcp.gcd)
+
+print("Loading... openff_unconstrained-2.0.0.offxml")
 # csys = make_chemical_system_ethane()
 csys = smirnoff_models.smirnoff_load("/home/tgokey/Downloads/openff_unconstrained-2.0.0.offxml", pcp)
+csys.models[4] = make_electrostatic_model_ethane()
 
 pos = [pos]
-print("Paramerizing...")
+print("Parameterizing...")
 psys = mm.chemical_system_to_physical_system(csys, pos)
 
 # BONDS
 print("BONDS")
 labels = psys.models[0].labels[0]
-
-# values[0] means the first graph (with multiple confs)
-# this in general won't work bc of nb which needs tuples across graphs
-
-# should values[0] needs to mean the first procedure
 params = psys.models[0].values
-
 # pprint(labels)
 # pprint(params)
 
-# calc r
-# pairs = list(set([graphs.edge((a, b)) for a in pos.graph.nodes for b in pos.graph.nodes if a != b]))
-
 bonds = assignments.smiles_assignment_geometry_distances(pos[0], graphs.graph_bonds(pos[0].graph))
 
-# calc q1q2
-# params_mixed = mm.atom_to_bond_combine(params)
 system_terms = {k: v.values for k, v in csys.models[0].system_terms.items()}
 ene = mm.smiles_assignment_function(csys.models[0].energy_function, system_terms, params, bonds)
-pprint(ene)
+# pprint(ene)
 
+E = 0
 total=0
 for k, enes in ene.items():
     total += sum([y for x in enes for y in x])
 print(total, "kcal", total*4.184, "kJ")
+E += total
 
 # ANGLES
 print("ANGLES")
@@ -474,19 +424,15 @@ params = psys.models[1].values
 # pprint(labels)
 # pprint(params)
 angles = assignments.smiles_assignment_geometry_angles(pos[0], graphs.graph_angles(pos[0].graph))
-# print("Angles")
-# pprint({k: [math.degrees(vi) for vi in v] for k, v in angles.selections.items()})
-# calc q1q2
-# params_mixed = mm.atom_to_bond_combine(params)
 system_terms = {k: v.values for k, v in csys.models[1].system_terms.items()}
 ene = mm.smiles_assignment_function(csys.models[1].energy_function, system_terms, params, angles)
-pprint(ene)
+# pprint(ene)
 
 total=0
 for k, enes in ene.items():
     total += sum([y for x in enes for y in x])
-
 print(total, "kcal", total*4.184, "kJ")
+E += total
 
 # TORSIONS
 print("TORSIONS")
@@ -495,26 +441,16 @@ params = psys.models[2].values
 # pprint(labels)
 # pprint(params)
 
-# angles = assignments.smiles_assignment_geometry_angles(pos, params)
-
-# print(angles.selections)
-
-# # calc q1q2
-# # params_mixed = mm.atom_to_bond_combine(params)
-# system_terms = {k: v.values for k, v in csys.models[1].system_terms.items()}
-# ene = mm.smiles_assignment_function(csys.models[1].energy_function, system_terms, params, angles)
-# print(ene)
-torsion = assignments.smiles_assignment_geometry_torsions(pos[0], graphs.graph_dihedrals(pos[0].graph))
-# print("Angles")
-# pprint(torsion.selections)
+torsion = assignments.smiles_assignment_geometry_torsions(pos[0], graphs.graph_torsions(pos[0].graph))
 system_terms = {k: v.values for k, v in csys.models[2].system_terms.items()}
 ene = mm.smiles_assignment_function(csys.models[2].energy_function, system_terms, params, torsion)
-pprint(ene)
+# pprint(ene)
 
 total=0
 for k, enes in ene.items():
     total += sum([y for x in enes for y in x])
 print(total, "kcal", total*4.184, "kJ")
+E += total
 
 # OUTOFPLANES
 print("OUTOFPLANES")
@@ -522,17 +458,16 @@ labels = psys.models[3].labels
 params = psys.models[3].values
 # pprint(labels)
 # pprint(params)
-oop = assignments.smiles_assignment_geometry_outofplanes(pos[0], graphs.graph_impropers(pos[0].graph))
-# print("Angles")
-# pprint(oop.selections)
+oop = assignments.smiles_assignment_geometry_outofplanes(pos[0], graphs.graph_outofplanes(pos[0].graph))
 system_terms = {k: v.values for k, v in csys.models[3].system_terms.items()}
 ene = mm.smiles_assignment_function(csys.models[3].energy_function, system_terms, params, oop)
-pprint(ene)
+# pprint(ene)
 
 total=0
 for k, enes in ene.items():
     total += sum([y for x in enes for y in x])
 print(total, "kcal", total*4.184, "kJ")
+E += total
 
 # ELEC
 print("ELECTROSTATICS")
@@ -540,16 +475,17 @@ labels = psys.models[4].labels
 params = psys.models[4].values
 
 # pprint(labels)
-pprint(params)
+# pprint(params)
 total = 0
 pairs = assignments.smiles_assignment_geometry_distances(pos[0], graphs.graph_pairs(pos[0].graph))
 # params = transcode_qq(params, list(pairs.selections))
 system_terms = {k: v.values for k, v in csys.models[4].system_terms.items()}
 ene = mm.smiles_assignment_function(csys.models[4].energy_function, system_terms, params, pairs)
-pprint(ene)
+# pprint(ene)
 for k, enes in ene.items():
     total += sum(enes)
 print(total, "kcal", total*4.184, "kJ")
+E += total
 
 # LJ
 print("LENNARD JONES")
@@ -560,14 +496,20 @@ params = psys.models[5].values
 
 
 system_terms = {k: v.values for k, v in csys.models[5].system_terms.items()}
-# params = transcode_lj(params, list(pairs.selections))
-pprint(params)
+
 ene = mm.smiles_assignment_function(csys.models[5].energy_function, system_terms, params, pairs)
-pprint(ene)
+# pprint(ene)
 total_lj = 0
 for k, enes in ene.items():
     total += sum(enes)
     total_lj += sum(enes)
 print(total_lj, "kcal", total_lj*4.184, "kJ")
-print("NB")
+print("NB total")
 print(total, "kcal", total*4.184, "kJ")
+E += total_lj
+
+print("######")
+print(f"Energy total:     {E*4.184} kJ")
+e_omm = 45.23455588519573
+print(f"OpenMM reference: {e_omm} kJ")
+print(f"Difference:       {E*4.184 - e_omm} kJ")

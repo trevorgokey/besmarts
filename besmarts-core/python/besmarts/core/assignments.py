@@ -11,6 +11,17 @@ import math
 assignment_mapping = Dict[str, List[List[Sequence[int]]]]
 cartesian_coordinates = List[List[Tuple[float, float, float]]]
 
+POSITIONS = "positions"
+GRADIENTS = "gradients"
+HESSIANS = "hessians"
+GRID = "grid"
+ESP = "esp"
+CHARGES = "charges"
+RADII = "radii"
+BONDS = "bonds"
+ANGLES = "angles"
+TORSIONS = "torsions"
+OUTOFPLANES = "outofplanes"
 
 class smiles_assignment:
     __slots__ = "smiles", "selections"
@@ -32,7 +43,6 @@ class smiles_assignment_group:
 
     def copy(self):
         return smiles_assignment_group_copy(self)
-
 
 class graph_assignment(smiles_assignment):
     """
@@ -65,6 +75,23 @@ class structure_assignment_group(smiles_assignment_group):
 
     def copy(self):
         return structure_assignment_group_copy(self)
+
+
+class topology_assignment:
+    def __init__(self):
+        self.topology = None
+        self.selections = {}
+
+class smiles_state:
+    def __init__(self):
+        self.smiles = ""
+        self.assignments: Dict[str, topology_assignment] = {}
+
+class graph_state:
+    def __init__(self):
+        self.smiles = ""
+        self.graph = None
+        self.assignments: Dict[str, topology_assignment] = {}
 
 
 class smarts_hierarchy_assignment:
@@ -240,7 +267,6 @@ class outofplane_assignment_str(structure_assignment_str):
 def make_structure_assignment_type(name):
     return type("structure_assignment_"+name, stucture_assignment)
 
-
 def smiles_assignment_copy(sa: smiles_assignment) -> smiles_assignment:
     smiles = sa.smiles
     selections = sa.selections.copy()
@@ -273,8 +299,8 @@ def smiles_assignment_geometry_angles(
     smiles: str,
     confs: cartesian_coordinates,
 ) -> smiles_assignment:
-    g = gcd.smiles_decode(smiles)
 
+    g = gcd.smiles_decode(smiles)
     gas = graph_assignment_geometry_angles(smiles, g, confs)
 
     return smiles_assignment(smiles, gas.selections)

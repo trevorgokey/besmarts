@@ -6,7 +6,10 @@ Optimization of SMARTS hierarchies.
 
 from typing import List, Callable
 
-from besmarts.core import configs, hierarchies, trees, tree_iterators
+from besmarts.core import configs
+from besmarts.core import hierarchies
+from besmarts.core import trees
+from besmarts.core import tree_iterators
 
 
 class optimization_step:
@@ -298,6 +301,10 @@ def optimization_strategy_build_macro_iterations(strat: optimization_strategy):
                             True,
                             True,
                             0,
+                            strat.bounds.splitter.split_general,
+                            strat.bounds.splitter.split_specific,
+                            strat.bounds.splitter.unique_compliments,
+                            strat.bounds.splitter.unique_compliments_prefer_min,
                         )
                         extender = configs.smarts_extender_config(0, 0, True)
                         config = configs.smarts_perception_config(

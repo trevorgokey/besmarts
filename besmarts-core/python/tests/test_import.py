@@ -43,6 +43,7 @@ from besmarts.cluster import (
 from besmarts.assign import (
     hierarchy_assign_native,
 )
+
 from besmarts.mm import (
     force_harmonic,
     force_pairwise,

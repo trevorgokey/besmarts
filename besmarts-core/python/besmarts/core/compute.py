@@ -735,8 +735,8 @@ class Server(managers.Server):
                     )
                 )
             self.id_to_refcount[ident] -= 1
-            if self.id_to_refcount[ident] == 0:
-                del self.id_to_refcount[ident]
+            # if self.id_to_refcount[ident] == 0:
+            #     del self.id_to_refcount[ident]
 
         if ident not in self.id_to_refcount:
             # Two-step process in case the object turns out to contain other
@@ -746,8 +746,8 @@ class Server(managers.Server):
             # in turn attempt to acquire the mutex that is already held here.
             self.id_to_obj[ident] = (None, (), None)  # thread-safe
             util.debug("disposing of obj with id %r", ident)
-            with self.mutex:
-                del self.id_to_obj[ident]
+            # with self.mutex:
+            #     del self.id_to_obj[ident]
 
 
 class BaseProxy(managers.BaseProxy):

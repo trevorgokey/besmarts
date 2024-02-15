@@ -1,11 +1,10 @@
 """
 besmarts.core.trees
 
-Graphs with no cycles, a rough idea of directed edges, and have a root nodes
+Graphs with no cycles, a rough concept of directed edges, and have a root nodes
 """
 
 from typing import Dict, List
-
 
 class tree_node:
     __slots__ = ("index", "category", "type", "name")

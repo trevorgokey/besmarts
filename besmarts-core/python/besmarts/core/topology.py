@@ -74,7 +74,9 @@ class transcode_topology:
 
 def null_topology() -> structure_topology:
     """
-    Return a topology that describes an atom
+    Return a topology that describes a null/undefined topology. This is used
+    when the data/structures describe don't have a well defined graph topology,
+    such as entire molecules where the permutations aren't known.
 
     Parameters
     ----------
@@ -130,9 +132,9 @@ def angle_topology() -> structure_topology:
     )
 
 
-def dihedral_topology() -> structure_topology:
+def torsion_topology() -> structure_topology:
     """
-    Return a topology that describes a linear "proper" dihedral
+    Return a topology that describes a torsion dihedral
 
     Parameters
     ----------
@@ -146,9 +148,9 @@ def dihedral_topology() -> structure_topology:
     )
 
 
-def improper_topology() -> structure_topology:
+def outofplane_topology() -> structure_topology:
     """
-    Return a topology that describes a improper "improper" dihedral
+    Return a topology that describes an out-of-plane dihedral
 
     Parameters
     ----------
@@ -253,33 +255,33 @@ null = null_topology()
 atom = atom_topology()
 bond = bond_topology()
 angle = angle_topology()
-dihedral = dihedral_topology()
-torsion = dihedral_topology()
-outofplane = improper_topology()
-improper = improper_topology()
+torsion = torsion_topology()
+outofplane = outofplane_topology()
 pair = n_body_topology(2)
 triplet = n_body_topology(3)
 
-topology_index = [
-    null,
+atom_to_atom = transcode_topology(
     atom,
+    atom,
+    {((0,),) : ((0,),)}
+)
+
+bond_to_atom = transcode_topology(
     bond,
+    atom,
+    [(0,0), (1,0)]
+)
+
+angle_to_atom = transcode_topology(
     angle,
-    dihedral,
-    improper,
-    pair,
-    triplet,
-]
+    atom,
+    [(0,0), (1,0), (2,0)]
+)
 
 torsion_to_atom = transcode_topology(
     torsion,
     atom,
     {((0,), (1,), (2,), (3,)) : ((0,1,2,3),)}
-)
-atom_to_atom = transcode_topology(
-    atom,
-    atom,
-    {((0,),) : ((0,),)}
 )
 
 torsion_to_bond = transcode_topology(
@@ -288,21 +290,17 @@ torsion_to_bond = transcode_topology(
     {0:0, 1:0, 2:1, 3:1}
 )
 
-bond_to_atom = transcode_topology(
-    bond,
+
+topology_index = [
+    null,
     atom,
-    {0:0, 1:0}
-)
-angle_to_atom = transcode_topology(
+    bond,
     angle,
-    atom,
-    [(0,0), (1,0), (2,0)]
-)
-bond_to_atom = transcode_topology(
-    bond,
-    atom,
-    [(0,0), (1,0)]
-)
+    torsion,
+    pair,
+    triplet,
+]
 
 def index_of(topo: structure_topology):
     return topology_index.index(topo)
+

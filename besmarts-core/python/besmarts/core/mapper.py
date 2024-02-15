@@ -22,7 +22,7 @@ from besmarts.core.logs import dprint, timestamp
 
 mapping = Dict[int, int]
 
-# TODO: now we have compute try to distribute mapping
+# TODO: transfer this to use workspaces
 class structure_mapper:
     def __init__(
         self,
@@ -463,7 +463,11 @@ def map_to(
         A set of mapped nodes that should be held constant. The mapper will try to map
         any remaining nodes.
     add_nodes : 0|1|2|3
-        The mode for adding nodes. 0 means MCS, 1 means add/remove G, 2 means add/remove H, 3 means add to both
+        The mode for adding nodes. 
+            0 means MCS
+            1 means add/remove G
+            2 means add/remove H
+            3 means add to both
     fill=0,
     mode: str, "high" or "low"
         Whether the mapper should prefer to map nodes with "high" overlap or "low"
@@ -592,6 +596,7 @@ def map_to(
         dprint("returned {}")
         ret = mapped_type(cg_orig, o_orig, {})
         if return_all:
+            # this path needs to be tested better
             return [ret]
         else:
             return ret
@@ -2198,10 +2203,7 @@ def union_list_dispatch(
         A, config, max_depth, reference, sort=True, executor=None, verbose=False
     )
     A = None
-    # I think I can do this because I should be in a separate proc and this
-    # will CoW
-    # Nope, doesn't work. Crashes a process
-    # union_ctx.A = None
+
     return icd.structure_encode(Q)
 
 
@@ -2330,69 +2332,6 @@ def union_list_parallel(
     # if icd:
     #     adb.remove()
     return icd.structure_decode(ans)
-
-
-# def union_distributed(ws: compute.workspace_local, A_iv: arrays.intvec, ref_iv: arrays.intvec, config):
-
-#     # set up the workspace
-#     ws = compute.manager_new_workspace(mgr)
-
-#     cfg = memoryview(ws.mgr.RawArray(config.tointvec().v)).toreadonly()
-#     ws.register('cfg', lambda: cfg)
-
-#     ws.ref = memoryview(ws.mgr.RawArray(ref_iv.v)).toreadonly()
-
-#     ws.offsets = arrays.intvec_offsets(A_iv)
-
-#     ws.A = memoryview(ws.mgr.RawArray(A_iv.v)).toreadonly()
-
-#     ws.offsets = memoryview(
-#         ws.mgr.RawArray(arrays.intvec_offsets(A_iv))
-#     ).toreadonly()
-
-#     ws.B = ws.mgr.Array(A_iv.typecode)
-
-#     while len(ws.offsets) > 1:
-#         for i in range(0, len(ws.offsets) - 1):
-#             workspace_submit(ws, union_workspace, (i,), dict())
-
-#         # wait until oqueue is full and iqueue is empty
-#         workspace_flush(ws)
-
-#         offsets = arrays.intvecs_offsets(ws.B)
-
-#         if len(ws.offsets) % 2 == 1:
-#             # append the last graph to A
-#             offsets.append(len(ws.A))
-
-#         A = ws.mgr.B
-#         ws.A = memoryview(multiprocessing.RawArray(A))
-#         ws.A = ws.A.toreadonly()
-
-#     result = ivc.subgraph_encode(ws.A)
-#     return result
-
-
-def union_workspace(ws: compute.workspace, i):
-    ivc = workspace_get_codec_intvec(ws)
-    cfg = ws.config
-
-    ai, bi, bj = ws.offsets[i : i + 2]
-    # bi, bj = ws.offsets[j:j+2]
-    ref = ivc.structure_encode(ws.ref)
-    A = ws.A[ai:bj]
-    a = ivc.subgraph_encode(A[: bi - ai])
-    b = ivc.subgraph_encode(A[bi - ai :])
-
-    a = graphs.subgraph_as_structure(a, ref.topology)
-    b = graphs.subgraph_as_structure(b, ref.topology)
-
-    u = mapper.union(a, b, cfg, ref=ref)
-    if i == len(w.offsets) - 3:
-        bi, bj = ws.offsets[i + 4 : i + 6]
-
-    uiv = ivc.subgraph_decode(u)
-    ws.B.append(uiv)
 
 
 def intersection_list(

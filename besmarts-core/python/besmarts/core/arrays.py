@@ -22,16 +22,8 @@ class bitvec:
         self.v: int = val
         self.maxbits: int = maxbits
 
-    @property
     def inv(self):
         return self.v < 0
-
-    @inv.setter
-    def inv(self, switch: bool):
-        if switch and self.v < 0:
-            self.v = ~self.v
-        elif (not switch) and self.v >= 0:
-            self.v = ~self.v
 
     def __iter__(self):
         for x in bitvec_on(self):
@@ -297,11 +289,6 @@ def bitvec_any(bv: bitvec) -> bool:
 
 def bitvec_reduce(bv: bitvec) -> int:
     return bv.v
-
-
-def bitvec_reduce_longest(a: bitvec, b: bitvec) -> Tuple[int, int]:
-    return a.v, b.v
-
 
 def bitvec_not(a: bitvec) -> bitvec:
     return bitvec(~a.v, a.maxbits)

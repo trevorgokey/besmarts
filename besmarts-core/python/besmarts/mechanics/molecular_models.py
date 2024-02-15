@@ -1,16 +1,13 @@
 """
-besmarts.core.mm
+besmarts.mechanics.molecular_models
 """
 
 from typing import Dict, List, Any
-from besmarts.core import assignments
 import datetime
 
-class perception_model:
-    def __init__(self, gcd, labeler):
-        self.gcd = gcd
-        self.labeler = labeler
-        self.icd = None
+from besmarts.core import assignments
+from besmarts.core import perception
+
 
 class topology_term:
     def __init__(self, symbol, name, unit, cast, values, comment, value_comments):
@@ -81,6 +78,27 @@ class chemical_model_procedure:
     def get_term_values(self, key) -> Dict:
         assert False
 
+
+class physical_model_procedure:
+    """
+    calculates one or more physical properties of a system
+    """
+    def __init__(self, name, topo):
+        self.name = name # HESSIANS
+        self.topology = topo
+        self.procedure_parameters: Dict[str, int] = {}
+    
+    def assign(self, pm: physical_model):
+        """
+        this will return the compute function and config (i.e. the task)
+        """
+
+    def get_term_labels(self, key) -> Dict:
+        assert False
+
+    def get_term_values(self, key) -> Dict:
+        assert False
+
 class chemical_model:
     def __init__(self, symbol, name, topo):
         self.symbol = symbol
@@ -96,37 +114,32 @@ class chemical_model:
         self.force_func: Callable = None
         self.energy_func: Callable = None
 
-        # # how to transform 3d pos to required coord
-        self.coordinate_func: Callable = None
 
 class physical_system:
     def __init__(self, models: List[physical_model]):
         self.models = models
 
 class chemical_system:
-    def __init__(self, perception, models: List[chemical_model]):
-        self.perception = perception
+    def __init__(self, pcp_model: perception.perception_model, models: List[chemical_model]):
+        self.perception = pcp_model
         self.models = models
 
 class chemical_model_procedure_smarts_assignment(chemical_model_procedure):
-    def __init__(self, perception, topology_terms):
-
+    def __init__(self, pcp_model: perception.perception_model, topology_terms):
         self.name = ""
-        self.perception = perception
-        # the global dictionary of terms
+        self.perception = pcp_model
+
         self.topology_parameters: Dict[int, Dict[str, int|str]] = {}
         self.system_parameters: Dict[str, int] = {}
 
         self.topology_terms = topology_terms
-
-        # will just hold references to the global dictionary of params
         self.smarts_hierarchies: Dict[int, hierarchies.smarts_assignment_hierarchy] = {}
 
     def assign(self, cm, pm: physical_model) -> physical_model:
         """
         this will return, for each selection, the reference
         """
-        # label the pm
+
         # print(self.topology_terms)
         smiles = [x.smiles for x in pm.positions]
         topo = cm.topology
@@ -144,8 +157,6 @@ class chemical_model_procedure_smarts_assignment(chemical_model_procedure):
         for x in lbls.assignments:
             p = {}
             v = {}
-            # xassn = {ic: self.get_term_labels((unit_i, lbl)) for ic, lbl in x.selections.items()} 
-            # xvals = {ic: self.get_term_values((unit_i, lbl)) for ic, lbl in x.selections.items()} 
             for ic, lbl in x.selections.items():
                 if lbl is None:
                     continue
@@ -155,27 +166,20 @@ class chemical_model_procedure_smarts_assignment(chemical_model_procedure):
                 v[ic] = {term: x for (term, l), x  in zip(names.items(), values.values())}
             assn.append(p)
             vals.append(v)
-            # vals.append(xvals)
 
-
-        # pm.labels.clear()
         pm.labels.extend(assn)
-
-        # pm.values.clear()
         pm.values.extend(vals)
 
         return pm
         
 
     def get_term_labels(self, k):
-
         unit_i, smarts_i = k
         terms = self.topology_parameters[(unit_i, smarts_i)]
 
         return terms
 
     def get_term_values(self, k):
-
         values = {}
         terms = self.get_term_labels(k)
 
@@ -201,11 +205,11 @@ class forcefield:
 
     __slots__ = ("metadata", "models", "perception")
 
-    def __init__(self, models: Dict[str,chemical_model]):
+    def __init__(self, models: Dict[str,chemical_model], pcp_model):
 
         self.metadata: forcefield_metadata = forcefield_metadata()
         self.models: Dict[str, mm.chemical_model] = None
-        self.perception = perception
+        self.perception: perception.perception_model = pcp_model
 
 def chemical_system_to_physical_system(cs, pos: assignments.smiles_assignment) -> physical_model:
     ps = physical_system([])
@@ -235,7 +239,5 @@ def smiles_assignment_function(fn, sys_params, top_params, pos):
             except TypeError as e:
                 print("Partial parameterization: skipping. Error was:")
                 print(e)
-                # raise e
 
     return result
-

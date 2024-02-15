@@ -11,11 +11,14 @@ of the same topology, for example bonds, angles and dihedrals.
 
 from typing import Sequence, Dict, Tuple, List, Generator
 
-
 import datetime
 import itertools
 
-from besmarts.core import chem, topology, geometry, arrays
+from besmarts.core import arrays
+from besmarts.core import chem
+from besmarts.core import topology
+from besmarts.core import geometry
+
 from besmarts.core.primitives import primitive_key
 
 node_id = int
@@ -104,12 +107,10 @@ class graph:
         """
         return hash(self) != hash(o)
 
-
 def edge(x) -> edge_id:
     if x[1] < x[0]:
         x = x[::-1]
     return tuple(x)
-
 
 class subgraph(graph):
     """A BESMARTS subgraph is a node-induced subgraph, where the subgraph is
@@ -623,8 +624,8 @@ def graph_to_structure_topology(g, topo) -> Sequence[structure]:
         topology.atom : graph_to_structure_atoms,
         topology.bond : graph_to_structure_bonds,
         topology.angle : graph_to_structure_angles,
-        topology.dihedral : graph_to_structure_dihedrals,
-        topology.improper : graph_to_structure_impropers,
+        topology.torsion : graph_to_structure_torsions,
+        topology.outofplane : graph_to_structure_outofplanes,
         topology.pair : graph_to_structure_pairs
     }
     return ic_tab[topo](g)
@@ -704,9 +705,9 @@ def graph_to_structure_angles(g: graph):
     return graph_to_structures(g, graph_angles(g), topo)
 
 
-def graph_to_structure_dihedrals(g: graph) -> Sequence[structure]:
+def graph_to_structure_torsions(g: graph) -> Sequence[structure]:
     """
-    Make a structure representing each linear dihedral in a graph
+    Make a structure representing each torsion dihedral in a graph
 
     Parameters
     ----------
@@ -716,15 +717,15 @@ def graph_to_structure_dihedrals(g: graph) -> Sequence[structure]:
     Returns
     -------
     Sequence[structure]
-        A sequence of linear dihedral structures
+        A sequence of torsion dihedral structures
     """
-    topo = topology.dihedral_topology()
-    return graph_to_structures(g, graph_dihedrals(g), topo)
+    topo = topology.torsion_topology()
+    return graph_to_structures(g, graph_torsions(g), topo)
 
 
-def graph_to_structure_impropers(g: graph) -> Sequence[structure]:
+def graph_to_structure_outofplanes(g: graph) -> Sequence[structure]:
     """
-    Make a structure representing each nonlinear dihedral ("improper") in a graph
+    Make a structure representing each out-of-plane dihedral in a graph
 
     Parameters
     ----------
@@ -734,10 +735,10 @@ def graph_to_structure_impropers(g: graph) -> Sequence[structure]:
     Returns
     -------
     Sequence[structure]
-        A sequence of nonlinear dihedral structures
+        A sequence of out-of-plane dihedral structures
     """
-    topo = topology.improper_topology()
-    return graph_to_structures(g, graph_impropers(g), topo)
+    topo = topology.outofplane_topology()
+    return graph_to_structures(g, graph_outofplanes(g), topo)
 
 
 def graph_set_primitives_atom(
@@ -1075,9 +1076,9 @@ def graph_angles(g: graph) -> Sequence[Tuple[int, int, int]]:
     return tuple(sorted(list(set(angles)), key=lambda x: (x[1], x[0], x[2])))
 
 
-def graph_dihedrals(g: graph) -> Sequence[Tuple[int, int, int, int]]:
+def graph_torsions(g: graph) -> Sequence[Tuple[int, int, int, int]]:
     """
-    Return the IDs of the linear dihedrals
+    Return the IDs of the torsion dihedrals
 
     Parameters
     ----------
@@ -1087,10 +1088,10 @@ def graph_dihedrals(g: graph) -> Sequence[Tuple[int, int, int, int]]:
     Returns
     -------
     Sequence[Tuple[int, int, int, int]]
-        A sequence of 4-tuples containing the linear dihedral IDs
+        A sequence of 4-tuples containing the torsion dihedral IDs
     """
 
-    dihedrals = []
+    torsions = []
     angles = graph_angles(g)
 
     for angle_i in angles:
@@ -1102,20 +1103,20 @@ def graph_dihedrals(g: graph) -> Sequence[Tuple[int, int, int, int]]:
                 n,
                 *angle_i,
             ) 
-            if not geometry.is_dihedral(combo, g.edges):
+            if not geometry.is_torsion(combo, g.edges):
                 continue
 
-            dihedrals.append(geometry.dihedral(combo))
+            torsions.append(geometry.torsion(combo))
 
         adj = graph_connection(g, angle_i[2])
         adj = [x for x in adj if x not in angle_i]
         for n in set(adj):
             combo = (*angle_i, n) 
-            if not geometry.is_dihedral(combo, g.edges):
+            if not geometry.is_torsion(combo, g.edges):
                 continue
-            dihedrals.append(geometry.dihedral(combo))
+            torsions.append(geometry.torsion(combo))
 
-    return tuple(sorted(list(set(dihedrals)), key=lambda x: (x[1], x[2], x[0], x[3])))
+    return tuple(sorted(list(set(torsions)), key=lambda x: (x[1], x[2], x[0], x[3])))
 
 def graph_outofplanes(g: graph) -> Sequence[Tuple[int, int, int, int]]:
     """
@@ -1140,30 +1141,12 @@ def graph_outofplanes(g: graph) -> Sequence[Tuple[int, int, int, int]]:
         adj = [x for x in adj if x not in angle_i]
         for n in set(adj):
             combo = (*angle_i, n) 
-            if geometry.is_improper(combo, g.edges):
-                dihedrals.append(geometry.improper(combo))
+            if geometry.is_outofplane(combo, g.edges):
+                dihedrals.append(geometry.outofplane(combo))
 
     return tuple(
         sorted(list(set(dihedrals)), key=lambda x: (x[1], x[0], x[2], x[3]))
     )
-
-def graph_impropers(g: graph) -> Sequence[Tuple[int, int, int, int]]:
-    """
-    Return the IDs of the nonlinear "improper" dihedrals
-
-    Parameters
-    ----------
-    g : graph
-        The input the graph
-
-    Returns
-    -------
-    Sequence[Tuple[int, int, int, int]]
-        A sequence of 4-tuples containing the nonlinear "improper" dihedral IDs
-    """
-
-    return graph_outofplanes(g)
-
 
 def subgraph_connection(g: subgraph, a: int) -> Sequence[node_id]:
     """
@@ -2123,9 +2106,9 @@ def structure_angle(g: graph, select: Sequence[int]) -> structure:
     return structure_build(g, select, topology.angle_topology())
 
 
-def structure_dihedral(g: graph, select: Sequence[int]) -> structure:
+def structure_torsion(g: graph, select: Sequence[int]) -> structure:
     """
-    Build a structure of a linear "proper" dihedral from a graph
+    Build a structure of a torsion dihedral from a graph
 
     Parameters
     ----------
@@ -2137,14 +2120,14 @@ def structure_dihedral(g: graph, select: Sequence[int]) -> structure:
 
     Returns
     structure
-        A structure defining a proper dihedral
+        A structure defining a torsion dihedral
     """
-    return structure_build(g, select, topology.dihedral_topology())
+    return structure_build(g, select, topology.torsion_topology())
 
 
-def structure_improper(g: graph, select: Sequence[int]) -> structure:
+def structure_outofplane(g: graph, select: Sequence[int]) -> structure:
     """
-    Build a structure of a nonlinear "improper" dihedral from a graph
+    Build a structure of an out-of-plane dihedral from a graph
 
     Parameters
     ----------
@@ -2156,10 +2139,10 @@ def structure_improper(g: graph, select: Sequence[int]) -> structure:
 
     Returns
     structure
-        A structure defining an improper dihedral
+        A structure defining an out-of-plane dihedral
     """
 
-    return structure_build(g, select, topology.improper_topology())
+    return structure_build(g, select, topology.outofplane_topology())
 
 
 def structure_hash(g: structure) -> int:
