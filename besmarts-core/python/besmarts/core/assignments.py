@@ -130,7 +130,7 @@ class smarts_hierarchy_assignment:
     ) -> smiles_assignment_group:
         raise NotImplementedError()
 
-    def assign_dihedrals(
+    def assign_torsions(
         self,
         shier: hierarchies.smarts_hierarchy,
         gcd: codecs.graph_codec,
@@ -138,7 +138,7 @@ class smarts_hierarchy_assignment:
     ) -> smiles_assignment_group:
         raise NotImplementedError()
 
-    def assign_impropers(
+    def assign_outofplanes(
         self,
         shier: hierarchies.smarts_hierarchy,
         gcd: codecs.graph_codec,
@@ -326,12 +326,12 @@ def smiles_assignment_group_angles(assignments: List[smiles_assignment]):
     return smiles_assignment_group(assignments, topology.angle_topology())
 
 
-def smiles_assignment_group_dihedrals(assignments: List[smiles_assignment]):
-    return smiles_assignment_group(assignments, topology.dihedral_topology())
+def smiles_assignment_group_torsions(assignments: List[smiles_assignment]):
+    return smiles_assignment_group(assignments, topology.torsion_topology())
 
 
-def smiles_assignment_group_impropers(assignments: List[smiles_assignment]):
-    return smiles_assignment_group(assignments, topology.improper_topology())
+def smiles_assignment_group_outofplanes(assignments: List[smiles_assignment]):
+    return smiles_assignment_group(assignments, topology.outofplane_topology())
 
 
 def structure_assignment_group_copy(stuag: structure_assignment_group):

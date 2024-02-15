@@ -1736,7 +1736,7 @@ def structure_branch(template, m: dict, n, d, visited_groups=None) -> Generator:
     if visited_groups is None:
         visited_groups = set()
 
-    # nodes = set([x for x in structure_up_to_depth(template, d).nodes if x not in m.values()])
+    nodes = set([x for x in structure_up_to_depth(template, d).nodes if x not in m.values()])
     nodes = list((x for x in nodes if structure_node_depth(template, x) <= d))
 
     if not nodes:

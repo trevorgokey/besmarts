@@ -20,8 +20,10 @@ topology_tab = {
     "ATOM": topology.atom_topology(),
     "BOND": topology.bond_topology(),
     "ANGLE": topology.angle_topology(),
-    "PROPER": topology.dihedral_topology(),
-    "IMPROPER": topology.improper_topology(),
+    # "PROPER": topology.torsion_topology(),
+    # "IMPROPER": topology.outofplane_topology(),
+    "TORSION": topology.torsion_topology(),
+    "OUTOFPLANE": topology.outofplane_topology(),
 }
 
 
