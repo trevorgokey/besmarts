@@ -267,6 +267,7 @@ def make_rdmol(pcp, smi):
 
     return mol
 
+
 def assign(
     hidx: hierarchies.smarts_hierarchy,
     root: trees.tree_node,

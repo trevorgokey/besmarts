@@ -18,6 +18,7 @@ from besmarts.core import arrays
 from besmarts.core import chem
 from besmarts.core import topology
 from besmarts.core import geometry
+from besmarts.core import configs
 
 from besmarts.core.primitives import primitive_key
 
@@ -1765,6 +1766,94 @@ def structure_branch(template, m: dict, n, d, visited_groups=None) -> Generator:
                 template, m, n - len(node_set), d, visited_groups=visited_groups
             )
 
+def structure_extend(
+    config: configs.smarts_extender_config, atoms: Sequence[structure]
+) -> bool:
+    """
+    Extend the selection of each structure to the specified depth. This
+    potentially modifies the selection in each structure.
+
+    Parameters
+    ----------
+    config : smarts_extender_config
+        The configuration for extending the structures
+
+    atoms : List[graphs.structure]
+        The structures to extend.
+
+    Returns
+    -------
+    bool
+        Whether any of the structure selections were modified.
+    """
+
+    modified = True
+    i = -1
+
+    include_hydrogen = config.include_hydrogen
+    depth_min = config.depth_min
+    depth_max = config.depth_max
+    success = False
+
+    while modified:
+        i += 1
+        modified = False
+
+        groups = [list(range(len(atoms)))]
+
+        for group in groups:
+            for atom_env in (atoms[j] for j in group):
+                primaries = [
+                    atom_env.select[n] for n in atom_env.topology.primary
+                ]
+
+                adj = graph_connections(atom_env)
+
+                if not adj:
+                    continue
+
+                neighbors = set(
+                    x for atom in atom_env.select for x in adj[atom]
+                )
+                neighbors.difference_update(atom_env.select)
+
+                if not include_hydrogen:
+                    neighbors = set(
+                        x
+                        for x in neighbors
+                        if not (
+                            atom_env.nodes[x][primitive_key.ELEMENT].bits() == 1
+                            and atom_env.nodes[x][primitive_key.ELEMENT][1]
+                        )
+                    )
+
+                lengths = {
+                    nbr: min(
+                        (
+                            graph_shortest_path_length(
+                                atom_env, origin, nbr, adj
+                            )
+                            for origin in primaries
+                        )
+                    )
+                    for nbr in neighbors
+                }
+                # print("lengths\n", lengths)
+                extension = []
+                for nbr, depth in lengths.items():
+                    below = depth <= depth_min
+                    above = depth_max is not None and depth > depth_max
+                    if (below or not above) and nbr not in atom_env.select:
+                        if nbr not in extension:
+                            extension.append(nbr)
+
+                if extension:
+                    atom_env.select = (*atom_env.select, *extension)
+                    atom_env.cache.clear()
+                    modified = True
+                    success = True
+
+    return success
 
 def structure_frontier_nodes(g, nodes, adj=None) -> Dict[int, Sequence[int]]:
     """

@@ -300,6 +300,7 @@ def structure_hierarchy_merge(
     nodes = list(tree_iterators.tree_iter_dive(hidx.index, roots))
     ordering = {x.index: i for i, x in enumerate(nodes)}
     # print("Removing nonlocal occlusions")
+
     for ai, a in enumerate(nodes, 1):
         break
         print(
@@ -308,6 +309,7 @@ def structure_hierarchy_merge(
             a.index,
             a.name,
         )
+
         if a.index in removed:
             continue
         ga = hidx.subgraphs[a.index]
@@ -315,6 +317,7 @@ def structure_hierarchy_merge(
             continue
         ga = graphs.subgraph_to_structure(ga, topo)
         work = {}
+
         with multiprocessing.Pool(configs.processors) as pool:
             rootsB = [
                 hidx.index.nodes[i]

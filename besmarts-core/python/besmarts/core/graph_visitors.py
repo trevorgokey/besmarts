@@ -681,7 +681,6 @@ def enter_graph(
 
     visitor.ring_edges = ring_edges
 
-
     result = visit_graph(
         visitor,
         g,
@@ -690,6 +689,5 @@ def enter_graph(
         connected,
         tag=tag,
     )
-
 
     return result

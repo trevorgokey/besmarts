@@ -20,131 +20,10 @@ from besmarts.core import compute
 from besmarts.core import arrays
 from besmarts.core.logs import dprint, timestamp
 
+# TODO: remove this shim
+from besmarts.core.graphs import structure_extend as mapper_smarts_extend
+
 mapping = Dict[int, int]
-
-# TODO: transfer this to use workspaces
-class structure_mapper:
-    def __init__(
-        self,
-        domain: graphs.structure,
-        mode="high",
-        strict=False,
-        equality=False,
-        add_nodes=0,
-        fill_new_nodes=0,
-    ):
-        self.reference = graphs.structure_copy(domain)
-        self.codomain_map = {}
-
-        self.domain = graphs.structure_copy(domain)
-        self.codomain = {}
-        self.strict = strict
-        self.equality = equality
-        self.mode = mode
-        self.add_nodes = add_nodes
-        self.fill_new_nodes = fill_new_nodes
-
-    def reset(self):
-        self.domain = graphs.structure_copy(self.reference)
-        self.codomain_map.clear()
-        self.codomain.clear()
-
-    def refresh(self):
-        old = {k: v for k, v in self.codomain_map.items()}
-        self.codomain.clear()
-        self.codomain_map.clear()
-        for oldG in old:
-            self.add(oldG)
-
-    def remove(self, G: graphs.structure):
-        if G in self.codomain_map:
-            g = self.codomain_map.pop(G)
-            self.codomain.pop(g)
-            self.domain = graphs.structure_copy(self.reference)
-            self.refresh()
-
-    def add(self, G: graphs.structure, skip=None):
-        g = self.codomain_map.get(G)
-        if g is not None:
-            return
-
-        T = map_to(
-            self.domain,
-            G,
-            strict=self.strict,
-            equality=self.equality,
-            skip=skip,
-            mode=self.mode,
-            add_nodes=self.add_nodes,
-            fill=self.fill_new_nodes,
-        )
-
-        if T.map is None:
-            self.codomain[G] = None
-            self.codomain_map[G] = G
-            return
-
-        d, g, m = T.G, T.H, T.map
-
-        # d, g, m = mapper_compose_graphs(
-        #     self.domain,
-        #     G,
-        #     M,
-        #     add_nodes=self.add_nodes,
-        #     fill_new_nodes=self.fill_new_nodes,
-        # )
-
-        # print("added", m, G, g)
-
-        i = 0
-        # print("start")
-        while hash(self.domain) != hash(d):
-            i += 1
-            # print(i)
-            self.domain = d
-            old = {k: v for k, v in self.codomain_map.items()}
-            for j, (oldG, oldg) in enumerate(old.items()):
-                # print(i,j)
-
-                # print("Iter", i,j)
-
-                _skip = self.codomain[oldg]
-                if False or len(_skip) != len(self.domain.nodes):
-                    # print("Iter map", i,j, len(_skip), len(self.domain.nodes))
-                    _skip = self.codomain.pop(oldg)
-                    # if _skip:
-                    #     _skip = {k:v for k,v in _skip.items() if k in self.domain.nodes and v in oldg.nodes}
-                    if oldG in self.codomain_map:
-                        self.codomain_map.pop(oldG)
-                    _T = map_to(
-                        self.domain,
-                        oldg,
-                        strict=self.strict,
-                        equality=self.equality,
-                        skip=_skip,
-                        mode=self.mode,
-                        add_nodes=self.add_nodes,
-                        fill=self.fill_new_nodes,
-                    )
-
-                    # print("Iter compose", i,j)
-                    # print("Iter compose", _m)
-                    d, _g, _m = _T.G, _T.H, _T.map
-                    # d, _g, _m = mapper_compose_graphs(
-                    #     self.domain,
-                    #     oldg,
-                    #     _m,
-                    #     add_nodes=self.add_nodes,
-                    #     fill_new_nodes=self.fill_new_nodes,
-                    # )
-                    # print("Iter compose 2", _m)
-                    self.codomain[_g] = _m
-                    self.codomain_map[oldG] = _g
-
-        self.domain = d
-        self.codomain[g] = m
-        self.codomain_map[G] = g
-
 
 class mapped_type:
     """
@@ -169,7 +48,6 @@ class union_ctx:
 class align_score_ctx:
     ref = None
     to_check = None
-
 
 # TODO convert to workspaces?
 class map_vertices_ctx:
@@ -200,7 +78,6 @@ def mapper_invert(T: mapped_type) -> mapped_type:
 
     return mapped_type(T.H, T.G, m)
 
-
 def mapper_compose(T1: mapped_type, T2: mapped_type) -> mapped_type:
     """
     Transform the map from G -> H to G <- H
@@ -220,6 +97,78 @@ def mapper_compose(T1: mapped_type, T2: mapped_type) -> mapped_type:
     M = {i: T2.map.get(j) for i, j in T1.map.items() if j is not None}
     return mapped_type(T1.G, T2.H, M)
 
+def map_vertices_parallel(permA, permB, a, b):
+    cg = map_vertices_ctx.cg
+    o = map_vertices_ctx.o
+
+    H = map_vertices_ctx.H
+
+    strict = map_vertices_ctx.strict
+    equality = map_vertices_ctx.equality
+
+    mapping = {}
+    S = 0
+
+    valid = True
+    for i, j in itertools.zip_longest(permA, permB):
+        # this makes sure that if A has no node, we need to ensure
+        # that B is ~[*] since that is the only way a None node
+        # will be "in" B
+        if i is None and j is not None and strict and not equality:
+            if not o.nodes[j].all():
+                valid = False
+                S = -1
+                break
+            for nbr_j in graphs.subgraph_connection(o, j):
+                edge = o.edges[tuple(sorted((j, nbr_j)))]
+                if not edge.all():
+                    valid = False
+                    S = -1
+                    break
+            if not valid:
+                valid = False
+                S = -1
+                break
+
+        if i is None or j is None:
+            continue
+
+        edge_a = cg.edges.get(tuple(sorted((a, i))), False)
+        edge_b = o.edges.get(tuple(sorted((b, j))), False)
+        if strict:
+            if edge_a is False or edge_b is False:
+                valid = False
+                S = -1
+                break
+            if equality:
+                if not (cg.nodes[i] == o.nodes[j] and edge_a == edge_b):
+                    # score_cache[(permA, permB)] = (-1, None)
+                    valid = False
+                    S = -1
+                    break
+            else:
+                if not (cg.nodes[i] in o.nodes[j] and edge_a in edge_b):
+                    # score_cache[(permA, permB)] = (-1, None)
+                    valid = False
+                    S = -1
+                    break
+
+        if edge_a is False or edge_b is False:
+            edge_score = 0
+        else:
+            edge_score = (edge_a + edge_b).bits(maxbits=True)
+
+        mapping[i] = j
+        # add 1 so that prefer when we have two node mapping with 0 overlap
+        # over the case where there was only 1 node
+        # if (i,j) not in H:
+        #     scores.update(pairwise_overlap(cg, sucA, o, sucB))
+        if graphs.structure_node_depth(cg, i) == graphs.structure_node_depth(
+            o, j
+        ):
+            S += H[(i, j)] + edge_score + 1
+    dprint("mapped vertices:", S, mapping)
+    return permA, permB, S, mapping
 
 def mapper(
     G: graphs.structure,
@@ -411,27 +360,6 @@ def is_isomorphic(G: graphs.structure, H: graphs.structure) -> bool:
         return False
     else:
         return True
-
-
-def align_score(G: graphs.structure, H: graphs.structure):
-    """
-    Return the number of overlapping bits after mapping two structures
-
-    Parameters
-    ----------
-    G : graphs.structure
-        The first input structure
-    H : graphs.structure
-        The second input structure
-
-    Returns:
-    int
-        The number of overlapping bits
-    """
-
-    T = map_to(G, H, add_nodes=0, fill=False)
-    g = intersection(T.G, T.H, map=T.map)
-    return graphs.structure_bits(g)
 
 
 def map_to(
@@ -1418,96 +1346,6 @@ def pairwise_overlap(cg, A, o, B):
     return H
 
 
-def mapper_smarts_extend(
-    config: configs.smarts_extender_config, atoms: Sequence[graphs.structure]
-) -> bool:
-    """
-    Extend the selection of each structure to the maximum depth. This
-    potentially modifies the selection in each structure.
-
-    Parameters
-    ----------
-    config : smarts_extender_config
-        The configuration for extending the structures
-
-    atoms : List[graphs.structure]
-        The structures to extend.
-
-    Returns
-    -------
-    bool
-        Whether any of the structure selections were modified.
-    """
-
-    modified = True
-    i = -1
-
-    include_hydrogen = config.include_hydrogen
-    depth_min = config.depth_min
-    depth_max = config.depth_max
-    success = False
-
-    while modified:
-        i += 1
-        modified = False
-
-        groups = [list(range(len(atoms)))]
-
-        for group in groups:
-            for atom_env in (atoms[j] for j in group):
-                primaries = [
-                    atom_env.select[n] for n in atom_env.topology.primary
-                ]
-
-                adj = graphs.graph_connections(atom_env)
-
-                if not adj:
-                    continue
-
-                neighbors = set(
-                    x for atom in atom_env.select for x in adj[atom]
-                )
-                neighbors.difference_update(atom_env.select)
-
-                if not include_hydrogen:
-                    neighbors = set(
-                        x
-                        for x in neighbors
-                        if not (
-                            atom_env.nodes[x][primitive_key.ELEMENT].bits() == 1
-                            and atom_env.nodes[x][primitive_key.ELEMENT][1]
-                        )
-                    )
-
-                lengths = {
-                    nbr: min(
-                        (
-                            graphs.graph_shortest_path_length(
-                                atom_env, origin, nbr, adj
-                            )
-                            for origin in primaries
-                        )
-                    )
-                    for nbr in neighbors
-                }
-                # print("lengths\n", lengths)
-                extension = []
-                for nbr, depth in lengths.items():
-                    below = depth <= depth_min
-                    above = depth_max is not None and depth > depth_max
-                    if (below or not above) and nbr not in atom_env.select:
-                        if nbr not in extension:
-                            extension.append(nbr)
-
-                if extension:
-                    atom_env.select = (*atom_env.select, *extension)
-                    atom_env.cache.clear()
-                    modified = True
-                    success = True
-
-    return success
-
-
 def group_by_isomorphism(
     structures: List[graphs.structure], mapping_cache=None
 ):
@@ -1560,22 +1398,18 @@ def group_by_isomorphism(
                 keys.remove(m)
     return new_groups
 
-
-def intersection(
-    cg: structure,
-    o: structure,
-    config: configs.mapper_config = None,
-    map=None,
-    pool=None,
-):
+def mapper_compose_graphs(
+    cg, o, map, add_nodes=False, fill_new_nodes=False
+) -> Tuple[graphs.structure, graphs.structure, dict]:
     """
-    Calculate the intersection of two structures
+    Perform a bitwise operation across the nodes and edges of pair of
+    structures, adding or subtracting nodes as necessary.
 
     Parameters
     ----------
-    cg : structure
+    cg : graphs.structure
         The input structure that defines the domain of the map
-    o : structure
+    o : graphs.structure
         The input second input structures
     config: configs.mapper_config
         The configuration for mapping new nodes
@@ -1587,111 +1421,611 @@ def intersection(
     structure
         The result of the operation
     """
-    if config is None:
-        config = configs.mapper_config(True, True, "high")
 
-    return dispatch_boolean_op(
-        cg, o, chem.bechem_iand, config, map=map, pool=pool
+    g: graphs.structure = graphs.structure_remove_unselected(cg)
+    o = graphs.structure_remove_unselected(o)
+
+    M = map
+
+    for n in g.select:
+        m = M.get(n)
+        if m is not None:
+            pass
+        elif add_nodes:
+            primitive = g.nodes[n]
+            empty = primitive.copy()
+            empty.clear()
+            if fill_new_nodes:
+                empty.fill()
+
+            oidx = max(o.nodes) + 1
+            o.nodes[oidx] = empty
+            M[n] = oidx
+            o.select = tuple((*o.select, oidx))
+            o.cache.clear()
+
+        elif n not in (g.select[i] for i in g.topology.primary):
+            g = graphs.structure_remove_nodes(g, [n])
+            if n in M:
+                M.pop(n)
+
+    for edge in g.edges:
+        i, j = edge
+        oi, oj = M[i], M[j]
+        if (i not in g.select) or (j not in g.select):
+            continue
+        oedge = tuple(sorted((oi, oj)))
+        if oedge not in o.edges:
+            primitive = cg.edges[edge]
+            empty = primitive.copy()
+            empty.clear()
+            if fill_new_nodes:
+                empty.fill()
+            o.edges[oedge] = empty
+
+    Minv = {v: k for k, v in M.items() if v is not None}
+
+    for n in o.select:
+        m = Minv.get(n)
+        if m is not None:
+            pass
+        elif add_nodes:
+            primitive = o.nodes[n]
+            empty = primitive.copy()
+            empty.clear()
+            if fill_new_nodes:
+                empty.fill()
+
+            idx = max(g.nodes) + 1
+            g.nodes[idx] = empty
+            M[idx] = n
+            Minv[n] = idx
+            g.select = tuple((*g.select, idx))
+            g.cache.clear()
+        elif n not in (o.select[i] for i in o.topology.primary):
+            o = graphs.structure_remove_nodes(o, [n])
+
+    for oedge in o.edges:
+        oi, oj = oedge
+        if (oi not in o.select) or (oj not in o.select):
+            continue
+        i, j = Minv[oi], Minv[oj]
+        edge = tuple(sorted((i, j)))
+        if edge not in g.edges:
+            primitive = o.edges[oedge]
+            empty = primitive.copy()
+            empty.clear()
+            if fill_new_nodes:
+                empty.fill()
+            g.edges[edge] = empty
+
+    return g, o, M
+
+
+class filter_contains_ctx:
+    bes = None
+    to_check = None
+
+
+def filter_contains_parallel(indices):
+    bes = filter_contains_ctx.bes
+    to_check = filter_contains_ctx.to_check
+    work_list = tuple(
+        (i for i in indices if not map_to(to_check[i], bes, strict=True).map)
     )
+    return work_list
 
 
-def intersection_conditional(
-    cg: structure,
-    o: structure,
-    config: configs.mapper_config = None,
-    map=None,
-    pool=None,
-):
+def filter_contains(bes: graphs.graph, to_check, executor=None):
+    N = len(to_check)
+    procs = configs.processors
+    chunksize = N // procs + bool(N % procs)
+    indices = list(range(N))
+    chunks = arrays.batched(indices, chunksize)
+
+    filter_contains_ctx.bes = bes
+    filter_contains_ctx.to_check = to_check
+
+    masks = [filter_contains_parallel(chunk) for chunk in chunks]
+    to_check = [to_check[i] for y in masks for i in y]
+
+    filter_contains_ctx.bes = None
+    filter_contains_ctx.to_check = None
+
+    return to_check
+
+
+def align_score(G: graphs.structure, H: graphs.structure):
     """
-    Calculate the intersection of two structures
+    Return the number of overlapping bits after mapping two structures
 
     Parameters
     ----------
-    cg : structure
-        The input structure that defines the domain of the map
-    o : structure
-        The input second input structures
-    config: configs.mapper_config
-        The configuration for mapping new nodes
-    map : Dict[node_id, node_id]
-        A precalculated map to use
+    G : graphs.structure
+        The first input structure
+    H : graphs.structure
+        The second input structure
 
-    Returns
-    -------
-    structure
-        The result of the operation
+    Returns:
+    int
+        The number of overlapping bits
     """
-    if config is None:
-        config = configs.mapper_config(True, True, "high")
 
-    return dispatch_boolean_op(
-        cg, o, chem.bechem_and_conditional, config, map=map, pool=pool
-    )
+    T = map_to(G, H, add_nodes=0, fill=False)
+    g = intersection(T.G, T.H, map=T.map)
+    return graphs.structure_bits(g)
+
+def align_score_parallel(indices):
+    ref = align_score_ctx.ref
+    to_check = align_score_ctx.to_check
+    return tuple(tuple((i, align_score(ref, to_check[i]))) for i in indices)
 
 
-def difference(
-    cg: graphs.subgraph,
-    o: graphs.subgraph,
+def ordered_align_score(i, ref, o):
+    return i, align_score(ref, o)
+
+
+def ordered_contains(i, ref, o):
+    return i, o in ref
+
+
+def intersection_list(
+    A: Sequence[graphs.structure],
     config: configs.mapper_config = None,
-    map=None,
-    pool=None,
-):
-    """
-    Calculate the difference of two structures
-
-    Parameters
-    ----------
-    cg : structure
-        The input structure that defines the domain of the map
-    o : structure
-        The input second input structures
-    config: configs.mapper_config
-        The configuration for mapping new nodes
-    map : Dict[node_id, node_id]
-        A precalculated map to use
-
-    Returns
-    -------
-    structure
-        The result of the operation
-    """
+    max_depth=None,
+    reference=None,
+    sort=True,
+    executor=None,
+    verbose=False,
+) -> graphs.structure:
     if config is None:
-        config = configs.mapper_config(True, True, "high")
+        config = configs.mapper_config(False, False, "high")
 
-    return dispatch_boolean_op(
-        cg, o, chem.bechem_subtract, config, map=map, pool=pool
+    add_nodes = config.add_nodes
+    if add_nodes is False:
+        max_nodes = min((graphs.structure_max_depth(a) for a in A))
+        if reference:
+            max_nodes = min(max_nodes, graphs.structure_max_depth(reference))
+
+    ref = A[0]
+    ref = graphs.structure_copy(A[0])
+
+    if max_depth is not None and max_depth >= 0:
+        ref = graphs.structure_up_to_depth(ref, max_depth)
+
+    to_check = A[1:]
+    total = len(to_check)
+
+    if reference is not None:
+        reference = graphs.structure_copy(reference)
+
+    scores = []
+    i = 0
+
+    _executor = executor
+
+    procs = configs.processors
+    while len(to_check) > 0:
+        if verbose:
+            print(
+                f"Intersection set {total-len(to_check):5d}/{total} A={len(ref.select)} Ad={graphs.structure_max_depth(ref)}{' ':15s}",
+                end="\r",
+            )
+        if not scores:
+            if sort:
+                align_score_ctx.ref = ref
+                align_score_ctx.to_check = to_check
+                N = len(to_check)
+                ck = min(10, N // procs + bool(N % procs))
+                ck = max(ck, 1)
+                chunks = arrays.batched(list(range(N)), ck)
+                scores = []
+                for chunk in chunks:
+                    work = align_score_parallel(chunk)
+                    scores.extend(work)
+                align_score_ctx.ref = None
+                align_score_ctx.to_check = None
+            else:
+                scores = [(0, 0)] * len(to_check)
+
+        s = arrays.argmax([x[1] for x in sorted(scores, key=lambda y: y[0])])
+
+        M = None
+        new_g = to_check[s]
+        if max_depth is not None and max_depth >= 0:
+            ref = graphs.structure_up_to_depth(ref, max_depth)
+            new_g = graphs.structure_up_to_depth(new_g, max_depth)
+        else:
+            new_g = graphs.structure_copy(new_g)
+
+        between_map = None
+        if reference is not None:
+            if verbose:
+                print(
+                    f"Intersection ref {total-len(to_check):5d}/{total} A={len(ref.nodes)} Ad={graphs.structure_max_depth(ref)} B={len(new_g.nodes)} Bd={graphs.structure_max_depth(new_g)}{' ':15s}",
+                    end="\r",
+                )
+
+            T1 = map_to(ref, reference, strict=True, add_nodes=2, fill=True)
+            _, _, M1 = T1.G, T1.H, T1.map
+
+            T2 = map_to(new_g, reference, strict=True, add_nodes=2, fill=True)
+            _, _, M2 = T2.G, T2.H, T2.map
+
+            if M1 is None:
+                print(ref.select, ref.topology.primary)
+                for n in ref.select:
+                    print(f"{n:3d}", ref.nodes[n])
+                print(reference.nodes)
+                print(reference.select, reference.topology.primary)
+                for n in reference.select:
+                    print(f"{n:3d}", ref.nodes[n])
+                raise Exception()
+            if M2 is None:
+                print(new_g.nodes)
+                print(reference.nodes)
+                raise Exception()
+
+            M2 = {v: k for k, v in M2.items() if v is not None}
+            M = {k: M2.get(v) for k, v in M1.items() if v is not None}
+            M = {k: v for k, v in M.items() if v is not None}
+
+            if verbose:
+                print(
+                    f"Intersection map {total-len(to_check):5d}/{total} A={len(ref.nodes)} B={len(new_g.nodes)}{' ':15s}",
+                    end="\r",
+                )
+            T3 = map_to(ref, new_g, skip=M, add_nodes=1, fill=False, pool=True)
+            ref, new_g, between_map = T3.G, T3.H, T3.map
+
+        if verbose:
+            print(
+                f"Intersection exe {total-len(to_check):5d}/{total} A={len(ref.select)} Ad={graphs.structure_max_depth(ref)} B={len(new_g.select)} Bd={graphs.structure_max_depth(new_g)}",
+                end="\r",
+            )
+
+        result = intersection(ref, new_g, config, map=between_map)
+
+        scores.pop(s)
+        to_check.pop(s)
+
+        if sort and result != ref:
+            # if the union did have an effect, force a rescore
+            scores = []
+
+        i += 1
+
+        # this seems to slow things down? evaluate every once in awhile
+        if i % 20 == 0:
+            to_check = filter_contains(ref, to_check, executor=None)
+            scores = []
+
+        ref = result
+
+    if verbose:
+        print()
+    if _executor and executor is None:
+        _executor.shutdown()
+
+    return ref
+
+
+def union_list(
+    A: Sequence[graphs.structure],
+    config: configs.mapper_config = None,
+    max_depth=None,
+    reference=None,
+    sort=True,
+    executor=None,
+    verbose=False,
+) -> graphs.structure:
+    if config is None:
+        config = configs.mapper_config(False, False, "high")
+
+    
+    add_nodes = config.add_nodes
+    if add_nodes is False:
+        max_nodes = min((graphs.structure_max_depth(a) for a in A))
+        if reference:
+            max_nodes = min(max_nodes, graphs.structure_max_depth(reference))
+
+    # ref = A[0]
+    ref = graphs.structure_copy(A[0])
+
+    if max_depth is not None and max_depth >= 0:
+        ref = graphs.structure_up_to_depth(ref, max_depth)
+
+    to_check = A[1:]
+    total = len(to_check)
+
+    if reference is not None:
+        reference = graphs.structure_copy(reference)
+
+    scores = []
+    i = 0
+
+    _executor = executor
+
+    procs = configs.processors
+    while len(to_check) > 0:
+        if verbose:
+            print(
+                f"Union set {total-len(to_check):5d}/{total} A={len(ref.select)} Ad={graphs.structure_max_depth(ref)}{' ':15s}",
+                end="\r",
+            )
+        if not scores:
+            if sort:
+                align_score_ctx.ref = ref
+                align_score_ctx.to_check = to_check
+                N = len(to_check)
+                ck = min(10, N // procs + bool(N % procs))
+                ck = max(ck, 1)
+                chunks = arrays.batched(list(range(N)), ck)
+                scores = []
+                for chunk in chunks:
+                    work = align_score_parallel(chunk)
+                    scores.extend(work)
+                align_score_ctx.ref = None
+                align_score_ctx.to_check = None
+            else:
+                scores = [(0, 0)] * len(to_check)
+
+        s = arrays.argmax([x[1] for x in sorted(scores, key=lambda y: y[0])])
+
+        M = None
+        new_g = to_check[s]
+        if max_depth is not None and max_depth >= 0:
+            ref = graphs.structure_up_to_depth(ref, max_depth)
+            new_g = graphs.structure_up_to_depth(new_g, max_depth)
+        else:
+            new_g = graphs.structure_copy(new_g)
+
+        between_map = None
+        if reference is not None:
+            if verbose:
+                print(
+                    f"Union ref {total-len(to_check):5d}/{total} A={len(ref.nodes)} Ad={graphs.structure_max_depth(ref)} B={len(new_g.nodes)} Bd={graphs.structure_max_depth(new_g)}{' ':15s}",
+                    end="\r",
+                )
+
+            T1 = map_to(ref, reference, strict=True, add_nodes=2, fill=True)
+            _, _, M1 = T1.G, T1.H, T1.map
+
+            T2 = map_to(new_g, reference, strict=True, add_nodes=2, fill=True)
+            _, _, M2 = T2.G, T2.H, T2.map
+
+            if M1 is None:
+                print(ref.select, ref.topology.primary)
+                for n in ref.select:
+                    print(f"{n:3d}", ref.nodes[n])
+                print(reference.nodes)
+                print(reference.select, reference.topology.primary)
+                for n in reference.select:
+                    print(f"{n:3d}", ref.nodes[n])
+                raise Exception()
+            if M2 is None:
+                print(new_g.nodes)
+                print(reference.nodes)
+                raise Exception()
+
+            M2 = {v: k for k, v in M2.items() if v is not None}
+            M = {k: M2.get(v) for k, v in M1.items() if v is not None}
+            M = {k: v for k, v in M.items() if v is not None}
+
+            if verbose:
+                print(
+                    f"Union map {total-len(to_check):5d}/{total} A={len(ref.nodes)} B={len(new_g.nodes)}{' ':15s}",
+                    end="\r",
+                )
+            T3 = map_to(ref, new_g, skip=M, add_nodes=1, fill=False, pool=True)
+            ref, new_g, between_map = T3.G, T3.H, T3.map
+
+        if verbose:
+            print(
+                f"Union exe {total-len(to_check):5d}/{total} A={len(ref.select)} Ad={graphs.structure_max_depth(ref)} B={len(new_g.select)} Bd={graphs.structure_max_depth(new_g)}",
+                end="\r",
+            )
+
+        result = union(ref, new_g, config, map=between_map)
+
+        scores.pop(s)
+        to_check.pop(s)
+
+        if sort and result != ref:
+            # if the union did have an effect, force a rescore
+            scores = []
+
+        i += 1
+
+        # this seems to slow things down? evaluate every once in awhile
+        if i % 20 == 0:
+            to_check = filter_contains(ref, to_check, executor=None)
+            scores = []
+
+        ref = result
+
+    if verbose:
+        print()
+    if _executor and executor is None:
+        _executor.shutdown()
+
+    return graphs.structure_copy(ref)
+
+def intersection_list_dispatch(
+    indices,
+) -> graphs.structure:
+    A = [union_ctx.A[i] for i in indices]
+    reference = union_ctx.reference
+    config = union_ctx.config
+    max_depth = union_ctx.max_depth
+
+    return intersection_list(
+        A, config, max_depth, reference, sort=True, executor=None, verbose=False
     )
 
 
-def mapper_union(T: structure_mapper):
-    result = graphs.structure_clear(T.domain)
+def union_list_dispatch(
+    indices: List[int],
+) -> graphs.structure:
+    topo = union_ctx.topology
 
-    for codomain, M in T.codomain.items():
-        result = union(result, codomain, None, map=M)
-    return result
+    reference = union_ctx.reference
+    config = union_ctx.config
+    max_depth = union_ctx.max_depth
 
+    if type(union_ctx.A) is db.db_dict:
+        A = union_ctx.A.read_structure_list(indices)
+    else:
+        icd: codecs.intvec_codec = union_ctx.icd
+        if union_ctx.result is None:
+            G = union_ctx.A[0]
+            sel = union_ctx.A[1]
+            A = [graphs.graph_to_structure(icd.graph_decode(G[sel[i][0]]), sel[i][1], topo) for i in indices]
+            if max_depth is not None and max_depth > 0:
+                # print(f"EXTENDING to {max_depth}")
+                # for i, x in enumerate(A):
+                #     print(i, x.select)
+                mapper_smarts_extend(configs.smarts_extender_config(max_depth, max_depth, True), A)
+                # for i, x in enumerate(A):
+                #     print(i, x.select)
+        else:
+            A = [icd.structure_decode(union_ctx.result[i]) for i in indices]
+    
 
-def mapper_intersection_conditional(T: structure_mapper):
-    result = graphs.structure_clear(T.domain)
-
-    for codomain, M in T.codomain.items():
-        result = intersection_conditional(result, codomain, None, map=M)
-    return result
-
-
-def mapper_intersection(T: structure_mapper):
-    result = graphs.structure_clear(T.domain)
-
-    reference = T.domain
-    T.add_nodes
-    config = configs.mapper_config(T.add_nodes, T.fill_new_nodes, "low")
-
-    return intersection_list_parallel(
-        list(T.codomain_map.values()), config, reference=reference
+    
+    Q = union_list(
+        A, config, max_depth, reference, sort=True, executor=None, verbose=False
     )
-    # for codomain, M in T.codomain.items():
-    #     result = intersection(result, codomain, None, map=M)
-    # return result
+    A = None
+
+    return icd.structure_encode(Q)
+
+
+def intersection_list_parallel(
+    A: Sequence[graphs.structure],
+    config: configs.mapper_config = None,
+    max_depth=None,
+    reference=None,
+    sort=True,
+    executor=None,
+) -> graphs.structure:
+    procs = configs.processors
+
+    indices = list(range(len(A)))
+    procs = min(os.cpu_count(), len(indices))
+    procs = min(procs, configs.processors)
+
+    if len(indices) == 1:
+        return A[0]
+
+    union_ctx.A = A
+    union_ctx.reference = reference
+    union_ctx.config = config
+    union_ctx.max_depth = max_depth
+
+    work = []
+    while len(indices) > 1:
+        with multiprocessing.pool.Pool(processes=procs) as pool:
+            chunked = arrays.batched(indices, max(1, len(indices) // procs))
+            work = [
+                pool.apply_async(intersection_list_dispatch, (chunk,))
+                for chunk in chunked
+            ]
+            work = [unit.get() for unit in work]
+        indices = list(range(len(work)))
+        union_ctx.A = work
+        if len(indices) // procs < 2:
+            procs = max(1, procs // 2)
+    # print()
+
+    union_ctx.A = None
+    union_ctx.reference = None
+    union_ctx.config = None
+    union_ctx.max_depth = None
+
+    return work[0]
+
+def union_list_parallel(
+    G: Sequence[graphs.graph],
+    selections,
+    topo,
+    config: configs.mapper_config = None,
+    max_depth=None,
+    reference=None,
+    sort=True,
+    executor=None,
+    icd = None,
+) -> graphs.structure:
+    procs = configs.processors
+
+
+    if len(selections) == 1:
+        # return graphs.structure_copy(A[0])
+        i = selections[0][0][0]
+        sel = selections[0][1]
+        g = graphs.graph_to_structure(G[i], sel, topo)
+        return g
+
+    # icd = None
+
+    # if icd:
+    #     print(f"{datetime.datetime.now()} Writing structures to disk...")
+    #     adb = db.db_dict(icd, "A.db")
+    #     adb.write_structure({i:a for i, a in enumerate(A)})
+    #     union_ctx.A = adb
+    # else:
+    union_ctx.A = G, selections
+    union_ctx.icd = icd
+
+    if reference is None:
+        reference = graphs.graph_to_structure(icd.graph_decode(G[selections[0][0]]), selections[0][1], topo)
+        # union_ctx.reference = graphs.graph_to_structure(icd.graph_decode(G[selections[0]]))
+    union_ctx.reference = reference
+    union_ctx.result = None
+    union_ctx.topology = topo
+    union_ctx.config = config
+    union_ctx.max_depth = max_depth
+
+    indices = list(range(len(selections)))
+    procs = min(os.cpu_count(), len(indices))
+    procs = min(procs, configs.processors)
+
+    work = []
+
+    print(timestamp(), f"Union merging={len(indices)}")
+    while len(indices) > 1:
+        # print(timestamp(), f"Initializing pool")
+        with multiprocessing.pool.Pool(processes=procs) as pool:
+            # print(timestamp(), f"Generating batches")
+            chunk_n = max(2, len(indices) // procs)
+            chunk_n = min(chunk_n, 10000)
+
+            chunked = arrays.batched(indices, chunk_n)
+            # print(timestamp(), f"Submitting")
+            work = [
+                pool.apply_async(union_list_dispatch, (chunk,))
+                for chunk in chunked
+            ]
+            # print(timestamp(), f"Collecting")
+            work = [unit.get() for unit in work]
+
+        union_ctx.result = work
+
+        # print(timestamp(), f"Done")
+        indices = list(range(len(work)))
+        print(timestamp(), f"Union merging={len(indices)}")
+        if len(indices) // procs < 2:
+            procs = max(1, procs // 2)
+    # print()
+    ans = work[0]
+    union_ctx.A = None
+    union_ctx.reference = None
+    union_ctx.config = None
+    union_ctx.max_depth = None
+    union_ctx.result = None
+    # if icd:
+    #     adb.remove()
+    return icd.structure_decode(ans)
 
 
 def union(
@@ -2019,19 +2353,21 @@ def dispatch_boolean_op(
 
     return g
 
-
-def mapper_compose_graphs(
-    cg, o, map, add_nodes=False, fill_new_nodes=False
-) -> Tuple[graphs.structure, graphs.structure, dict]:
+def intersection(
+    cg: structure,
+    o: structure,
+    config: configs.mapper_config = None,
+    map=None,
+    pool=None,
+):
     """
-    Perform a bitwise operation across the nodes and edges of pair of
-    structures, adding or subtracting nodes as necessary.
+    Calculate the intersection of two structures
 
     Parameters
     ----------
-    cg : graphs.structure
+    cg : structure
         The input structure that defines the domain of the map
-    o : graphs.structure
+    o : structure
         The input second input structures
     config: configs.mapper_config
         The configuration for mapping new nodes
@@ -2043,738 +2379,78 @@ def mapper_compose_graphs(
     structure
         The result of the operation
     """
-
-    g: graphs.structure = graphs.structure_remove_unselected(cg)
-    o = graphs.structure_remove_unselected(o)
-
-    M = map
-
-    for n in g.select:
-        m = M.get(n)
-        if m is not None:
-            pass
-        elif add_nodes:
-            primitive = g.nodes[n]
-            empty = primitive.copy()
-            empty.clear()
-            if fill_new_nodes:
-                empty.fill()
-
-            oidx = max(o.nodes) + 1
-            o.nodes[oidx] = empty
-            M[n] = oidx
-            o.select = tuple((*o.select, oidx))
-            o.cache.clear()
-
-        elif n not in (g.select[i] for i in g.topology.primary):
-            g = graphs.structure_remove_nodes(g, [n])
-            if n in M:
-                M.pop(n)
-
-    for edge in g.edges:
-        i, j = edge
-        oi, oj = M[i], M[j]
-        if (i not in g.select) or (j not in g.select):
-            continue
-        oedge = tuple(sorted((oi, oj)))
-        if oedge not in o.edges:
-            primitive = cg.edges[edge]
-            empty = primitive.copy()
-            empty.clear()
-            if fill_new_nodes:
-                empty.fill()
-            o.edges[oedge] = empty
-
-    Minv = {v: k for k, v in M.items() if v is not None}
-
-    for n in o.select:
-        m = Minv.get(n)
-        if m is not None:
-            pass
-        elif add_nodes:
-            primitive = o.nodes[n]
-            empty = primitive.copy()
-            empty.clear()
-            if fill_new_nodes:
-                empty.fill()
-
-            idx = max(g.nodes) + 1
-            g.nodes[idx] = empty
-            M[idx] = n
-            Minv[n] = idx
-            g.select = tuple((*g.select, idx))
-            g.cache.clear()
-        elif n not in (o.select[i] for i in o.topology.primary):
-            o = graphs.structure_remove_nodes(o, [n])
-
-    for oedge in o.edges:
-        oi, oj = oedge
-        if (oi not in o.select) or (oj not in o.select):
-            continue
-        i, j = Minv[oi], Minv[oj]
-        edge = tuple(sorted((i, j)))
-        if edge not in g.edges:
-            primitive = o.edges[oedge]
-            empty = primitive.copy()
-            empty.clear()
-            if fill_new_nodes:
-                empty.fill()
-            g.edges[edge] = empty
-
-    return g, o, M
-
-
-class filter_contains_ctx:
-    bes = None
-    to_check = None
-
-
-def filter_contains_parallel(indices):
-    bes = filter_contains_ctx.bes
-    to_check = filter_contains_ctx.to_check
-    work_list = tuple(
-        (i for i in indices if not map_to(to_check[i], bes, strict=True).map)
-    )
-    return work_list
-
-
-def filter_contains(bes: graphs.graph, to_check, executor=None):
-    N = len(to_check)
-    procs = configs.processors
-    chunksize = N // procs + bool(N % procs)
-    indices = list(range(N))
-    chunks = arrays.batched(indices, chunksize)
-
-    filter_contains_ctx.bes = bes
-    filter_contains_ctx.to_check = to_check
-
-    masks = [filter_contains_parallel(chunk) for chunk in chunks]
-    to_check = [to_check[i] for y in masks for i in y]
-
-    filter_contains_ctx.bes = None
-    filter_contains_ctx.to_check = None
-
-    return to_check
-
-
-def intersection_list_dispatch(
-    indices,
-) -> graphs.structure:
-    A = [union_ctx.A[i] for i in indices]
-    reference = union_ctx.reference
-    config = union_ctx.config
-    max_depth = union_ctx.max_depth
-
-    return intersection_list(
-        A, config, max_depth, reference, sort=True, executor=None, verbose=False
-    )
-
-
-def union_list_dispatch(
-    indices: List[int],
-) -> graphs.structure:
-    topo = union_ctx.topology
-
-    reference = union_ctx.reference
-    config = union_ctx.config
-    max_depth = union_ctx.max_depth
-
-    if type(union_ctx.A) is db.db_dict:
-        A = union_ctx.A.read_structure_list(indices)
-    else:
-        icd: codecs.intvec_codec = union_ctx.icd
-        if union_ctx.result is None:
-            G = union_ctx.A[0]
-            sel = union_ctx.A[1]
-            A = [graphs.graph_to_structure(icd.graph_decode(G[sel[i][0]]), sel[i][1], topo) for i in indices]
-            if max_depth is not None and max_depth > 0:
-                # print(f"EXTENDING to {max_depth}")
-                # for i, x in enumerate(A):
-                #     print(i, x.select)
-                mapper_smarts_extend(configs.smarts_extender_config(max_depth, max_depth, True), A)
-                # for i, x in enumerate(A):
-                #     print(i, x.select)
-        else:
-            A = [icd.structure_decode(union_ctx.result[i]) for i in indices]
-    
-
-    
-    Q = union_list(
-        A, config, max_depth, reference, sort=True, executor=None, verbose=False
-    )
-    A = None
-
-    return icd.structure_encode(Q)
-
-
-def intersection_list_parallel(
-    A: Sequence[graphs.structure],
-    config: configs.mapper_config = None,
-    max_depth=None,
-    reference=None,
-    sort=True,
-    executor=None,
-) -> graphs.structure:
-    procs = configs.processors
-
-    indices = list(range(len(A)))
-    procs = min(os.cpu_count(), len(indices))
-    procs = min(procs, configs.processors)
-
-    if len(indices) == 1:
-        return A[0]
-
-    union_ctx.A = A
-    union_ctx.reference = reference
-    union_ctx.config = config
-    union_ctx.max_depth = max_depth
-
-    work = []
-    while len(indices) > 1:
-        with multiprocessing.pool.Pool(processes=procs) as pool:
-            chunked = arrays.batched(indices, max(1, len(indices) // procs))
-            work = [
-                pool.apply_async(intersection_list_dispatch, (chunk,))
-                for chunk in chunked
-            ]
-            work = [unit.get() for unit in work]
-        indices = list(range(len(work)))
-        union_ctx.A = work
-        if len(indices) // procs < 2:
-            procs = max(1, procs // 2)
-    # print()
-
-    union_ctx.A = None
-    union_ctx.reference = None
-    union_ctx.config = None
-    union_ctx.max_depth = None
-
-    return work[0]
-
-def union_list_parallel(
-    G: Sequence[graphs.graph],
-    selections,
-    topo,
-    config: configs.mapper_config = None,
-    max_depth=None,
-    reference=None,
-    sort=True,
-    executor=None,
-    icd = None,
-) -> graphs.structure:
-    procs = configs.processors
-
-
-    if len(selections) == 1:
-        # return graphs.structure_copy(A[0])
-        i = selections[0][0][0]
-        sel = selections[0][1]
-        g = graphs.graph_to_structure(G[i], sel, topo)
-        return g
-
-    # icd = None
-
-    # if icd:
-    #     print(f"{datetime.datetime.now()} Writing structures to disk...")
-    #     adb = db.db_dict(icd, "A.db")
-    #     adb.write_structure({i:a for i, a in enumerate(A)})
-    #     union_ctx.A = adb
-    # else:
-    union_ctx.A = G, selections
-    union_ctx.icd = icd
-
-    if reference is None:
-        reference = graphs.graph_to_structure(icd.graph_decode(G[selections[0][0]]), selections[0][1], topo)
-        # union_ctx.reference = graphs.graph_to_structure(icd.graph_decode(G[selections[0]]))
-    union_ctx.reference = reference
-    union_ctx.result = None
-    union_ctx.topology = topo
-    union_ctx.config = config
-    union_ctx.max_depth = max_depth
-
-    indices = list(range(len(selections)))
-    procs = min(os.cpu_count(), len(indices))
-    procs = min(procs, configs.processors)
-
-    work = []
-
-    print(timestamp(), f"Union merging={len(indices)}")
-    while len(indices) > 1:
-        # print(timestamp(), f"Initializing pool")
-        with multiprocessing.pool.Pool(processes=procs) as pool:
-            # print(timestamp(), f"Generating batches")
-            chunk_n = max(2, len(indices) // procs)
-            chunk_n = min(chunk_n, 10000)
-
-            chunked = arrays.batched(indices, chunk_n)
-            # print(timestamp(), f"Submitting")
-            work = [
-                pool.apply_async(union_list_dispatch, (chunk,))
-                for chunk in chunked
-            ]
-            # print(timestamp(), f"Collecting")
-            work = [unit.get() for unit in work]
-
-        union_ctx.result = work
-
-        # print(timestamp(), f"Done")
-        indices = list(range(len(work)))
-        print(timestamp(), f"Union merging={len(indices)}")
-        if len(indices) // procs < 2:
-            procs = max(1, procs // 2)
-    # print()
-    ans = work[0]
-    union_ctx.A = None
-    union_ctx.reference = None
-    union_ctx.config = None
-    union_ctx.max_depth = None
-    union_ctx.result = None
-    # if icd:
-    #     adb.remove()
-    return icd.structure_decode(ans)
-
-
-def intersection_list(
-    A: Sequence[graphs.structure],
-    config: configs.mapper_config = None,
-    max_depth=None,
-    reference=None,
-    sort=True,
-    executor=None,
-    verbose=False,
-) -> graphs.structure:
     if config is None:
-        config = configs.mapper_config(False, False, "high")
+        config = configs.mapper_config(True, True, "high")
 
-    add_nodes = config.add_nodes
-    if add_nodes is False:
-        max_nodes = min((graphs.structure_max_depth(a) for a in A))
-        if reference:
-            max_nodes = min(max_nodes, graphs.structure_max_depth(reference))
-
-    ref = A[0]
-    ref = graphs.structure_copy(A[0])
-
-    if max_depth is not None and max_depth >= 0:
-        ref = graphs.structure_up_to_depth(ref, max_depth)
-
-    to_check = A[1:]
-    total = len(to_check)
-
-    if reference is not None:
-        reference = graphs.structure_copy(reference)
-
-    scores = []
-    i = 0
-
-    _executor = executor
-
-    procs = configs.processors
-    while len(to_check) > 0:
-        if verbose:
-            print(
-                f"Intersection set {total-len(to_check):5d}/{total} A={len(ref.select)} Ad={graphs.structure_max_depth(ref)}{' ':15s}",
-                end="\r",
-            )
-        if not scores:
-            if sort:
-                align_score_ctx.ref = ref
-                align_score_ctx.to_check = to_check
-                N = len(to_check)
-                ck = min(10, N // procs + bool(N % procs))
-                ck = max(ck, 1)
-                chunks = arrays.batched(list(range(N)), ck)
-                scores = []
-                for chunk in chunks:
-                    work = align_score_parallel(chunk)
-                    scores.extend(work)
-                align_score_ctx.ref = None
-                align_score_ctx.to_check = None
-            else:
-                scores = [(0, 0)] * len(to_check)
-
-        s = arrays.argmax([x[1] for x in sorted(scores, key=lambda y: y[0])])
-
-        M = None
-        new_g = to_check[s]
-        if max_depth is not None and max_depth >= 0:
-            ref = graphs.structure_up_to_depth(ref, max_depth)
-            new_g = graphs.structure_up_to_depth(new_g, max_depth)
-        else:
-            new_g = graphs.structure_copy(new_g)
-
-        between_map = None
-        if reference is not None:
-            if verbose:
-                print(
-                    f"Intersection ref {total-len(to_check):5d}/{total} A={len(ref.nodes)} Ad={graphs.structure_max_depth(ref)} B={len(new_g.nodes)} Bd={graphs.structure_max_depth(new_g)}{' ':15s}",
-                    end="\r",
-                )
-
-            T1 = map_to(ref, reference, strict=True, add_nodes=2, fill=True)
-            _, _, M1 = T1.G, T1.H, T1.map
-
-            T2 = map_to(new_g, reference, strict=True, add_nodes=2, fill=True)
-            _, _, M2 = T2.G, T2.H, T2.map
-
-            if M1 is None:
-                print(ref.select, ref.topology.primary)
-                for n in ref.select:
-                    print(f"{n:3d}", ref.nodes[n])
-                print(reference.nodes)
-                print(reference.select, reference.topology.primary)
-                for n in reference.select:
-                    print(f"{n:3d}", ref.nodes[n])
-                raise Exception()
-            if M2 is None:
-                print(new_g.nodes)
-                print(reference.nodes)
-                raise Exception()
-
-            M2 = {v: k for k, v in M2.items() if v is not None}
-            M = {k: M2.get(v) for k, v in M1.items() if v is not None}
-            M = {k: v for k, v in M.items() if v is not None}
-
-            if verbose:
-                print(
-                    f"Intersection map {total-len(to_check):5d}/{total} A={len(ref.nodes)} B={len(new_g.nodes)}{' ':15s}",
-                    end="\r",
-                )
-            T3 = map_to(ref, new_g, skip=M, add_nodes=1, fill=False, pool=True)
-            ref, new_g, between_map = T3.G, T3.H, T3.map
-
-        if verbose:
-            print(
-                f"Intersection exe {total-len(to_check):5d}/{total} A={len(ref.select)} Ad={graphs.structure_max_depth(ref)} B={len(new_g.select)} Bd={graphs.structure_max_depth(new_g)}",
-                end="\r",
-            )
-
-        result = intersection(ref, new_g, config, map=between_map)
-
-        scores.pop(s)
-        to_check.pop(s)
-
-        if sort and result != ref:
-            # if the union did have an effect, force a rescore
-            scores = []
-
-        i += 1
-
-        # this seems to slow things down? evaluate every once in awhile
-        if i % 20 == 0:
-            to_check = filter_contains(ref, to_check, executor=None)
-            scores = []
-
-        ref = result
-
-    if verbose:
-        print()
-    if _executor and executor is None:
-        _executor.shutdown()
-
-    return ref
+    return dispatch_boolean_op(
+        cg, o, chem.bechem_iand, config, map=map, pool=pool
+    )
 
 
-def union_list(
-    A: Sequence[graphs.structure],
+def intersection_conditional(
+    cg: structure,
+    o: structure,
     config: configs.mapper_config = None,
-    max_depth=None,
-    reference=None,
-    sort=True,
-    executor=None,
-    verbose=False,
-) -> graphs.structure:
+    map=None,
+    pool=None,
+):
+    """
+    Calculate the intersection of two structures
+
+    Parameters
+    ----------
+    cg : structure
+        The input structure that defines the domain of the map
+    o : structure
+        The input second input structures
+    config: configs.mapper_config
+        The configuration for mapping new nodes
+    map : Dict[node_id, node_id]
+        A precalculated map to use
+
+    Returns
+    -------
+    structure
+        The result of the operation
+    """
     if config is None:
-        config = configs.mapper_config(False, False, "high")
+        config = configs.mapper_config(True, True, "high")
 
-    
-    add_nodes = config.add_nodes
-    if add_nodes is False:
-        max_nodes = min((graphs.structure_max_depth(a) for a in A))
-        if reference:
-            max_nodes = min(max_nodes, graphs.structure_max_depth(reference))
-
-    # ref = A[0]
-    ref = graphs.structure_copy(A[0])
-
-    if max_depth is not None and max_depth >= 0:
-        ref = graphs.structure_up_to_depth(ref, max_depth)
-
-    to_check = A[1:]
-    total = len(to_check)
-
-    if reference is not None:
-        reference = graphs.structure_copy(reference)
-
-    scores = []
-    i = 0
-
-    _executor = executor
-
-    procs = configs.processors
-    while len(to_check) > 0:
-        if verbose:
-            print(
-                f"Union set {total-len(to_check):5d}/{total} A={len(ref.select)} Ad={graphs.structure_max_depth(ref)}{' ':15s}",
-                end="\r",
-            )
-        if not scores:
-            if sort:
-                align_score_ctx.ref = ref
-                align_score_ctx.to_check = to_check
-                N = len(to_check)
-                ck = min(10, N // procs + bool(N % procs))
-                ck = max(ck, 1)
-                chunks = arrays.batched(list(range(N)), ck)
-                scores = []
-                for chunk in chunks:
-                    work = align_score_parallel(chunk)
-                    scores.extend(work)
-                align_score_ctx.ref = None
-                align_score_ctx.to_check = None
-            else:
-                scores = [(0, 0)] * len(to_check)
-
-        s = arrays.argmax([x[1] for x in sorted(scores, key=lambda y: y[0])])
-
-        M = None
-        new_g = to_check[s]
-        if max_depth is not None and max_depth >= 0:
-            ref = graphs.structure_up_to_depth(ref, max_depth)
-            new_g = graphs.structure_up_to_depth(new_g, max_depth)
-        else:
-            new_g = graphs.structure_copy(new_g)
-
-        between_map = None
-        if reference is not None:
-            if verbose:
-                print(
-                    f"Union ref {total-len(to_check):5d}/{total} A={len(ref.nodes)} Ad={graphs.structure_max_depth(ref)} B={len(new_g.nodes)} Bd={graphs.structure_max_depth(new_g)}{' ':15s}",
-                    end="\r",
-                )
-
-            T1 = map_to(ref, reference, strict=True, add_nodes=2, fill=True)
-            _, _, M1 = T1.G, T1.H, T1.map
-
-            T2 = map_to(new_g, reference, strict=True, add_nodes=2, fill=True)
-            _, _, M2 = T2.G, T2.H, T2.map
-
-            if M1 is None:
-                print(ref.select, ref.topology.primary)
-                for n in ref.select:
-                    print(f"{n:3d}", ref.nodes[n])
-                print(reference.nodes)
-                print(reference.select, reference.topology.primary)
-                for n in reference.select:
-                    print(f"{n:3d}", ref.nodes[n])
-                raise Exception()
-            if M2 is None:
-                print(new_g.nodes)
-                print(reference.nodes)
-                raise Exception()
-
-            M2 = {v: k for k, v in M2.items() if v is not None}
-            M = {k: M2.get(v) for k, v in M1.items() if v is not None}
-            M = {k: v for k, v in M.items() if v is not None}
-
-            if verbose:
-                print(
-                    f"Union map {total-len(to_check):5d}/{total} A={len(ref.nodes)} B={len(new_g.nodes)}{' ':15s}",
-                    end="\r",
-                )
-            T3 = map_to(ref, new_g, skip=M, add_nodes=1, fill=False, pool=True)
-            ref, new_g, between_map = T3.G, T3.H, T3.map
-
-        if verbose:
-            print(
-                f"Union exe {total-len(to_check):5d}/{total} A={len(ref.select)} Ad={graphs.structure_max_depth(ref)} B={len(new_g.select)} Bd={graphs.structure_max_depth(new_g)}",
-                end="\r",
-            )
-
-        result = union(ref, new_g, config, map=between_map)
-
-        scores.pop(s)
-        to_check.pop(s)
-
-        if sort and result != ref:
-            # if the union did have an effect, force a rescore
-            scores = []
-
-        i += 1
-
-        # this seems to slow things down? evaluate every once in awhile
-        if i % 20 == 0:
-            to_check = filter_contains(ref, to_check, executor=None)
-            scores = []
-
-        ref = result
-
-    if verbose:
-        print()
-    if _executor and executor is None:
-        _executor.shutdown()
-
-    return graphs.structure_copy(ref)
+    return dispatch_boolean_op(
+        cg, o, chem.bechem_and_conditional, config, map=map, pool=pool
+    )
 
 
-def mapper_save(T: structure_mapper, fname):
-    atom_order = {}
-    with open(fname, "w") as f:
-        g = graphs.structure_remove_unselected(T.domain)
-        atom_order = {i: j for i, j in enumerate(g.select)}
+def difference(
+    cg: graphs.subgraph,
+    o: graphs.subgraph,
+    config: configs.mapper_config = None,
+    map=None,
+    pool=None,
+):
+    """
+    Calculate the difference of two structures
 
-        lines = codec_native.graph_save(g, atom_order)
-        f.write("\n".join(lines[:3]) + "\n")
-        f.write(" ".join(lines[3:]) + "\n")
+    Parameters
+    ----------
+    cg : structure
+        The input structure that defines the domain of the map
+    o : structure
+        The input second input structures
+    config: configs.mapper_config
+        The configuration for mapping new nodes
+    map : Dict[node_id, node_id]
+        A precalculated map to use
 
-        order = sorted(atom_order)
-        for g, m in T.codomain.items():
-            this_order = {i: m[atom_order[i]] for i in sorted(order)}
-            lines = codec_native.graph_save(g, this_order)
-            f.write(" ".join(lines[3:]) + "\n")
+    Returns
+    -------
+    structure
+        The result of the operation
+    """
+    if config is None:
+        config = configs.mapper_config(True, True, "high")
 
+    return dispatch_boolean_op(
+        cg, o, chem.bechem_subtract, config, map=map, pool=pool
+    )
 
-def mapper_load(
-    fname,
-    mode="high",
-    strict=False,
-    equality=False,
-    add_nodes=False,
-    fill_new_nodes=False,
-) -> structure_mapper:
-    header = []
-    domain = None
-    domain_order = []
-    n_atom_prims = 0
-    n_bond_prims = 0
-    T = None
-    with open(fname) as f:
-        for i, line in enumerate(f):
-            tokens = line.split()
-            if tokens[0] == "#GRAPH":
-                header.append(tokens)
-            elif tokens[0] == "#ATOM":
-                header.append(tokens)
-                n_atom_prims = len(tokens[1:])
-            elif tokens[0] == "#BOND":
-                header.append(tokens)
-                n_bond_prims = len(tokens[1:])
-            else:
-                lines = []
-                i = 1
-                order = []
-                while i < len(tokens):
-                    if tokens[i - 1] == tokens[i]:
-                        lines.append(tokens[i - 1 : (i + 1 + n_atom_prims)])
-                        order.append(abs(int(tokens[i])))
-                        i += n_atom_prims + 2
-                    else:
-                        lines.append(tokens[i - 1 : (i + 1 + n_bond_prims)])
-                        i += n_bond_prims + 2
-                lines = header + lines
-                if domain:
-                    g = codec_native.graph_load(lines)
-                    m = {i: j for i, j in zip(domain_order, order)}
-                    T.codomain[g] = m
-                    T.codomain_map[g] = g
-                else:
-                    domain = codec_native.graph_load(lines)
-                    domain_order = order
-                    T = structure_mapper(
-                        domain,
-                        mode=mode,
-                        strict=strict,
-                        equality=equality,
-                        add_nodes=add_nodes,
-                        fill_new_nodes=fill_new_nodes,
-                    )
-
-    return T
-
-
-def align_score_parallel(indices):
-    ref = align_score_ctx.ref
-    to_check = align_score_ctx.to_check
-    return tuple(tuple((i, align_score(ref, to_check[i]))) for i in indices)
-
-
-def ordered_align_score(i, ref, o):
-    return i, align_score(ref, o)
-
-
-def ordered_contains(i, ref, o):
-    return i, o in ref
-
-
-def map_vertices_parallel(permA, permB, a, b):
-    cg = map_vertices_ctx.cg
-    o = map_vertices_ctx.o
-
-    H = map_vertices_ctx.H
-
-    strict = map_vertices_ctx.strict
-    equality = map_vertices_ctx.equality
-
-    mapping = {}
-    S = 0
-
-    valid = True
-    for i, j in itertools.zip_longest(permA, permB):
-        # this makes sure that if A has no node, we need to ensure
-        # that B is ~[*] since that is the only way a None node
-        # will be "in" B
-        if i is None and j is not None and strict and not equality:
-            if not o.nodes[j].all():
-                valid = False
-                S = -1
-                break
-            for nbr_j in graphs.subgraph_connection(o, j):
-                edge = o.edges[tuple(sorted((j, nbr_j)))]
-                if not edge.all():
-                    valid = False
-                    S = -1
-                    break
-            if not valid:
-                valid = False
-                S = -1
-                break
-
-        if i is None or j is None:
-            continue
-
-        edge_a = cg.edges.get(tuple(sorted((a, i))), False)
-        edge_b = o.edges.get(tuple(sorted((b, j))), False)
-        if strict:
-            if edge_a is False or edge_b is False:
-                valid = False
-                S = -1
-                break
-            if equality:
-                if not (cg.nodes[i] == o.nodes[j] and edge_a == edge_b):
-                    # score_cache[(permA, permB)] = (-1, None)
-                    valid = False
-                    S = -1
-                    break
-            else:
-                if not (cg.nodes[i] in o.nodes[j] and edge_a in edge_b):
-                    # score_cache[(permA, permB)] = (-1, None)
-                    valid = False
-                    S = -1
-                    break
-
-        if edge_a is False or edge_b is False:
-            edge_score = 0
-        else:
-            edge_score = (edge_a + edge_b).bits(maxbits=True)
-
-        mapping[i] = j
-        # add 1 so that prefer when we have two node mapping with 0 overlap
-        # over the case where there was only 1 node
-        # if (i,j) not in H:
-        #     scores.update(pairwise_overlap(cg, sucA, o, sucB))
-        if graphs.structure_node_depth(cg, i) == graphs.structure_node_depth(
-            o, j
-        ):
-            S += H[(i, j)] + edge_score + 1
-    dprint("mapped vertices:", S, mapping)
-    return permA, permB, S, mapping

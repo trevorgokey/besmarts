@@ -773,7 +773,6 @@ def smarts_clustering_optimize(
                         )
 
                         for p_j, (Sj, Sj0, matches, unmatches) in enumerate(ret.value, 0):
-                            # Sj = mapper.intersection(Sj, S0, config=configs.mapper_config(3, 1, "high"))
                             print(f"Found {p_j+1}")
 
                             edits = 0

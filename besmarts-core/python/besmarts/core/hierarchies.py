@@ -126,18 +126,18 @@ def smarts_hierarchy_to_structure_hierarchy_angles(
     return struct_hier
 
 
-def smarts_hierarchy_to_structure_hierarchy_dihedrals(
+def smarts_hierarchy_to_structure_hierarchy_torsions(
     shier: smarts_hierarchy, gcd: codecs.graph_codec
 ):
-    topo = topology.dihedral_topology()
+    topo = topology.torsion_topology()
     struct_hier = smarts_hierarchy_to_structure_hierarchy(shier, gcd, topo)
     return struct_hier
 
 
-def smarts_hierarchy_to_structure_hierarchy_impropers(
+def smarts_hierarchy_to_structure_hierarchy_outofplanes(
     shier: smarts_hierarchy, gcd: codecs.graph_codec
 ):
-    topo = topology.improper_topology()
+    topo = topology.outofplane_topology()
     struct_hier = smarts_hierarchy_to_structure_hierarchy(shier, gcd, topo)
     return struct_hier
 

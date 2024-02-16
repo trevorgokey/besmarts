@@ -5,17 +5,6 @@ Responsible for setting up and distributing large compute jobs
 
 Architecture-wise, it interfaces the multiprocessing module
 
-I need something that has a remote queue that pushes work to outside, but also
-a more local version that allows faster local versions, but hopefully these can
-be the same interface
-
-The main process shown span some threads to handle the server thread and then
-the main process will throw work at it. I should have specialized functions for
-certain tasks, which can be handled here
-
-I think the way to go is to have each function call a manager instance which registers its
-required methods. We have a connectionmanager which will launch new managers,
-one for each function, and so the main process will control the conman
 """
 
 
@@ -56,7 +45,6 @@ import threading
 import pickle
 
 from besmarts.core import configs
-from besmarts.core import graphs
 from besmarts.core import arrays
 
 distributed_function = Tuple[Callable, Sequence, Mapping]
@@ -718,6 +706,7 @@ class Server(managers.Server):
                     raise ke
 
     def decref(self, c, ident):
+        return
         if (
             ident not in self.id_to_refcount
             and ident in self.id_to_local_proxy_obj
@@ -735,8 +724,8 @@ class Server(managers.Server):
                     )
                 )
             self.id_to_refcount[ident] -= 1
-            # if self.id_to_refcount[ident] == 0:
-            #     del self.id_to_refcount[ident]
+            if self.id_to_refcount[ident] == 0:
+                del self.id_to_refcount[ident]
 
         if ident not in self.id_to_refcount:
             # Two-step process in case the object turns out to contain other
@@ -746,8 +735,8 @@ class Server(managers.Server):
             # in turn attempt to acquire the mutex that is already held here.
             self.id_to_obj[ident] = (None, (), None)  # thread-safe
             util.debug("disposing of obj with id %r", ident)
-            # with self.mutex:
-            #     del self.id_to_obj[ident]
+            with self.mutex:
+                del self.id_to_obj[ident]
 
 
 class BaseProxy(managers.BaseProxy):
@@ -884,12 +873,6 @@ class workspace_manager(managers.SyncManager):
     def get_status(self) -> workspace_status:
         pass
 
-    def get_table(self) -> Dict:
-        pass
-
-    def get_result(self) -> Dict:
-        pass
-
     def create(self, *args, **kwargs):
         breakpoint()
         return super().create(*args, **kwargs)
@@ -941,20 +924,15 @@ class workqueue_local(workqueue):
 
         self.mgr.start()
         self.remote_workspaces = self.mgr.get_workspaces()
-        # self.mgr.get_server().serve_forever()
-        # self.mgr.workspaces = self.mgr.dict()
-        # print(f"Workspace remote addr is {id(self.workspaces)}")
 
     def get_threads(self):
         return self.threads
 
     def get_workspaces(self):
         # print(f"GET LOCAL Workspace addr is {id(self.workspaces)} values {self.workspaces}")
-        # return dict(self.mgr.get_workspaces().items())
         return self.workspaces
 
     def put_workspaces(self, wss):
-        # workspaces = self.mgr.get_workspaces()
         self.remote_workspaces.update(wss)
         self.workspaces.update(wss)
         # print(f"PUT LOCAL Workspace addr is {id(wss)} values {dict(wss.items())}")
@@ -964,12 +942,8 @@ class workqueue_local(workqueue):
         pass
 
     def close(self):
-        # self.pool.close()
-        # self.pool.terminate()
         self.mgr.shutdown()
 
-    # def get_state(self):
-    #     return self.state
     def get_state(self):
         return self.state
 
@@ -982,8 +956,6 @@ def manager_connect(mgr: managers.BaseManager, success: threading.Event):
         # print("Connected...")
         success.set()
         # print("Manager connect setting success...")
-    # except ConnectionError:
-    #     print("manager_connect: ConnectionError")
     except EOFError:
         print("manager_connect: EOFError")
     except TimeoutError:
@@ -1046,7 +1018,6 @@ def manager_remote_get_state_thread(ws, out):
     thread_name_set("get_state")
     try:
         # print("manager_remote_get_state_thread: calling get_state")
-        # state = mgr.get_state()
         state = ws.mgr.get_state()
         print("manager_remote_get_state_thread: calling get_state items")
         # state = dict(state.items())
@@ -1731,8 +1702,6 @@ class workspace_local(workspace):
         ntasks = 1
         if self.shm.procs_per_task > 0:
             ntasks = max(1, self.nproc // self.shm.procs_per_task)
-        else:
-            self.shm.procs_per_task = self.nproc
 
         global SHM_GLOBAL
         SHM_GLOBAL = self.shm
@@ -1805,8 +1774,8 @@ class workspace_local(workspace):
             ntasks = 1
             if self.shm.procs_per_task > 0:
                 ntasks = max(1, self.nproc // self.shm.procs_per_task)
-            global shm_global
-            shm_global = self.shm
+            global SHM_GLOBAL
+            SHM_GLOBAL = self.shm
             self.pool = multiprocessing.pool.Pool(
                 ntasks,
                 workspace_run_init,
@@ -1823,6 +1792,20 @@ class workspace_local(workspace):
 
         # starts all threads
         self.run_thread = workspace_local_run(self)
+        if self.mgr.address[0] != "127.0.0.1":
+            self.gather_stop.clear()
+            self.loadbalance_stop.clear()
+
+            self.gather_thread = threading.Thread(
+                target=workspace_local_remote_gather_thread, args=(self,)
+            )
+            self.loadbalance_thread = threading.Thread(
+                target=workspace_local_remote_loadbalance_thread, args=(self,)
+            )
+            # print("Starting gather thread...")
+            self.gather_thread.start()
+            # print("Starting loadbalance thread...")
+            self.loadbalance_thread.start()
 
     def close(self):
         try:
@@ -1831,12 +1814,22 @@ class workspace_local(workspace):
             self.loadbalance_stop.set()
             self.run_stop.set()
             self.done.set()
+
+            if self.loadbalance_thread:
+                self.loadbalance_thread.join()
+                self.loadbalance_thread = None
+            if self.gather_thread:
+                self.gather_thread.join()
+                self.gather_thread = None
             if self.run_thread:
                 self.run_thread.join()
+                self.run_thread = None
+
             if self.pool is not None:
                 self.pool.close()
                 self.pool.terminate()
                 self.pool = None
+
             self.mgr.shutdown()
             self.remote_iqueue = None
             self.remote_oqueue = None
@@ -1851,7 +1844,6 @@ class workspace_local(workspace):
 
     def set_status(self, status):
         self.remote_state.update({"status": status})
-        # self.mgr.get_state()
         self.state["status"] = status
 
     def get_iqueue(self):
@@ -1865,14 +1857,6 @@ class workspace_local(workspace):
 
     def get_status(self):
         return self.state.get("status", workspace_status.INVALID)
-
-    def get_table(self):
-        print("LOCAL GET TABLE")
-        return self.mgr.get_table()
-
-    def get_result(self):
-        print("LOCAL GET RESULT")
-        return self.mgr.get_result()
 
 
 class workspace_remote(workspace):
@@ -1896,8 +1880,6 @@ class workspace_remote(workspace):
         self.mgr.register("get_status")
         self.mgr.register("get_state")
         self.mgr.register("get_workers")
-        self.mgr.register("get_table")
-        self.mgr.register("get_result")
         self.mgr.register("get_shm")
 
         print(f"workspace_remote_init: Connecting to {addr}:{port}")
@@ -1945,8 +1927,8 @@ class workspace_remote(workspace):
                 ntasks = 1
                 if self.shm.procs_per_task > 0:
                     ntasks = max(1, self.nproc // self.shm.procs_per_task)
-                global shm_global
-                shm_global = self.shm
+                global SHM_GLOBAL
+                SHM_GLOBAL = self.shm
                 self.pool = multiprocessing.Pool(
                     ntasks, workspace_run_init, (self.shm.procs_per_task,)
                 )
@@ -2240,8 +2222,6 @@ def workspace_local_remote_loadbalance_thread(ws: workspace_local):
                     elif n > 1:
                         n = len(obj)
                         # print(f"\nPULLED single from LOCAL rqs {rqs} iqs {iqs}")
-                        # remote_q.put(obj)
-                        # ws.iqueue.put(obj)
                         if not manager_remote_queue_put(remote_q, obj, n=n):
                             ws.iqueue.put(obj, n=n)
                         else:
@@ -2259,19 +2239,11 @@ def workspace_local_remote_loadbalance_thread(ws: workspace_local):
                 if obj is not None and len(obj):
                     if n > 1:
                         n = len(obj)
-                        # with ws.holding_remote_lock:
-                        #     for o in obj:
-                        #         for k in o:
-                        #             if k in ws.holding_remote:
-                        #                 ws.holding_remote.pop(k)
                         if n == 1:
                             obj = obj[0]
-                    # else:
-                    #     with ws.holding_remote_lock:
-                    #         for k in obj:
-                    #             if k in ws.holding_remote:
-                    #                 ws.holding_remote.pop(k)
+
                     ws.iqueue.put(obj, n=n)
+
                     with ws.remote_iqueue_size_lock:
                         ws.remote_iqueue_size = manager_remote_queue_qsize(
                             remote_q
@@ -2346,36 +2318,29 @@ def workqueue_push_workspace(wq: workqueue_local, ws: workspace):
 def workspace_local_run_thread(ws: workspace_local):
     thread_name_set("run")
 
+    functions = {}
+    put_back = {}
     started = False
     work = []
+    remote_puts = []
+    drop = set()
+
+    local_n = 0
+
     # print("local_run_thread: getting mgr.iqueue")
     iq = ws.mgr.get_iqueue()
     # iq = ws.remote_iqueue
 
     ntasks = 1
-    if ws.shm.procs_per_task:
+    if ws.shm.procs_per_task > 0:
         ntasks = max(1, ws.nproc // ws.shm.procs_per_task)
-    local_n = 0
+
+
     pool = ws.pool
 
     if pool is None:
         print("WARNING POOL IS NONE")
         return
-
-    if ws.mgr.address[0] != "127.0.0.1":
-        ws.gather_stop.clear()
-        ws.gather_thread = threading.Thread(
-            target=workspace_local_remote_gather_thread, args=(ws,)
-        )
-        # print("Starting gather thread...")
-        ws.gather_thread.start()
-
-        ws.loadbalance_stop.clear()
-        ws.loadbalance_thread = threading.Thread(
-            target=workspace_local_remote_loadbalance_thread, args=(ws,)
-        )
-        # print("Starting loadbalance thread...")
-        ws.loadbalance_thread.start()
 
     # print("workspace_local_run_thread: Entering run loop")
     try:
@@ -2387,8 +2352,8 @@ def workspace_local_run_thread(ws: workspace_local):
             idx = None
             local_n = len(work)
             # print("workspace_local_run_thread: In loop")
-            functions = {}
-            put_back = {}
+            functions.clear()
+            put_back.clear()
             stole = False
             try:
                 if local_n < ntasks:
@@ -2405,10 +2370,9 @@ def workspace_local_run_thread(ws: workspace_local):
             # print(f"\nworkspace_local_run_thread: received {len(functions)} tasks")
             try:
                 # this locks with the loadbalancer, so avoid for now
-                if not functions:
+                if False and not functions:
                     if (
-                        False
-                        and ntasks > 0
+                        ntasks > 0
                         and (len(work) < ntasks or len(ws.holding) < ntasks)
                     ):
                         # steal from the remote queue
@@ -2483,7 +2447,7 @@ def workspace_local_run_thread(ws: workspace_local):
                         for idx, unit in functions.items()
                         if idx not in ws.holding_remote
                     }
-                    remote_puts = []
+                    remote_puts.clear()
                     if remote_put:
                         remote_puts.append(remote_put)
 
@@ -2515,7 +2479,7 @@ def workspace_local_run_thread(ws: workspace_local):
                                         ws.holding.add(idx)
 
             if work:
-                drop = set()
+                drop.clear()
                 # print(f"Scanning {len(work)} work units")
                 for i in range(len(work)):
                     idx, unit = work[i]
@@ -2549,13 +2513,6 @@ def workspace_local_run_thread(ws: workspace_local):
     except BrokenPipeError as e:
         print(f"Warning, BrokenPipeError {e}")
 
-    ws.loadbalance_stop.set()
-    if ws.loadbalance_thread:
-        ws.loadbalance_thread.join(timeout=None)
-
-    ws.gather_stop.set()
-    if ws.gather_thread:
-        ws.gather_thread.join(timeout=None)
     # print("PROCESSING THREAD DONE")
     return
 

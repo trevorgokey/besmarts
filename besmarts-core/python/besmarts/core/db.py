@@ -89,7 +89,6 @@ class db_dict:
         else:
             return self.icd.graph_decode(self.kv[k])
 
-
     def read_graph_list(self, keys, prefix=""):
         if self.name:
             return [

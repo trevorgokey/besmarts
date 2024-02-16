@@ -1,7 +1,7 @@
 """
-besmarts.core.enumerate
+besmarts.core.resolve
 
-Enumerate a SMARTS pattern into one or more SMILES
+Resolve a SMARTS pattern into one or more SMILES
 """
 
 
@@ -12,7 +12,7 @@ from besmarts.core import graphs
 from besmarts.core.rulesets import visitor_ruleset
 
 
-def enumerate_smiles_recurse(
+def resolve_smiles_recurse(
     beg: graphs.graph,
     beg_adj,
     visitor_rulesets: List[visitor_ruleset],
@@ -80,7 +80,7 @@ def enumerate_smiles_recurse(
                         P = graphs.graph_copy(graphs.graph(nodes, edges))
                         yield P
                 P = graphs.graph_copy(graphs.graph(nodes, edges))
-                yield from enumerate_smiles_recurse(
+                yield from resolve_smiles_recurse(
                     beg,
                     beg_adj,
                     visitor_rulesets,
@@ -140,7 +140,7 @@ def hash_fragment(nodes, edges):
     return h
 
 
-def enumerate_smiles(
+def resolve_smiles(
     beg: graphs.graph, visitor_rulesets: List[visitor_ruleset]
 ):
     for ruleset in visitor_rulesets:
@@ -170,7 +170,7 @@ def enumerate_smiles(
         if h not in frag_cache:
             frag_cache[hash(chem)] = chem.to_fragments()
 
-    yield from enumerate_smiles_recurse(
+    yield from resolve_smiles_recurse(
         beg, beg_adj, visitor_rulesets, frag_cache, {}, {}, {}, set()
     )
 
