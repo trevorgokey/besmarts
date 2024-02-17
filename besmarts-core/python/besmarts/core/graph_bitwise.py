@@ -507,7 +507,6 @@ def union_list_parallel(
     #     adb.remove()
     return icd.structure_decode(ans)
 
-
 def union(
     cg: graphs.structure,
     o: graphs.structure,

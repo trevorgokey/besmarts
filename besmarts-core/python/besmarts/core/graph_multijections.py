@@ -1,5 +1,7 @@
 """
 besmarts.core.graph_multijections
+
+Multijections are still very experimental
 """
 
 from besmarts.core import graph_bitwise

@@ -3,6 +3,16 @@
 besmarts.core.graph_map
 """
 
+class mapped_type:
+    """
+    A pair of graphs with an associated node mapping between them
+    """
+
+    def __init__(self, G: graphs.subgraph, H: graphs.subgraph, map: mapping):
+        self.G: graphs.subgraph = G
+        self.H: graphs.subgraph = H
+        self.map = map
+
 def map_to(
     cg: graphs.structure,
     o: graphs.structure,
@@ -824,11 +834,11 @@ def map_nodes(
             if pool:
                 work.append(
                     pool.apply_async(
-                        map_vertices_parallel, (permA, permB, a, b)
+                        map_nodes_parallel, (permA, permB, a, b)
                     )
                 )
             else:
-                work.append(map_vertices_parallel(permA, permB, a, b))
+                work.append(map_nodes_parallel(permA, permB, a, b))
 
         else:
             n_cached += 1
@@ -982,3 +992,76 @@ def pairwise_overlap(cg, A, o, B):
     dprint(f"pairwise overlap {A} {B} {H[(i, j)]}")
 
     return H
+
+def map_nodes_parallel(permA, permB, a, b):
+    cg = map_vertices_ctx.cg
+    o = map_vertices_ctx.o
+
+    H = map_vertices_ctx.H
+
+    strict = map_vertices_ctx.strict
+    equality = map_vertices_ctx.equality
+
+    mapping = {}
+    S = 0
+
+    valid = True
+    for i, j in itertools.zip_longest(permA, permB):
+        # this makes sure that if A has no node, we need to ensure
+        # that B is ~[*] since that is the only way a None node
+        # will be "in" B
+        if i is None and j is not None and strict and not equality:
+            if not o.nodes[j].all():
+                valid = False
+                S = -1
+                break
+            for nbr_j in graphs.subgraph_connection(o, j):
+                edge = o.edges[tuple(sorted((j, nbr_j)))]
+                if not edge.all():
+                    valid = False
+                    S = -1
+                    break
+            if not valid:
+                valid = False
+                S = -1
+                break
+
+        if i is None or j is None:
+            continue
+
+        edge_a = cg.edges.get(tuple(sorted((a, i))), False)
+        edge_b = o.edges.get(tuple(sorted((b, j))), False)
+        if strict:
+            if edge_a is False or edge_b is False:
+                valid = False
+                S = -1
+                break
+            if equality:
+                if not (cg.nodes[i] == o.nodes[j] and edge_a == edge_b):
+                    # score_cache[(permA, permB)] = (-1, None)
+                    valid = False
+                    S = -1
+                    break
+            else:
+                if not (cg.nodes[i] in o.nodes[j] and edge_a in edge_b):
+                    # score_cache[(permA, permB)] = (-1, None)
+                    valid = False
+                    S = -1
+                    break
+
+        if edge_a is False or edge_b is False:
+            edge_score = 0
+        else:
+            edge_score = (edge_a + edge_b).bits(maxbits=True)
+
+        mapping[i] = j
+        # add 1 so that prefer when we have two node mapping with 0 overlap
+        # over the case where there was only 1 node
+        # if (i,j) not in H:
+        #     scores.update(pairwise_overlap(cg, sucA, o, sucB))
+        if graphs.structure_node_depth(cg, i) == graphs.structure_node_depth(
+            o, j
+        ):
+            S += H[(i, j)] + edge_score + 1
+    dprint("mapped vertices:", S, mapping)
+    return permA, permB, S, mapping
