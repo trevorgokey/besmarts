@@ -14,6 +14,7 @@ import threading
 import time
 from typing import Dict, Sequence, Tuple, List
 import heapq
+import gc
 
 from besmarts.core import (
     codecs,
@@ -435,7 +436,7 @@ def smarts_clustering_optimize(
     initial_conditions: smarts_clustering,
 ) -> smarts_clustering:
 
-
+    # gc.disable()
     started = datetime.datetime.now()
 
     smiles = [a.smiles for a in sag.assignments]
@@ -477,6 +478,7 @@ def smarts_clustering_optimize(
 
     group_number += 1
 
+    # gc.collect()
     if len(sag.assignments) > 100000:
         batch_size = 10000
         print(f"{datetime.datetime.now()} Large number of graphs detected... using a workspace")
@@ -502,12 +504,13 @@ def smarts_clustering_optimize(
         print()
             
             
-        # ws.close()
-        threading.Thread(target=ws.close).start()
+        ws.close()
+        #threading.Thread(target=ws.close).start()
         ws = None
 
         wq.close()
         wq = None  
+        # gc.collect()
 
     else:
 
@@ -1048,8 +1051,10 @@ def smarts_clustering_optimize(
                 len(iterable),
             )
 
-            threading.Thread(target=ws.close).start()
+            ws.close()
+            # threading.Thread(target=ws.close).start()
             ws = None
+            # gc.collect()
 
             print(f"The unfiltered results of the candidate scan N={len(work)} total={len(iterable)}:")
 
@@ -1341,6 +1346,7 @@ def smarts_clustering_optimize(
     print(f"Start time: {started}")
     print(f"End   time: {ended}")
 
+    # gc.enable()
     return cst
 
 

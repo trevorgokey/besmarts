@@ -1637,7 +1637,7 @@ def split_subgraphs_distributed(
 
     compute.workqueue_remove_workspace(wq, ws)
     print("Closing workspace")
-    threading.Thread(target=ws.close).start()
+    ws.close()
     ws = None
 
     n = 0
@@ -1732,7 +1732,7 @@ def split_subgraphs_distributed(
         compute.workqueue_remove_workspace(wq, ws)
 
         print("Closing workspace")
-        threading.Thread(target=ws.close).start()
+        ws.close()
         ws = None
 
         if splitter.unique:
