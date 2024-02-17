@@ -43,12 +43,10 @@ class system_term:
         self.comment: str = comment
 
 class physical_model:
-    """
-    The functional form that can be evaluated as a function of positions.
+    """The functional form that can be evaluated as a function of positions.
     Also tracks the positions as a cache mechanism to avoid recomputing
     Sort of assumes energies/forces are a function of internal coordinates
-    and masses and positions are cartesian
-    """
+    and masses and positions are cartesian"""
 
     __slots__ =  "labels", "values", "positions", "topology"
 
