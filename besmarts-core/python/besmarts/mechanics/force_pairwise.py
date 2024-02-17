@@ -2,6 +2,12 @@
 besmarts.mechanics.force_pairwise
 """
 
+import math
+import subprocess
+import tempfile
+import os
+import shutil
+
 from besmarts.core import topology
 from besmarts.core import assignments
 from besmarts.core import trees
@@ -13,8 +19,6 @@ from besmarts.core import perception
 
 from besmarts.mechanics import molecular_models as mm
 
-import subprocess
-import math
 
 
 # electrostatics
@@ -48,6 +52,7 @@ class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
         symbol = "qq"
         pm.values = []
         cdc = codecs.primitive_codec_formal_charge()
+        tmpfolder = tempfile.mkdtemp()
         for pos in pm.positions:
             
             charges = {}
@@ -56,7 +61,8 @@ class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
             q = int(cdc.count_charge_smiles(pos.graph.nodes))
             nconfs = min((len(x) for x in pos.selections.values()))
             for i in range(nconfs):
-                with open("mdin", "w") as f:
+                
+                with open(os.path.join(tmpfolder, "mdin"), "w") as f:
                     f.write(f"\n&qmmm\n")
                     f.write(f"qm_theory='AM1', maxcyc=0, grms_tol=0.0005, scfconv=1.d-10, ndiis_attempts=700, qmcharge={q:d},\n")
 
@@ -78,6 +84,7 @@ class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
                     "-i", "mdin",
                     "-o", "mdout"
                     ], 
+                    cwd=tmpfolder,
                 )
 
                 subprocess.run([
@@ -91,6 +98,7 @@ class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
                     "-fo", "mol2",
                     "-o", "out.mol2"
                     ],
+                    cwd=tmpfolder,
                     capture_output=True
                 )
                 subprocess.run([
@@ -105,9 +113,10 @@ class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
                     "-fo", "mol2",
                     "-o", "out.mol2"
                     ],
+                    cwd=tmpfolder,
                     capture_output=True
                 )
-                with open("q.dat") as f:
+                with open(os.path.join(tmpfolder, "q.dat")) as f:
                     qdat = f.read().split()
                     conf_charges = {
                         i: float(x) for i, x in zip(pos.graph.nodes, qdat)
@@ -119,6 +128,7 @@ class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
                     charges[i,]["q"].append(qi)
             pm.values.append(charges)
             pm.labels.append(labels)
+        shutil.rmtree(tmpfolder)
         return pm
 
 class chemical_model_procedure_combine_coulomb(mm.chemical_model_procedure):
