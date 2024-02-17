@@ -201,6 +201,9 @@ class bitvec:
     def __ne__(self, o) -> bool:
         return not self == o
 
+    def __contains__(self, o) -> "bool":
+        return bitvec_is_null(bitvec_subtract(o, self))
+
     def any(self) -> bool:
         return bitvec_any(self)
 
