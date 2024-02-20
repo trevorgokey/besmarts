@@ -26,7 +26,6 @@ class visitor_ruleset(graph_visitor):
         return None
 
     def on_graph(self, nodes, edges):
-
         valid = True
         codec = self.primitive_codecs[primitive_key.FORMAL_CHARGE]
 

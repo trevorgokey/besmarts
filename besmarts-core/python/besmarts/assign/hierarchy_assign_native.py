@@ -12,6 +12,7 @@ from besmarts.core import (
     graphs,
     hierarchies,
     assignments,
+    trees,
     tree_iterators,
     configs,
     mapper,
@@ -92,7 +93,8 @@ def smarts_hierarchy_assign_structures(
     sh: hierarchies.smarts_hierarchy, gcd, topo, ics: List[graphs.structure]
 ):
     sh = hierarchies.smarts_hierarchy_to_structure_hierarchy(sh, gcd, topo)
-    selections = structure_hierarchy_assign(sh, sh.index.nodes[0], ics)
+    roots =  trees.tree_index_roots(sh.index)
+    selections = structure_hierarchy_assign(sh, roots, ics)
     return selections
 
 
@@ -103,17 +105,8 @@ def smarts_hierarchy_assign_bonds(
 ):
 
     topo = topology.bond_topology()
-    sh = hierarchies.smarts_hierarchy_to_structure_hierarchy(sh, gcd, topo)
-    sag = []
-
-    for smi in smiles:
-        g = gcd.smiles_decode(smi)
-        ics = graphs.graph_to_structure_bonds(g)
-        selections = structure_hierarchy_assign(sh, sh.index.nodes[0], ics)
-        sa = cluster_assignment.smiles_assignment_str(smi, selections)
-        sag.append(sa)
-
-    return assignments.smiles_assignment_group(sag, topo)
+    sag = smarts_hierarchy_assign(sh, gcd, smiles, topology.bond)
+    return sag
 
 def smarts_hierarchy_assign(
     sh: hierarchies.smarts_hierarchy,
@@ -125,14 +118,27 @@ def smarts_hierarchy_assign(
     sh = hierarchies.smarts_hierarchy_to_structure_hierarchy(sh, gcd, topo)
     sag = []
 
+    roots = trees.tree_index_roots(sh.index)
+
     for smi in smiles:
         g = gcd.smiles_decode(smi)
         ics = graphs.graph_to_structure_topology(g, topo)
-        selections = structure_hierarchy_assign(sh, sh.index.nodes[0], ics)
+        selections = structure_hierarchy_assign(sh, roots, ics)
         sa = cluster_assignment.smiles_assignment_str(smi, selections)
         sag.append(sa)
 
     return assignments.smiles_assignment_group(sag, topo)
+
+    for root in roots:
+        new_matches = assign(
+            shier, root, mol, indices, lambda x: tuple(sorter(x))
+        )
+        if not match:
+            match = new_matches
+        else:
+            for x,y in new_matches.items():
+                if y is not None:
+                    match[x] = y
 
 
 def smarts_hierarchy_assign_atoms(
@@ -140,118 +146,80 @@ def smarts_hierarchy_assign_atoms(
     gcd: codecs.graph_codec,
     smiles: List[str],
 ):
-
-    topo = topology.atom_topology()
-    sh = hierarchies.smarts_hierarchy_to_structure_hierarchy(sh, gcd, topo)
-    sag = []
-
-    for smi in smiles:
-        g = gcd.smiles_decode(smi)
-        ics = graphs.graph_to_structure_atoms(g)
-        selections = structure_hierarchy_assign(sh, sh.index.nodes[0], ics)
-        sa = cluster_assignment.smiles_assignment_str(smi, selections)
-        sag.append(sa)
-
-    return assignments.smiles_assignment_group(sag, topo)
-
+    sag = smarts_hierarchy_assign(sh, gcd, smiles, topology.atom)
+    return sag
 
 def smarts_hierarchy_assign_angles(
     sh: hierarchies.smarts_hierarchy, gcd: codecs.graph_codec, smiles: str
 ):
-
-    topo = topology.angle_topology()
-    sh = hierarchies.smarts_hierarchy_to_structure_hierarchy(sh, gcd, topo)
-    sag = []
-
-    for smi in smiles:
-        g = gcd.smiles_decode(smiles)
-        ics = graphs.graph_to_structure_angles(g)
-        selections = structure_hierarchy_assign(sh, sh.index.nodes[0], ics)
-        sa = cluster_assignment.smiles_assignment_str(smi, selections)
-        sag.append(sa)
-
-    return assignments.smiles_assignment_group(sag, topo)
-
+    sag = smarts_hierarchy_assign(sh, gcd, smiles, topology.angle)
+    return sag
 
 def smarts_hierarchy_assign_torsions(
     sh: hierarchies.smarts_hierarchy, gcd: codecs.graph_codec, smiles: str
 ):
-
-    topo = topology.torsion_topology()
-    sh = hierarchies.smarts_hierarchy_to_structure_hierarchy(sh, gcd, topo)
-    sag = []
-
-    for smi in smiles:
-        g = gcd.smiles_decode(smiles)
-        ics = graphs.graph_to_structure_torsions(g)
-        selections = structure_hierarchy_assign(sh, sh.index.nodes[0], ics)
-        sa = cluster_assignment.smiles_assignment_str(smi, selections)
-        sag.append(sa)
-
-    return assignments.smiles_assignment_group(sag, topo)
+    sag = smarts_hierarchy_assign(sh, gcd, smiles, topology.torsion)
+    return sag
 
 
-def smarts_hierarchy_assign_impropers(
+def smarts_hierarchy_assign_outofplanes(
     sh: hierarchies.smarts_hierarchy, gcd: codecs.graph_codec, smiles: str
 ):
-
-    topo = topology.improper_topology()
-    sh = hierarchies.smarts_hierarchy_to_structure_hierarchy(sh, gcd, topo)
-    sag = []
-
-    for smi in smiles:
-        g = gcd.smiles_decode(smiles)
-        ics = graphs.graph_to_structure_impropers(g)
-        selections = structure_hierarchy_assign(sh, sh.index.nodes[0], ics)
-        sa = cluster_assignment.smiles_assignment_str(smi, selections)
-        sag.append(sa)
-
-    return assignments.smiles_assignment_group(sag, topo)
-
+    sag = smarts_hierarchy_assign(sh, gcd, smiles, topology.outofplane)
+    return sag
 
 def structure_hierarchy_assign(
-    sh: hierarchies.structure_hierarchy, root, structs
+    sh: hierarchies.structure_hierarchy, roots, structs
 ):
-
-    cur = root
     if len(structs) == 0:
         return {}
+
+    topo = sh.topology
 
     matches = {
         tuple(g.select[i] for i in g.topology.primary): None for g in structs
     }
-    ordering = {
-        h.name: i
-        for i, h in enumerate(tree_iterators.tree_iter_dive(sh.index, root))
-    }
+    ordering = {}
 
-    topo = sh.topology
+    for root in roots:
+        ordering.update({
+            h.name: i
+            for i, h in enumerate(
+                (tree_iterators.tree_iter_dive(sh.index, root)),
+                len(ordering)
+            )
+        })
 
-    for cur in tree_iterators.tree_iter_dive_reverse(sh.index, root):
 
-        sg = sh.subgraphs.get(cur.index)
-        if sg is None:
-            continue
-        S0 = graphs.subgraph_to_structure(sg, topo)
+    for root in reversed(roots):
+        for cur in tree_iterators.tree_iter_dive_reverse(sh.index, root):
 
-        unmatched = sum([0] + [int(lbl is None) for lbl in matches.values()])
-        if unmatched == 0:
-            break
-
-        lbl = cur.name
-        d = graphs.structure_max_depth(S0)
-        config = configs.smarts_extender_config(d, d, True)
-
-        for g in structs:
-            assert S0.topology == g.topology
-            g = graphs.structure_copy(g)
-            mapper.mapper_smarts_extend(config, [g])
-            if not mapper.mapper_match(g, S0):
+            sg = sh.subgraphs.get(cur.index)
+            if sg is None:
                 continue
-            ic = tuple(g.select[i] for i in g.topology.primary)
-            if matches[ic] is None:
-                matches[ic] = lbl
-            elif ordering[lbl] > ordering[matches[ic]]:
-                matches[ic] = lbl
+            if type(sg) is str:
+                print(f"Warning, cannot parse {sg} : skipping")
+                continue
+            S0 = graphs.subgraph_to_structure(sg, topo)
+
+            unmatched = sum([0] + [int(lbl is None) for lbl in matches.values()])
+            if unmatched == 0:
+                break
+
+            lbl = cur.name
+            d = graphs.structure_max_depth(S0)
+            config = configs.smarts_extender_config(d, d, True)
+
+            for g in structs:
+                assert S0.topology == g.topology
+                g = graphs.structure_copy(g)
+                mapper.mapper_smarts_extend(config, [g])
+                if not mapper.mapper_match(g, S0):
+                    continue
+                ic = tuple(g.select[i] for i in g.topology.primary)
+                if matches[ic] is None:
+                    matches[ic] = lbl
+                elif ordering[lbl] > ordering[matches[ic]]:
+                    matches[ic] = lbl
 
     return matches

@@ -1041,7 +1041,7 @@ def graph_pairs(g: graph) -> Sequence[Tuple[int, int]]:
     pairs = []
     for i in g.nodes:
         for j in g.nodes:
-            if j <= i:
+            if j <= i or (i,j) in g.edges:
                 continue
             pairs.append((i,j))
     return tuple(pairs)
@@ -1382,7 +1382,7 @@ def structure_unreachable_nodes(g: structure) -> Sequence[node_id]:
         The unreachable nodes
     """
 
-    seen = set([g.select[g.topology.primary[0]]])
+    seen = set([g.select[i] for i in g.topology.primary])
 
     change = True
     while change:
@@ -1515,8 +1515,10 @@ def subgraph_validate_structure(
         topology
     """
     try:
-        _ = structure(g.nodes, g.edges, tuple(g.select), topology)
+        _ = structure(g.nodes, g.edges, tuple(g.select), topo)
     except AssertionError:
+        breakpoint()
+        _ = structure(g.nodes, g.edges, tuple(g.select), topo)
         return False
     return True
 
@@ -2355,7 +2357,11 @@ def graph_shortest_path(g: graph, a: node_id, b: node_id, adj=None) -> Sequence[
     # if b not in path:
         # g.cache["shortest_path"][(a, b)] = None
         # return None
-    path = tuple([a] + path[b])
+    # this must mean there is no path i.e. disconnected
+    if b in path:
+        path = tuple([a] + path[b])
+    else:
+        path = None
     # g.cache["shortest_path"][(a, b)] = path
     if debug:
         print("returned", path)

@@ -128,6 +128,18 @@ class optimization_strategy:
         # self.accept_max = 0 is no max
         self.micro_accept_max_per_cluster: int = 1
 
+        # If we accept too many operations, some can match nothing due to
+        # unexpected occlusion. With this enabled, we shortcut merging and 
+        # prevent zero-matching SMARTS from being added.
+        self.prune_empty = True
+
+
+        # Do not merge these
+        self.merge_protect_list = []
+
+        # Only operate on these
+        self.target_list = []
+
         # This removes candidates which have an estimated objective diff above
         # this value
         # None disables

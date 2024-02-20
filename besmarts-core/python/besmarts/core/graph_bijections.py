@@ -48,10 +48,12 @@ def mapped_to_bijection(M: mapped_type) -> bijection:
     F = bijection(G.topology, g, h, t)
     return F
 
+
 def bijection_mcs(G: graphs.structure, H: graphs.structure) -> bijection:
     M = mapper.map_to(G, H, add_nodes=0)
     F = mapped_to_bijection(M)
     return F
+
 
 def bijection_constant_left(
     G: graphs.structure, H: graphs.structure
@@ -59,6 +61,7 @@ def bijection_constant_left(
     M = mapper.map_to(G, H, add_nodes=2, fill=True)
     F = mapped_to_bijection(M)
     return F
+
 
 def bijection_constant_right(
     G: graphs.structure, H: graphs.structure

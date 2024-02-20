@@ -325,7 +325,7 @@ def assign(
             lbl = cur.name
 
             if ic not in matches:
-                print(f"WARNING: RDKit identified {ic} matched {sma} for mol {Chem.MolToSmiles(mol)} but it is not valid! Skipping")
+                # print(f"WARNING: RDKit identified {ic} matched {sma} for mol {Chem.MolToSmiles(mol)} but it is not valid! Skipping")
                 continue
 
             if matches[ic] is None:

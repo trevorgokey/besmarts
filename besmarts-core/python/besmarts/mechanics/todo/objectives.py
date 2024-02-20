@@ -1,4 +1,5 @@
 
+from besmarts.core import assignments
 def residual_squared_error(x1, x0):
 
     result = {}
@@ -64,7 +65,7 @@ def modsem(pos, hes) -> sag:
     # may want some initializers/computers such as bond length and fc
 
 # refs should be a state?
-# smiles_state = Dict[str, structure_assignment]
+# smiles_state = Dict[str, topology_assignment]
 
 sst.smiles
 sst.graph
@@ -72,11 +73,73 @@ sst.assignments[POSITIONS].selections[(1,)] = [[0,0,0]]
 sst.assignments[GRADIENTS].selections[(1,)] = [[0,0,0]]
 sst.assignments[HESSIANS].selections[(1,1)] = [[[0,0,0],[0,0,0],[0,0,0]]]
 
+[smiles, assignments, selections]
+(0, POSITIONS, (1,), 0): [x, y, z]
+
+gid = db_graph_assignment_add_graph(db, g)
+aid = db_graph_assignment_add_(g)
+
+gid, aid, sid, vid (eid)
+
+topology_assignment_{str, float, unit, comment}
+
+xyz = smiles_dataset_get_values((0, POSITIONS, (1,), 0))
+
+db_graph_assignment:
+    graphs: list[graph_assignment]
+    assignments = {str: topology_assignment_terms}
+
+db_graph_assignment.graphs[0]
+db_graph_assignment.assignments[POSITIONS][0][(1,)] = [[x,y,z]]
+
+db_graph_topology_assignment
+    topology
+    selections[gid][sid]
+
+CLASSES:
+    db_graph_assignment
+    db_graph_topology_assignment
+
+
+POSITIONS
+0, 1, 0 x y z
+0, 1, 1 x y z
+0, 1, 1 x y z
+GRADIENTS
+0, 1, 0 x y z
+0, 1, 1 x y z
+0, 1, 1 x y z
+HESSIANS
+0 1 1 0 xx xy xz yx yy yz zx zy zz
+
+TORSIONS
+0 1 2 3 4 0 a
+0 1 2 3 5 0 a
+
+ANGLES
+0 1 2 3 0 a
+0 1 2 4 0 a
+
+# 
+ELEMENT
+0 1 8
+
+select x, y, z from positions where id=0 and index=0 selection=1
+
+topology_assignment_terms
+    name
+    units
+    selections = (0, (1,)): [x,y,z]
+    comment
+
+graph_assignment
+    graph
+    dict[str: topology_assignment]
+
 # for elecs
 sst.assignments[GRID].selections[None] = [[0,0,0,0,0,0,0,0,0,0,0,0]]
 sst.assignments[ESP].selections[None] = [[0,0,0,0,0,0,0,0,0,0,0,0]]
 # sst.assignments[RADII].selections[(1,)] = [[1.2]]
-
 
 # sst.assignments["bonds"].selections[(1,)] = [[0]]
 # sst.assignments["pairs"].selections[(1,)] = [[0,0,0]]
@@ -286,4 +349,36 @@ def objective_hessian(reference: psys, predicted: psys):
     h1 = predicted.assignments["hessian"]
 
     
+class objective_function_total_energy:
+    """
+    """
 
+    def __init__(self, csys, states, objectives):
+        """
+        I would need to iterate all keys, then filter only those that we applied.
+        Optionally, accept an additional filter that pulls even more.
+
+        """
+        self.csys = csys
+
+        # the reference coordinates, topo is atom
+        self.pos: assignments.graph_topology_db_table = None
+
+        # the reference energy, topo is undef
+        self.reference: assignments.graph_topology_db_table = None
+
+        # compute will need all energy tables
+        # should these be tables, and a lookup will map compute to tables
+        self.tasks = ["bonds", "angles", "torsions"]
+
+    "bonds", compute_bond(csys, psys, pos)
+
+    def compute(x0, *args):
+        for k, x in zip(self.fitting, x0):
+            mm.chemical_system_set_value(k, x)
+        psys = mm.chemical_system_to_physical_system(csys, pos)
+        observables = compute(pos, psys)
+        objective = objective(ref_obs, observables)
+        return objective
+        # have a vectorized model
+        # take the x0 and place 

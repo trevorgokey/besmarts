@@ -7,6 +7,7 @@ import datetime
 
 from besmarts.core import assignments
 from besmarts.core import perception
+from besmarts.core import db
 
 
 class topology_term:
@@ -77,9 +78,28 @@ class chemical_model_procedure:
         assert False
 
 
+def graph_topology_db_table_gradient(pm, pos: assignments.graph_topology_db_table):
+    # this would use the energy function in the pm and the coordinates in pos
+    # to create a new dbt
+    
+    pass
+
+def graph_topology_db_table_energy(pm, pos: assignments.graph_topology_db_table):
+    # this would use the energy function in the pm and the coordinates in pos
+    # to create a new dbt
+    aid = max(ASSN_NAMES)+1
+    aname = "BOND_ENERGY"
+    
+    ene = run_energy()
+    # tassn assignments.graph_topology_db_table(pos.topology, ene)
+
+    return tassn
+
 class physical_model_procedure:
     """
     calculates one or more physical properties of a system
+    returns a bunch tables
+
     """
     def __init__(self, name, topo):
         self.name = name # HESSIANS
@@ -89,7 +109,9 @@ class physical_model_procedure:
     def assign(self, pm: physical_model):
         """
         this will return the compute function and config (i.e. the task)
+        the task will return a assignments.graph_topology_db_table
         """
+        return
 
     def get_term_labels(self, key) -> Dict:
         assert False
@@ -208,6 +230,75 @@ class forcefield:
         self.metadata: forcefield_metadata = forcefield_metadata()
         self.models: Dict[str, mm.chemical_model] = None
         self.perception: perception.perception_model = pcp_model
+
+def chemical_system_iter_keys(csys):
+    kv = {}
+    for m, cm in enumerate(csys.models):
+        for t in cm.system_terms:
+            for i, v in enumerate(cm.system_terms[t].values):
+                kv[(m, t, i)] = v
+        for t in cm.topology_terms:
+            for l, vl in cm.topology_terms[t].values.items():
+                for i, v in enumerate(vl):
+                    kv[(m, t, l, i)] = v
+    return kv
+
+def chemical_system_get_value_list(csys, key):
+    if len(key) == 3:
+        m, t, l = key
+        return csys.models[m].topology_terms[t].values[l]
+    elif len(key) == 2:
+        m, t = key
+        return csys.models[m].system_terms[t].values
+
+def chemical_system_set_value_list(csys, key, values):
+
+    if len(key) == 3:
+        m, t, l = key
+        csys.models[m].topology_terms[t].values[l] = values
+    elif len(key) == 2:
+        m, t = key
+        csys.models[m].system_terms[t].values = values
+
+def chemical_system_set_value(cys, key, value):
+
+    if len(key) == 4:
+        m, t, l, i = key
+        csys.models[m].topology_terms[t].values[l][i] = value
+
+    elif len(key) == 3:
+        m, t, i = key
+        csys.models[m].system_terms[t].values[i] = value
+
+def chemical_system_get_value(csys, key):
+    if len(key) == 4:
+        m, t, l, i = key
+        return csys.models[m].topology_terms[t].values[l][i]
+    elif len(key) == 3:
+        m, t, i = key
+        return csys.models[m].system_terms[t].values[i]
+
+def chemical_system_vectorize(cs, pos):
+    # get the global list of parameters
+
+    # (0, "s", "s1", 0) : 1.0          
+    # (0, "k", "b1", 0) : 500                         
+    # (3, "k", "t1", 0) : 0.5
+
+    # model, term, parameter, index                   
+
+    # (0, "c", 0): 10.0                               
+    # model, term, index        
+
+    # create the psys and iterate the labels and generate the unique set
+
+    # for each visited label, add to {lbl: value}
+
+    # this means I need a unique label system for each
+
+    # model_index, term_name, term_index
+
+    pass
 
 def chemical_system_to_physical_system(cs, pos: assignments.smiles_assignment) -> physical_model:
     ps = physical_system([])

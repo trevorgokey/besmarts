@@ -728,19 +728,23 @@ def smarts_clustering_optimize(
                         break
                     g = graphs.graph_to_structure(icd.graph_decode(G[i[0]]), i[1], topo) 
                     # if g not in seen:
+                    seen_g.add(g)
                     print(
                         f"{seen_i:06d} {str(i):24s}",
                         objective.report([x]),
                         gcd.smarts_encode(g),
                     )
-                    # seen.add(g)
+                    seen.add(graphs.structure_remove_unselected(g))
                 print()
+                if len(seen) < 2:
+                    print(f"Skipping {S.name} since all graphs are the same")
+                    step_tracker[S.name] = strategy.cursor
+                    continue
 
                 if objective.single(assn_s.values()) == 0.0:
                     print(f"Skipping {S.name} due to no objective")
                     step_tracker[S.name] = strategy.cursor
                     continue
-
 
                 if (
                     step.direct_enable

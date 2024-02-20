@@ -11,17 +11,52 @@ import math
 assignment_mapping = Dict[str, List[List[Sequence[int]]]]
 cartesian_coordinates = List[List[Tuple[float, float, float]]]
 
-POSITIONS = "positions"
-GRADIENTS = "gradients"
-HESSIANS = "hessians"
-GRID = "grid"
-ESP = "esp"
-CHARGES = "charges"
-RADII = "radii"
-BONDS = "bonds"
-ANGLES = "angles"
-TORSIONS = "torsions"
-OUTOFPLANES = "outofplanes"
+POSITIONS = 0
+GRADIENTS = 1
+HESSIANS = 2
+DISTANCES = 3
+ANGLES = 4
+TORSIONS = 5
+OUTOFPLANES = 6
+CHARGES = 7
+GRID = 8
+ESP = 9
+RADII = 10
+
+ASSN_NAMES = {
+    POSITIONS : "positions",
+    GRADIENTS : "gradients",
+    HESSIANS : "hessians",
+    DISTANCES : "distances",
+    ANGLES : "angles",
+    TORSIONS : "torsions",
+    OUTOFPLANES : "outofplanes",
+    CHARGES : "charges",
+    GRID : "grid",
+    ESP : "esp",
+    RADII : "radii",
+}
+
+gid_t = int
+sid_t = Sequence[int]
+aid_t = int
+did_t = Sequence
+
+class graph_topology_db_table:
+    """
+    Holds the data for a db of graphs that all share the same topology.
+    """
+    def __init__(self, topo, sel):
+        self.topology: topology.structure_topology = topo
+        self.selection: Dict[gid_t, Dict[sid_t, did_t]] = sel
+
+class graph_topology_db:
+    """
+    Aggregation of data of various topology with the graphs
+    """
+    def __init__(self):
+        self.graphs: Dict[gid_t, graphs.graph] = {}
+        self.gfuncs: Dict[aid_t, graph_topology_db_table] = {}
 
 class smiles_assignment:
     __slots__ = "smiles", "selections"
@@ -77,10 +112,10 @@ class structure_assignment_group(smiles_assignment_group):
         return structure_assignment_group_copy(self)
 
 
-class topology_assignment:
+class topology_assignment_group:
     def __init__(self):
         self.topology = None
-        self.selections = {}
+        self.assignments: List[Dict] = []
 
 class smiles_state:
     def __init__(self):
@@ -88,6 +123,11 @@ class smiles_state:
         self.assignments: Dict[str, topology_assignment] = {}
 
 class graph_state:
+    """
+    this keeps track of the observables, e.g.
+    state.assignments[POSITIONS][(1,)]
+    
+    """
     def __init__(self):
         self.smiles = ""
         self.graph = None
@@ -492,3 +532,99 @@ def smiles_assignment_group_to_structure_assignment_group(
         gph_assn_list.append(gph_assn)
 
     return structure_assignment_group(gph_assn_list, topo)
+
+
+def smiles_assignment_group_to_graph_topology_db(sag, aid, gcd) -> graph_topology_db:
+
+    db = graph_topology_db()
+    tassn = graph_topology_db_table(sag.topology, {})
+
+    for sa in sag.assignments:
+        g = gcd.smiles_decode(sa.smiles)
+        gid = graph_topology_db_add_graph(db, g)
+        tassn.selections[gid] = sa.selections
+
+    graph_topology_db_add_selection(db, gid, aid, tassn)
+
+    return db
+
+def graph_topology_db_get_graphs(db):
+    return db.graphs
+
+
+def graph_topology_db_iter_values(db):
+    kv = {}
+    for aid, gassn in db.assignments.items():
+        for gid, tassn in gassn.items():
+            for sid, data in tassn.selections.items():
+                for did, v in enumerate(data):
+                    kv[(aid, gid, sid, did)] = v
+    return kv
+
+
+def graph_topology_db_add_graph(db, g) -> gid_t:
+    """
+    """
+    i = len(db.graphs)
+    db.graphs[i] = g
+    return i
+
+
+def graph_topology_db_add_selection(db, gid, aid, sel: graph_topology_db_table):
+
+    assert gid in db.graphs
+
+    if aid not in db.assignments:
+        db.assignments[aid] = {}
+    db.assignments[aid][gid] = sel
+
+
+def graph_topology_db_add_positions(db, gid, sel: graph_topology_db_table):
+
+    assert sel.topology == topology.atom
+
+    for sid, data in sel.selections.items():
+        for xyz in data:
+            assert len(xyz) == 3
+
+    return graph_topology_dbs_add_selection(db, gid, POSITIONS, sel)
+
+
+def db_graph_position_assignment(nids, confs):
+    tassn = graph_topology_db_table()
+    tassn.topology = topology.atom
+    tassn.selections.update({nid: xyz for nid, xyz in zip(nids, confs)})
+    return tassn
+    
+
+def graph_topology_db_add_gradients(db, gid, sel: graph_topology_db_table):
+
+    assert sel.topology == topology.atom
+
+    for sid, data in sel.selections.items():
+        for xyz in data:
+            assert len(xyz) == 3
+
+    return graph_topology_dbs_add_selection(db, gid, GRADIENTS, sel)
+
+
+def graph_topology_db_add_hessians(db, gid, sel: graph_topology_db_table):
+
+    assert sel.topology == topology.pair
+
+    for sid, data in sel.selections.items():
+        for xyz2 in data:
+            assert len(xyz2) == 9
+
+    return graph_topology_dbs_add_selection(db, gid, HESSIANS, sel)
+
+
+def graph_topology_db_add_distances(db, gid, sel: graph_topology_db_table):
+
+    assert sel.topology == topology.pair
+
+    for sid, data in sel.selections.items():
+        data: Sequence[float]
+        assert all((type(d) is float for d in data))
+
+    return graph_topology_dbs_add_selection(db, gid, DISTANCES, sel)

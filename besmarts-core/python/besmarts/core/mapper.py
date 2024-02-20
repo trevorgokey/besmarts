@@ -463,6 +463,7 @@ def map_to(
 
             # eh, assume same IC type for now
             # this checks for edge mapping
+            # tricky edge case for pairs which have no connects
             for edge_a, edge_b in zip(cg.topology.connect, o.topology.connect):
                 # edge_a = (cg.select[permA[edge_a[0]]], cg.select[edge_a[1]])
                 edge_a = (A[edge_a[0]], A[edge_a[1]])

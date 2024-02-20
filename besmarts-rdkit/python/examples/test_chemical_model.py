@@ -15,8 +15,11 @@ from besmarts.mechanics import masses
 from besmarts.mechanics import smirnoff_models
 
 
-from besmarts.codecs import codec_rdkit
+import besmarts.codecs
+from besmarts.codecs import codec_rdkit, codec_native
 from besmarts.assign import hierarchy_assign_rdkit
+# from besmarts.codecs import codec_native
+from besmarts.assign import hierarchy_assign_native
 from pprint import pprint
 import math
 
@@ -379,7 +382,19 @@ def make_chemical_system_ethane():
 
 def make_pcp():
     gcd = codec_rdkit.graph_codec_rdkit()
+
+
+    # atoms = list(codec_native.primitive_codecs_get_atom())
+    # bonds = codec_native.primitive_codecs_get_bond()
+
+    # codecs = codec_native.primitive_codecs_get_atom()
+    # codecs.update(bonds)
+    
+    # bonds = list(bonds)
+
+    # gcd = codec_native.graph_codec_native(codecs, atoms, bonds)
     labeler = hierarchy_assign_rdkit.smarts_hierarchy_assignment_rdkit()
+    # labeler = hierarchy_assign_native.smarts_hierarchy_assignment_native()
     pcp = perception.perception_model(gcd, labeler)
     return pcp
 
@@ -389,9 +404,14 @@ pos = make_ethane()
 pos = assignments.smiles_assignment_to_graph_assignment(pos, pcp.gcd)
 
 print("Loading... openff_unconstrained-2.0.0.offxml")
-# csys = make_chemical_system_ethane()
-csys = smirnoff_models.smirnoff_load("/home/tgokey/Downloads/openff_unconstrained-2.0.0.offxml", pcp)
-csys.models[4] = make_electrostatic_model_ethane()
+csys = make_chemical_system_ethane()
+# csys = smirnoff_models.smirnoff_load("/home/tgokey/Downloads/openff_unconstrained-2.0.0.offxml", pcp)
+# csys.models[4] = make_electrostatic_model_ethane()
+
+pprint(mm.chemical_system_iter_keys(csys))
+kv = mm.chemical_system_iter_keys(csys)
+for i, k in enumerate(kv,1):
+    print(i, k,mm.chemical_system_get_value(csys, k)) 
 
 pos = [pos]
 print("Parameterizing...")
@@ -409,6 +429,7 @@ bonds = assignments.smiles_assignment_geometry_distances(pos[0], graphs.graph_bo
 system_terms = {k: v.values for k, v in csys.models[0].system_terms.items()}
 ene = mm.smiles_assignment_function(csys.models[0].energy_function, system_terms, params, bonds)
 # pprint(ene)
+
 
 E = 0
 total=0

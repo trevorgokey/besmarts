@@ -115,6 +115,7 @@ def chemical_model_angle_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     proc.smarts_hierarchies[u.index].smarts[root.index] = None
 
     for param in d["parameters"]:
+
         node = proc.smarts_hierarchies[u.index].index.node_add_below(
             root.index
         )
@@ -196,11 +197,8 @@ def smirnoff_dihedral_load(cm, pcp, d):
 
     cm.procedures.append(proc)
 
-
-def chemical_model_torsion_periodic_smirnoff(
-    d: Dict, pcp
-) -> mm.chemical_model:
-    cm = mm.chemical_model("T", "Torsions", topology.torsion)
+def chemical_model_dihedral_periodic_smirnoff(d, pcp):
+    cm = mm.chemical_model("", "", None)
 
     cm.energy_function = force_periodic.energy_function_periodic_cosine_2term
     cm.force_function = force_periodic.force_function_periodic_cosine_2term
@@ -211,7 +209,17 @@ def chemical_model_torsion_periodic_smirnoff(
         "k": mm.topology_term("height", "k", "float", "kcal/mol", {}, "", {}),
         "p": mm.topology_term("phase", "p", "float", "deg", {}, "", {}),
     }
+    return cm
 
+def chemical_model_torsion_periodic_smirnoff(
+    d: Dict, pcp
+) -> mm.chemical_model:
+
+    cm = chemical_model_dihedral_periodic_smirnoff(d, pcp)
+    cm.topology = topology.torsion
+    cm.name = "Torsions"
+    cm.symbol = "T"
+    cm.internal_function = assignments.smiles_assignment_geometry_torsions
     smirnoff_dihedral_load(cm, pcp, d)
 
     return cm
@@ -220,11 +228,13 @@ def chemical_model_torsion_periodic_smirnoff(
 def chemical_model_outofplane_periodic_smirnoff(
     d: Dict, pcp
 ) -> mm.chemical_model:
-    cm = chemical_model_torsion_periodic_smirnoff(d, pcp)
+
+    cm = chemical_model_dihedral_periodic_smirnoff(d, pcp)
     cm.symbol = "I"
     cm.name = "OutOfPlanes"
     cm.topology = topology.outofplane
     cm.internal_function = assignments.smiles_assignment_geometry_outofplanes
+    smirnoff_dihedral_load(cm, pcp, d)
 
     return cm
 
@@ -273,12 +283,12 @@ def chemical_model_electrostatics_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     proc.topology_parameters[(0, i.name)] = {"s": i.name}
     cm.topology_terms["s"].values[i.name] = [1.0]
 
-    # 12 scaling (on)
-    i = proc.smarts_hierarchies[0].index.node_add_below(None)
-    i.name = "s2"
-    proc.smarts_hierarchies[0].smarts[i.index] = "[*:1]~[*:2]"
-    proc.topology_parameters[(0, i.name)] = {"s": i.name}
-    cm.topology_terms["s"].values[i.name] = [0.0]
+    # 12 scaling is skipped as it is not a valid pair
+    # i = proc.smarts_hierarchies[0].index.node_add_below(None)
+    # i.name = "s2"
+    # proc.smarts_hierarchies[0].smarts[i.index] = "[*:1]~[*:2]"
+    # proc.topology_parameters[(0, i.name)] = {"s": i.name}
+    # cm.topology_terms["s"].values[i.name] = [0.0]
 
     # 13 scaling (on)
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
@@ -374,12 +384,12 @@ def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     proc.topology_parameters[(0, i.name)] = {"s": i.name}
     cm.topology_terms["s"].values[i.name] = [1.0]
 
-    # 12 scaling (on)
-    i = proc.smarts_hierarchies[0].index.node_add_below(None)
-    i.name = "s2"
-    proc.smarts_hierarchies[0].smarts[i.index] = "[*:1]~[*:2]"
-    proc.topology_parameters[(0, i.name)] = {"s": i.name}
-    cm.topology_terms["s"].values[i.name] = [0.0]
+    # 12 scaling is skipped as it is not a valid pair
+    # i = proc.smarts_hierarchies[0].index.node_add_below(None)
+    # i.name = "s2"
+    # proc.smarts_hierarchies[0].smarts[i.index] = "[*:1]~[*:2]"
+    # proc.topology_parameters[(0, i.name)] = {"s": i.name}
+    # cm.topology_terms["s"].values[i.name] = [0.0]
 
     # 13 scaling (on)
     i = proc.smarts_hierarchies[0].index.node_add_below(None)

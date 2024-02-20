@@ -42,11 +42,11 @@ def graph_load(lines, dtype=arrays.bitvec):
     bond_codecs = [key for key in primitives.primitive_key_set]
 
     line = [l for l in lines if l[0] == "#ATOM"]
-    assert len(line) == 1
+    assert len(line) == 1, f"Expected one #ATOM directive, found {len(line)}"
     atom_primitives = primitive_load(line[0], atom_codecs)
 
     line = [l for l in lines if l[0] == "#BOND"]
-    assert len(line) == 1
+    assert len(line) == 1, "Expected one #BOND directive, found {len(line)}"
     bond_primitives = primitive_load(line[0], bond_codecs)
 
     atoms = {}
@@ -256,6 +256,7 @@ class graph_codec_native(codecs.graph_codec):
 
         primary = None
         h = g
+        tag = False
         if hasattr(g, "topology"):
             tag = True
             primary = [g.select[i] for i in g.topology.primary]

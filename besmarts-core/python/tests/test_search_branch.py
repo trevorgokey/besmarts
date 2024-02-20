@@ -9,7 +9,7 @@ from besmarts.core import configs
 import io
 
 def build_torsion():
-    inp = """#GRAPH PROPER
+    inp = """#GRAPH TORSION
 #ATOM element hydrogen connectivity_total connectivity_ring ring_smallest aromatic chirality formal_charge
 #BOND bond_ring bond_order
  -1  -1  -1  -1  -1  -1  -1  -1  -1  -1

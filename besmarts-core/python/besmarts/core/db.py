@@ -9,6 +9,48 @@ from besmarts.core import arrays
 from besmarts.core import codecs
 from besmarts.core import compute
 
+POSITIONS = 0
+GRADIENTS = 1
+HESSIANS = 2
+DISTANCES = 3
+ANGLES = 4
+TORSIONS = 5
+OUTOFPLANES = 6
+CHARGES = 7
+GRID = 8
+ESP = 9
+RADII = 10
+
+ASSN_NAMES = {
+    POSITIONS : "positions",
+    GRADIENTS : "gradients",
+    HESSIANS : "hessians",
+    DISTANCES : "distances",
+    ANGLES : "angles",
+    TORSIONS : "torsions",
+    OUTOFPLANES : "outofplanes",
+    CHARGES : "charges",
+    GRID : "grid",
+    ESP : "esp",
+    RADII : "radii",
+}
+
+gid_t = int
+sid_t = Sequence[int]
+aid_t = int
+did_t = Sequence
+
+class graph_topology_db_table:
+    def __init__(self, topo, sel):
+        self.topology: topology.structure_topology = topo
+        self.selection: Dict[gid_t, Dict[sid_t, did_t]] = sel
+
+
+class graph_topology_db:
+    def __init__(self):
+        self.graphs: Dict[gid_t, graphs.graph]
+        self.gfuncs: Dict[aid_t, graph_topology_db_table] = {}
+
 class db_dict:
     def __init__(self, icd, name=""):
         self.icd = icd
@@ -130,7 +172,6 @@ def db_intvec_create(db_name) -> bool:
     except Exception:
         return False
 
-
 def db_graph_write(icd: codecs.intvec_codec, db_name, pairs, prefix=""):
 
     if prefix:
@@ -146,7 +187,6 @@ def db_structure_write_distributed(pairs, shm=None):
         prefix = prefix + ":"
     for k,v in pairs:
         shm.db[prefix+str(k)] = shm.icd.graph_encode(v).tobytes()
-
 
 
 def db_structure_write(icd: codecs.intvec_codec, db_name, pairs, prefix=""):
@@ -232,4 +272,5 @@ def db_graph_read(icd: codecs.intvec_codec, db_name, keys, prefix=""):
             keyvals[k] = icd.graph_decode(v)
 
     return keyvals
+
 
