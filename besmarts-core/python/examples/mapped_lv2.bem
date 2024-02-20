@@ -1,4 +1,0 @@
-#GRAPH BOND
-#ATOM element hydrogen connectivity_total connectivity_ring ring_smallest aromatic chirality formal_charge
-#BOND bond_ring bond_order
- -1  -1  64   8  16   1   1   1   1   1  -2  -2  64   1  16   4   8   1   1   1  -5  -5  64   4  16   4   8   1   1   1 -67 -67   0   0   0   0   0   0   0   0 -73 -73   0   0   0   0   0   0   0   0   1   2   1   2   1  67   0   0   2   5   2   2   2  73   0   0

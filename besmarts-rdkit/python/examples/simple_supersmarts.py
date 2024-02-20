@@ -76,31 +76,3 @@ graphs.graph_set_primitives_atom(g, ["unit", "unit_index"])
 graphs.graph_disable_primitives_bond(g, ["link_src", "link_dst"])
 
 print(gcd.smarts_encode(g))
-
-# Now the graph has unit information. Now we might want to compact it into a
-# single node. We then set all frontier edges to have the correct link_src set,
-# and then I guess set all link_dst?
-
-# I can then encode this as a SMARTS which will be a very compact SMARTS, i.e.
-# just [$1:1]. Ideally this can then be used as a coarse representation of a large SMARTS
-
-
-
-
-
-
-exit()
-# for key in supersmarts_atom:
-#     pcp.primitive_codecs[key] = besmarts_codecs[key]
-
-# pcp.atom_primitives = tuple(supersmarts_atom + list(pcp.atom_primitives))
-# pcp.bond_primitives = tuple(supersmarts_bond + list(pcp.bond_primitives))
-
-
-smi = "CC(C)(O1)C[C@@H](O)[C@@]1(O2)[C@@H](C)[C@@H]3CC=C4[C@]3(C2)C(=O)C[C@H]5[C@H]4CC[C@@H](C6)[C@]5(C)Cc(n7)c6nc(C[C@@]89(C))c7C[C@@H]8CC[C@@H]%10[C@@H]9C[C@@H](O)[C@@]%11(C)C%10=C[C@H](O%12)[C@]%11(O)[C@H](C)[C@]%12(O%13)[C@H](O)C[C@@]%13(C)CO"
-# from besmarts! It gets rid of chirality
-smi = "CC(C)(CC1[OH])OC1(OC2)C(C)C(C32C(=O)CC4C5(C)Cc6nc7C8)CC=C3C4CCC5Cc6nc7CC(C)(C9CC([OH])C%10(C)C%11([OH])C%12C)C8CCC9C%10=CC%11OC%12(C(C%13)[OH])OC%13(C)C[OH]"
-
-print("Input SMILES:\n" + smi)
-beg = gcd.smiles_decode(smi)
-print("Encoded SMILES:\n" + gcd.smiles_encode(beg))

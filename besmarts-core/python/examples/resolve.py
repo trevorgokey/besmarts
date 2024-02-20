@@ -3,7 +3,7 @@ from besmarts.codecs.codec_rdkit import graph_codec_rdkit
 from besmarts.core.codecs import primitive_key as p
 from besmarts.core import graphs
 
-from besmarts.core.enumerate import enumerate_smiles
+from besmarts.core import resolve
 from besmarts.core.rulesets import visitor_ruleset
 
 # atom = (p.ELEMENT, p.HYDROGEN, p.FORMAL_CHARGE, p.VALENCE)
@@ -40,7 +40,7 @@ for l, smi in enumerate(("C1CCCC1",)):
 
     mols = []
     smis = set()
-    for i, P in enumerate(enumerate_smiles(b, rulesets)):
+    for i, P in enumerate(resolve.resolve_smiles(b, rulesets)):
         if P not in mols:
             mols.append(P)
             smi = gcd.smiles_encode(P)

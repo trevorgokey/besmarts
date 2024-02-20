@@ -14,7 +14,7 @@ codec_native.graph_codec_native_save("propane.bg", [G])
 
 
 bonds = graphs.graph_to_structure_bonds(G)
-codec_native.graph_codec_native_save("propane_bonds.bs", bonds)
+codec_native.graph_codec_native_save("propane_bonds.bg", bonds)
 
 
 G = codec_native.graph_codec_native_load("propane.bg")[0]

@@ -31,3 +31,4 @@ graphs.structure_extend(cfg, bonds)
 U = mapper.union_list(bonds)
 graphs.structure_print(U)
 print(gcd.smarts_encode(U))
+
