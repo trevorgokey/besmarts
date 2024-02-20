@@ -25,10 +25,9 @@ U = mapper.union_list(bonds)
 graphs.structure_print(U)
 print(gcd.smarts_encode(U))
 
-# extend the bonds to include the neighbors
+# extend the bonds to include the immediate neighbors
 cfg = configs.smarts_extender_config(1, 1, True)
 graphs.structure_extend(cfg, bonds)
 U = mapper.union_list(bonds)
 graphs.structure_print(U)
-
 print(gcd.smarts_encode(U))
