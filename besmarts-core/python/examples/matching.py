@@ -17,9 +17,15 @@ t = gcd.smarts_decode(target)
 t = graphs.structure(t.nodes, t.edges, tuple(sorted(t.nodes)), topology.bond_topology())
 
 for query in queries:
-    S0 = gcd.smarts_decode(query)
-    S0 = graphs.structure(S0.nodes, S0.edges, tuple(sorted(S0.nodes)), topology.bond_topology())
 
+    S0 = gcd.smarts_decode(query)
+
+    S0 = graphs.structure(
+        S0.nodes,
+        S0.edges,
+        tuple(sorted(S0.nodes)),
+        topology.bond_topology()
+    )
 
     print("testing if", gcd.smarts_encode(t))
     print("is a subset (match) to parameter", gcd.smarts_encode(S0))

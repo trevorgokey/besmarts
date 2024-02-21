@@ -74,8 +74,7 @@ mcs = MCS(g, h)
 if mcs:
     for (gi, hi, r, M) in mcs[max(mcs)]:
         graphs.graph_set_primitives_atom(r, gcd.atom_primitives)
-        print(gcd.smarts_encode(r))
+        # print(gcd.smarts_encode(r))
         sg = graphs.subgraph(r.nodes, r.edges, tuple(M))
         graphs.graph_set_primitives_atom(sg, gcd.atom_primitives)
         print(gcd.smiles_encode(sg))
-        break
