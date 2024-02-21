@@ -646,12 +646,11 @@ def smarts_clustering_optimize(
         pickle.dump([sag, cst, strategy], open("chk.cst.p", "wb"))
 
         
-
         step = None
 
         while not optimization.optimization_iteration_is_done(macro):
-            t = datetime.datetime.now()
-            print(f"{t} Initializing new loop on macro {strategy.cursor}")
+            # t = datetime.datetime.now()
+            # print(f"{t} Initializing new loop on macro {strategy.cursor}")
             step: optimization.optimization_step = (
                 optimization.optimization_iteration_next(macro)
             )
@@ -966,6 +965,8 @@ def smarts_clustering_optimize(
 
         macroamt = strategy.macro_accept_max_total
         macroampc = strategy.macro_accept_max_per_cluster
+        macroamt = strategy.macro_accept_max_total
+        macroampc = strategy.macro_accept_max_per_cluster
 
         cnd_n = len(candidates)
         n_added = 0
@@ -991,6 +992,7 @@ def smarts_clustering_optimize(
 
             cout = {}
             cout_sorted_keys = []
+
 
             shm = compute.shm_local(1, data={"cst": cur_cst, "sag": sag, "gcd": gcd, "labeler": labeler, "objective": objective, "assn": assn}) 
 
@@ -1021,7 +1023,6 @@ def smarts_clustering_optimize(
                 addr = ('127.0.0.1', 0)
                 procs=len(iterable)
 
-            ws = compute.workqueue_new_workspace(wq, address=addr, nproc=procs, shm=shm)
 
             cnd_keys = {i: k for i, k in enumerate(candidates, 1)}
 
@@ -1046,24 +1047,25 @@ def smarts_clustering_optimize(
                 elif k in iterable:
                     iterable.pop(k)
 
-            work = compute.workspace_submit_and_flush(
-                ws,
-                find_successful_candidates_distributed,
-                iterable,
-                chunksize,
-                1.0,
-                len(iterable),
-            )
+            if macroamt + macroampc + microamt + microampc == 0:
+                work = {i: (1, 0.0, 0.0, 1) for i in iterable}
 
-            ws.close()
-            # threading.Thread(target=ws.close).start()
-            ws = None
-            # gc.collect()
+            else:
+                ws = compute.workqueue_new_workspace(wq, address=addr, nproc=procs, shm=shm)
+                work = compute.workspace_submit_and_flush(
+                    ws,
+                    find_successful_candidates_distributed,
+                    iterable,
+                    chunksize,
+                    1.0,
+                    len(iterable),
+                )
+                ws.close()
+                ws = None
 
             print(f"The unfiltered results of the candidate scan N={len(work)} total={len(iterable)}:")
 
             max_line = 0
-
 
             best_reuse = None
             if reuse:
@@ -1209,6 +1211,36 @@ def smarts_clustering_optimize(
             cst = smarts_clustering(hidx, new_assignments, new_match)
 
             groups = clustering_build_ordinal_mappings(cst, sag)
+
+            if strategy.prune_empty:
+                prune_count = 0
+                pruned = []
+                new_lbls = [n.name for n in nodes]
+                for lbl in list(groups):
+                    # only consider new nodes since we have other state like
+                    # the tracker that needs to be managed and would be more
+                    # complicated to handle
+                    if len(groups[lbl]) == 0 and lbl in new_lbls:
+                        n = trees.tree_index_node_remove_by_name(cst.hierarchy.index, lbl)
+                        cst.subgraphs.pop(n.index)
+                        cst.smarts.pop(n.index)
+                        prunt_count += 1
+                        del groups[lbl]
+                        if lbl in cst.mappings:
+                            del cst.mappings[lbl]
+                        pruned.append(n.index)
+                        
+                for cnd_i, hent in zip(list(keys), list(nodes)):
+                    if hent.index in pruned:
+                        nodes.remove(hent)
+                        del keys[cnd_i]
+                del pruned
+                del prune_count
+                del new_lbls
+                print(f"Pruned {prune_count} empty nodes; candidates now {len(keys)}/{len(cnd_keep)}")
+
+            
+
 
             success = True
             added = True
