@@ -45,10 +45,12 @@ ic_list = [s for s in graphs.graph_to_structure_torsions(G[0])]
 selections = [(i, x) for i in G for x in graphs.graph_torsions(G[i])]
 G[0] = icd.graph_encode(G[0])
 
+# set these all to 1 to split on neighbors too
 branch_min = 0
 branch_limit = 0
 branch_depth_min = 0
 branch_depth = 0
+
 bit_depth_min = 1
 bit_depth_max = 1
 
@@ -70,7 +72,7 @@ splitter = configs.smarts_splitter_config(
 
 # for this to work, we need to extend our graphs to at least the depth of S0
 extender = configs.smarts_extender_config(branch_depth, branch_depth, True)
-# graphs.structure_extend(extender, ic_list)
+graphs.structure_extend(extender, ic_list)
 
 S0 = pcp.smarts_decode("[*:1]~[*:2]~[*:3]~[*:4]")
 S0 = graphs.structure(S0.nodes, S0.edges, (1, 2, 3, 4,), topology.torsion)
