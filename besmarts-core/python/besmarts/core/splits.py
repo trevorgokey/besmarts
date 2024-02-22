@@ -19,6 +19,7 @@ import datetime
 from besmarts.core.topology import structure_topology
 from besmarts.core.graphs import (
     structure_remove_unselected,
+    graph,
     subgraph,
     structure,
 )
@@ -1111,7 +1112,8 @@ def split_subgraphs(
     topology: structure_topology,
     splitter: smarts_splitter_config,
     S0: subgraph,
-    A: Sequence[subgraph],
+    G: Sequence[graphs.graph],
+    selections,
     Q=None,
     verbose=False,
     debug=False,
@@ -1119,7 +1121,19 @@ def split_subgraphs(
     # verbose = True
     # debug = True
 
-    A = tuple((structure(ai.nodes, ai.edges, ai.select, topology) for ai in A))
+    cdcs = codec_native.primitive_codecs_get()
+    gcd = codec_native.graph_codec_native(
+        cdcs,
+        list(codec_native.primitive_codecs_get_atom()),
+        list(codec_native.primitive_codecs_get_bond())
+    )
+    icd = codecs.intvec_codec(
+        gcd.primitive_codecs,
+        gcd.atom_primitives,
+        gcd.bond_primitives
+    )
+
+    # A = tuple((structure(ai.nodes, ai.edges, ai.select, topology) for ai in A))
     S0 = structure(S0.nodes, S0.edges, S0.select, topology)
 
     procs = configs.processors
@@ -1129,7 +1143,7 @@ def split_subgraphs(
     S = []
 
     print(datetime.datetime.now(), "Generating splits")
-    single_bits = split_single_bits(topology, splitter, S0, A, Q=Q)
+    single_bits = split_single_bits(topology, splitter, S0, G, selections, icd, Q=Q)
     print(datetime.datetime.now(), f"Generated {len(single_bits)} splits")
     # single_bits.extend([(, m.copy()) for (b,m) in single_bits])
 
@@ -1149,12 +1163,6 @@ def split_subgraphs(
     if True:
         seen = set()
 
-        cdcs = codec_native.primitive_codecs_get()
-        gcd = codec_native.graph_codec_native(
-            cdcs,
-            list(codec_native.primitive_codecs_get_atom()),
-            list(codec_native.primitive_codecs_get_bond())
-        )
         smarts = [gcd.smarts_encode(ai) for ai in A]
 
         for b, m in single_bits:
@@ -1889,7 +1897,8 @@ def split_structures_distributed(
 def split_structures(
     splitter: smarts_splitter_config,
     S0: structure,
-    A: Sequence[structure],
+    G: Sequence[structure],
+    selections,
     Q=None,
 ) -> split_return_type:
     topology = S0.topology
@@ -1899,7 +1908,8 @@ def split_structures(
         topology,
         splitter,
         subgraph(S0.nodes, S0.edges, S0.select),
-        sg_list,
+        G,
+        selections,
         Q=Q,
     )
 
@@ -1908,7 +1918,7 @@ def split_structures(
         tuple((subgraph(ai.nodes, ai.edges, ai.select) for ai in shards)),
         tuple(matched),
         tuple((i for i in range(len(A)) if i not in matched)),
-        sg_list,
+        selections,
         topology,
     )
 
