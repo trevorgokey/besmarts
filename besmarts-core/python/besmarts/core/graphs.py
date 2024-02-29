@@ -469,7 +469,7 @@ def graph_remove_hydrogen(g: graph) -> graph:
     nodes = {
         k: v
         for k, v in graph_nodes_copy(g).items()
-        if v.primitives[primitive_key.ELEMENT][1]
+        if not v.primitives[primitive_key.ELEMENT][1]
     }
     edges = {
         k: v

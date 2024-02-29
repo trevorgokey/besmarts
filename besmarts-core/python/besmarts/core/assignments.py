@@ -256,6 +256,12 @@ class bond_assignment_float(structure_assignment_float):
         self.topology = topology.bond
         self.selections = selections
 
+class pair_assignment_float(structure_assignment_float):
+    __slots__ = "topology", "selections"
+    def __init__(self, selections):
+        self.topology = topology.pair
+        self.selections = selections
+
 class angle_assignment_float(structure_assignment_float):
     __slots__ = "topology", "selections"
     def __init__(self, selections):
@@ -323,27 +329,6 @@ def smiles_assignment_group_concatenate(
     return sag
 
 
-def smiles_assignment_geometry_bonds(
-    gcd: codecs.graph_codec,
-    smiles: str,
-    confs: cartesian_coordinates,
-) -> smiles_assignment:
-    g = gcd.smiles_decode(smiles)
-
-    gas = graph_assignment_geometry_bonds(smiles, g, confs)
-
-    return smiles_assignment(smiles, gas.selections)
-
-def smiles_assignment_geometry_angles(
-    gcd: codecs.graph_codec,
-    smiles: str,
-    confs: cartesian_coordinates,
-) -> smiles_assignment:
-
-    g = gcd.smiles_decode(smiles)
-    gas = graph_assignment_geometry_angles(smiles, g, confs)
-
-    return smiles_assignment(smiles, gas.selections)
 
 
 def smiles_assignment_group_copy(
@@ -402,7 +387,10 @@ def graph_assignment_geometry_position(smiles, graph, confs):
 def smiles_assignment_geometry_distances(
     pos: smiles_assignment_float,
     indices
-) -> smiles_assignment:
+) -> bond_assignment_float:
+
+    if indices is None:
+        indices = graphs.graph_bonds(pos.graph)
 
     xyz = pos.selections
     selections = {}
@@ -413,10 +401,43 @@ def smiles_assignment_geometry_distances(
 
     return bond_assignment_float(selections)
 
+def smiles_assignment_jacobian_distances(pos, indices) -> smiles_assignment_float:
+
+    xyz = pos.selections
+    selections = {}
+
+    for bond in indices:
+        c1, c2 = bond
+        results = geometry.jacobian_distance(xyz[c1,], xyz[c2,])
+        selections[bond] = results
+
+    return bond_assignment_float(selections)
+
+def graph_assignment_jacobian_distances(pos, indices=None) -> smiles_assignment_float:
+
+    if indices is None:
+        indices = graphs.graph_bonds(pos.graph)
+
+    return smiles_assignment_jacobian_distances(pos, indices)
+
+def graph_assignment_jacobian_bonds(pos, indices=None) -> smiles_assignment_float:
+
+    if indices is None:
+        indices = graphs.graph_bonds(pos.graph)
+
+    return smiles_assignment_jacobian_distances(pos, indices)
+
+def graph_assignment_jacobian_pairs(pos, indices=None) -> smiles_assignment_float:
+
+    if indices is None:
+        indices = graphs.graph_pairs(pos.graph)
+
+    return smiles_assignment_jacobian_distances(pos, indices)
+
 def smiles_assignment_geometry_angles(
     pos: smiles_assignment_float,
     indices
-) -> smiles_assignment:
+) -> angle_assignment_float:
 
     xyz = pos.selections
     selections = {}
@@ -427,6 +448,54 @@ def smiles_assignment_geometry_angles(
 
     return angle_assignment_float(selections)
 
+def smiles_assignment_jacobian_angles(
+    pos: smiles_assignment_float,
+    indices
+) -> angle_assignment_float:
+
+    xyz = pos.selections
+    selections = {}
+
+    for angle in indices:
+        c1, c2, c3 = angle
+        selections[angle] = geometry.jacobian_angle(xyz[c1,], xyz[c2,], xyz[c3,])
+
+    return angle_assignment_float(selections)
+
+def graph_assignment_jacobian_angles(
+    pos: smiles_assignment_float,
+    indices = None
+) -> smiles_assignment_float:
+
+    if indices is None:
+        indices = graphs.graph_angles(pos.graph)
+
+    return smiles_assignment_jacobian_angles(pos, indices)
+
+def smiles_assignment_jacobian_outofplanes(
+    pos: smiles_assignment_float,
+    indices
+) -> smiles_assignment_float:
+
+    xyz = pos.selections
+    selections = {}
+
+    for outofplane in indices:
+        c1, c2, c3, c4 = outofplane
+        selections[outofplane] = geometry.jacobian_outofplane(xyz[c1,], xyz[c2,], xyz[c3,], xyz[c4,])
+            
+    return outofplane_assignment_float(selections)
+
+def graph_assignment_jacobian_outofplanes(
+    pos: smiles_assignment_float,
+    indices = None
+) -> smiles_assignment_float:
+
+    if indices is None:
+        indices = graphs.graph_outofplanes(pos.graph)
+
+    return smiles_assignment_jacobian_outofplanes(pos, indices)
+
 def smiles_assignment_geometry_outofplanes(
     pos: smiles_assignment_float,
     indices
@@ -434,11 +503,37 @@ def smiles_assignment_geometry_outofplanes(
     x = smiles_assignment_geometry_torsions(pos, indices)
     return outofplane_assignment_float(x.selections)
 
+def smiles_assignment_jacobian_torsions(
+    pos: smiles_assignment_float,
+    indices
+) -> smiles_assignment_float:
+
+    xyz = pos.selections
+    selections = {}
+
+    for torsion in indices:
+        c1, c2, c3, c4 = torsion
+        selections[torsion] = geometry.jacobian_torsion(xyz[c1,], xyz[c2,], xyz[c3,], xyz[c4,])
+            
+    return torsion_assignment_float(selections)
+
+def graph_assignment_jacobian_torsions(
+    pos: smiles_assignment_float,
+    indices = None
+) -> smiles_assignment_float:
+
+    if indices is None:
+        indices = graphs.graph_torsions(pos.graph)
+
+    return smiles_assignment_jacobian_torsions(pos, indices)
+
 def smiles_assignment_geometry_torsions(
     pos: smiles_assignment_float,
     indices
-) -> smiles_assignment:
+) -> smiles_assignment_float:
 
+    if indices is None:
+        indices = graphs.graph_torsions(pos.graph)
     xyz = pos.selections
     selections = {}
 
@@ -448,6 +543,64 @@ def smiles_assignment_geometry_torsions(
             
 
     return torsion_assignment_float(selections)
+
+
+def graph_assignment_geometry_bonds(
+    pos: graph_assignment_float,
+    indices=None
+) -> bond_assignment_float:
+
+    if indices is None:
+        indices = graphs.graph_bonds(pos.graph)
+
+    x = smiles_assignment_geometry_distances(pos, indices)
+    return bond_assignment_float(x.selections)
+
+def graph_assignment_geometry_pairs(
+    pos: graph_assignment_float,
+    indices=None
+) -> bond_assignment_float:
+
+    if indices is None:
+        indices = graphs.graph_pairs(pos.graph)
+
+    x = smiles_assignment_geometry_distances(pos, indices)
+    return pair_assignment_float(x.selections)
+
+def graph_assignment_geometry_angles(
+    pos: graph_assignment_float,
+    indices = None
+) -> angle_assignment_float:
+
+    if indices is None:
+        indices = graphs.graph_angles(pos.graph)
+    return smiles_assignment_geometry_angles(pos, indices)
+
+
+def graph_assignment_geometry_torsions(
+    pos: graph_assignment_float,
+    indices = None
+) -> torsion_assignment_float:
+
+    if indices is None:
+        indices = graphs.graph_torsions(pos.graph)
+
+    xyz = pos.selections
+    selections = {}
+
+    for torsion in indices:
+        c1, c2, c3, c4 = torsion
+        selections[torsion] = geometry.measure_dihedral(xyz[c1,], xyz[c2,], xyz[c3,], xyz[c4,])
+            
+    return torsion_assignment_float(selections)
+
+def graph_assignment_geometry_outofplanes(
+    pos: graph_assignment_float,
+    indices = None
+) -> outofplane_assignment_float:
+
+    x = graph_assignment_geometry_torsions(pos, indices)
+    return outofplane_assignment_float(x.selections)
 
 def graph_assignment_geometry_bonds_v1(
     smiles: str,
@@ -468,39 +621,6 @@ def graph_assignment_geometry_bonds_v1(
         (x0, y0, z0), (x1, y1, z1) = c[lhs], c[rhs]
         r = ((x1 - x0) ** 2 + (y1 - y0) ** 2 + (z0 - z1) ** 2) ** 0.5
         selections[idx].append(r)
-        # dist = [ for (x0, y0, z0), (x1, y1, z1) in zip(c[lhs], c[rhs])]
-        # distances.append(dist)
-    # distances = np.linalg.norm(confs[:, lhs] - confs[:, rhs], axis=2)
-    # for idx, d in enumerate(zip(indices, distances)):
-    #     selections[idx] = d
-
-    return graph_assignment(smiles, graph, selections)
-
-def graph_assignment_geometry_angles(
-    smiles: str,
-    graph: graphs.graph,
-    confs: List[List[Tuple[float, float, float]]],
-) -> graph_assignment:
-
-
-    # TODO
-    assert False
-
-    selections = {}
-
-    indices = graphs.graph_angles(graph)
-
-    lhs = [x[0] for x in indices]
-    mhs = [x[1] for x in indices]
-    rhs = [x[2] for x in indices]
-
-    # confs = np.array(confs)
-
-    for c in confs:
-        (x0, y0, z0), (x1, y1, z1), (x2, y2, z2) = c[lhs], c[mhs], c[rhs]
-        # TODO
-        # r = ((x1 - x0) ** 2 + (y1 - y0) ** 2 + (z0 - z1) ** 2) ** 0.5
-        # selections[idx].append(r)
         # dist = [ for (x0, y0, z0), (x1, y1, z1) in zip(c[lhs], c[rhs])]
         # distances.append(dist)
     # distances = np.linalg.norm(confs[:, lhs] - confs[:, rhs], axis=2)

@@ -1226,7 +1226,7 @@ class primitive_codec_variable(primitive_codec):
 
 class primitive_codec_unit(primitive_codec):
     def __init__(self):
-        super().__init__("unit", r"$")
+        super().__init__("unit", r"@")
         self.units: Dict[str, graphs.graph] = {}
 
     def tokenize_smarts(self, smarts: str):

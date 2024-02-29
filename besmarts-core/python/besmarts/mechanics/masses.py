@@ -22,6 +22,7 @@ def chemical_model_mass_smarts(pcp: perception.perception_model) -> mm.chemical_
     cm.energy_function = None 
     cm.force_function = None 
     cm.internal_function = None
+    cm.derivative_function = None
 
     # define the terms of this model
     cm.topology_terms = {

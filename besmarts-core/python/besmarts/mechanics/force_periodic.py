@@ -14,10 +14,10 @@ from besmarts.mechanics import molecular_models as mm
 
 # dihedrals
 def energy_function_periodic_cosine_2term(*, k, n, p, x) -> float:
-    return [[ki + ki*math.cos(ni * xi - pi) for ki, ni, pi in zip(k, n, p)] for xi in x]
+    return [[ki + ki*math.cos(ni * xi - pi) for ki, ni, pi in zip(k, n, p)] for xi in x[0]]
 
 def force_function_periodic_cosine_2term(*, k, n, p, x) -> float:
-    return [[ki*ni*math.sin(ni * xi - pi) for ki, ni, pi in zip(k, n, p)] for xi in x]
+    return [[ki*ni*math.sin(ni * xi - pi) for ki, ni, pi in zip(k, n, p)] for xi in x[0]]
 
 # chemical models
 def chemical_model_torsion_periodic(pcp: perception.perception_model) -> mm.chemical_model:
@@ -28,7 +28,8 @@ def chemical_model_torsion_periodic(pcp: perception.perception_model) -> mm.chem
 
     cm.energy_function = energy_function_periodic_cosine_2term
     cm.force_function = force_function_periodic_cosine_2term 
-    cm.internal_function = assignments.smiles_assignment_geometry_torsions
+    cm.internal_function = assignments.graph_assignment_geometry_torsions
+    cm.derivative_function = assignments.graph_assignment_jacobian_torsions
 
     # define the terms of this model
     cm.topology_terms = {
@@ -47,7 +48,8 @@ def chemical_model_outofplane_periodic(pcp: perception.perception_model) -> mm.c
 
     cm.energy_function = energy_function_periodic_cosine_2term
     cm.force_function = force_function_periodic_cosine_2term 
-    cm.internal_function = assignments.smiles_assignment_geometry_outofplanes
+    cm.internal_function = assignments.graph_assignment_geometry_outofplanes
+    cm.derivative_function = assignments.graph_assignment_jacobian_outofplanes
 
     # define the terms of this model
     cm.topology_terms = {

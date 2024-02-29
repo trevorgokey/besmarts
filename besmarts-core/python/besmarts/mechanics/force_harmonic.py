@@ -20,7 +20,7 @@ def force_function_spring(
     *, k: List[float], l: List[float], x: List[float]
 ) -> List[float]:
     result = []
-    for xi in x:
+    for xi in x[0]:
         xres = []
         for kj, lj in zip(k, l):
             xres.append(kj * (lj - xi))
@@ -32,7 +32,7 @@ def energy_function_spring(
     *, k: List[float], l: List[float], x: List[float]
 ) -> List[float]:
     result = []
-    for xi in x:
+    for xi in x[0]:
         xres = []
         for kj, lj in zip(k, l):
             r = xi - lj
@@ -62,7 +62,8 @@ def chemical_model_bond_harmonic(
 
     cm.energy_function = energy_function_spring
     cm.force_function = force_function_spring
-    cm.internal_function = assignments.smiles_assignment_geometry_distances
+    cm.internal_function = assignments.graph_assignment_geometry_bonds
+    cm.derivative_function = assignments.graph_assignment_jacobian_bonds
 
     # define the terms of this model
     cm.topology_terms = {
@@ -86,7 +87,8 @@ def chemical_model_angle_harmonic(
 
     cm.energy_function = energy_function_spring
     cm.force_function = force_function_spring
-    cm.internal_function = assignments.smiles_assignment_geometry_angles
+    cm.internal_function = assignments.graph_assignment_geometry_angles
+    cm.derivative_function = assignments.graph_assignment_jacobian_angles
 
     # define the terms of this model
     cm.topology_terms = {

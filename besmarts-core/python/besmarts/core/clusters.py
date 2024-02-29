@@ -677,6 +677,7 @@ def smarts_clustering_optimize(
                 f"{t} Collecting SMARTS for {S.name} N={len(cst.mappings[S.name])}/{n_ics} and setting to depth={S0_depth}"
             )
 
+            # find only unique graphs!
             aa = cst.mappings[S.name]
             selected_graphs = set((x[0] for x in aa))
             G = {k:v for k,v in G0.items() if k in selected_graphs}
@@ -722,20 +723,22 @@ def smarts_clustering_optimize(
 
                 print(f"Matched N={len(assn_s)}")
                 seen = set()
+                depth = graphs.structure_max_depth(S0)
+                extend_cfg = configs.smarts_extender_config(depth, depth, True)
                 for seen_i, (i, x) in enumerate(assn_s.items(), 1):
-                    if seen_i > 100:
-                        break
                     g = graphs.graph_to_structure(icd.graph_decode(G[i[0]]), i[1], topo) 
+                    graphs.structure_extend(extend_cfg, [g])
                     # if g not in seen:
-                    seen_g.add(g)
-                    print(
-                        f"{seen_i:06d} {str(i):24s}",
-                        objective.report([x]),
-                        gcd.smarts_encode(g),
-                    )
-                    seen.add(graphs.structure_remove_unselected(g))
+                    # seen_g.add(g)
+                    if seen_i < 100:
+                        print(
+                            f"{seen_i:06d} {str(i):24s}",
+                            objective.report([x]),
+                            gcd.smarts_encode(g),
+                        )
+                        seen.add(graphs.structure_remove_unselected(g))
                 print()
-                if len(seen) < 2:
+                if len(seen) < 2 and len(assn_s) < 100:
                     print(f"Skipping {S.name} since all graphs are the same")
                     step_tracker[S.name] = strategy.cursor
                     continue
@@ -965,8 +968,8 @@ def smarts_clustering_optimize(
 
         macroamt = strategy.macro_accept_max_total
         macroampc = strategy.macro_accept_max_per_cluster
-        macroamt = strategy.macro_accept_max_total
-        macroampc = strategy.macro_accept_max_per_cluster
+        microamt = strategy.micro_accept_max_total
+        microampc = strategy.micro_accept_max_per_cluster
 
         cnd_n = len(candidates)
         n_added = 0
@@ -1048,7 +1051,8 @@ def smarts_clustering_optimize(
                     iterable.pop(k)
 
             if macroamt + macroampc + microamt + microampc == 0:
-                work = {i: (1, 0.0, 0.0, 1) for i in iterable}
+                # use X0 so later dX will be 0 and kept
+                work = {i: (1, X0, 0.0, 1) for i in iterable}
 
             else:
                 ws = compute.workqueue_new_workspace(wq, address=addr, nproc=procs, shm=shm)
@@ -1153,7 +1157,7 @@ def smarts_clustering_optimize(
                 keeping = "  "
 
                 dX = ck[1] - X0
-                case0 = not (strategy.filter_above is not None and strategy.filter_above < dX)
+                case0 = not (strategy.filter_above is not None and strategy.filter_above <= dX)
 
                 if case0:
                     ignore.add(ck[0])
@@ -1234,10 +1238,10 @@ def smarts_clustering_optimize(
                     if hent.index in pruned:
                         nodes.remove(hent)
                         del keys[cnd_i]
+                print(f"Pruned {prune_count} empty nodes; candidates now {len(keys)}/{len(cnd_keep)}")
                 del pruned
                 del prune_count
                 del new_lbls
-                print(f"Pruned {prune_count} empty nodes; candidates now {len(keys)}/{len(cnd_keep)}")
 
             
 

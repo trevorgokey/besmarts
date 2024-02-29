@@ -23,19 +23,19 @@ from besmarts.mechanics import molecular_models as mm
 
 # electrostatics
 def energy_function_coulomb_mix(*, eps, c, s, qq, x) -> float:
-    return [s[0]*eps[0]*q/xi if xi < c[0] else 0.0 for q, xi in zip(qq, x)]
+    return [[s[0]*eps[0]*q/xi if xi < c[0] else 0.0 for q in qq] for xi in x[0]]
 
 def force_function_coulomb_mix(*, eps, c, s, qq, x) -> float:
-    return [-s[0]*eps[0]*q/(xi*xi) if xi < c[0] else 0.0 for q, xi in zip(qq, x)]
+    return [[s[0]*eps[0]*q/(xi*xi) if xi < c[0] else 0.0 for q in qq] for xi in x[0]]
 
 # vdW
 def energy_function_lennard_jones_combined(*, s, c, ee, rr, x) -> float:
-    xx = [math.pow(rr[0]/xi, 6) if xi < c[0] else 0.0 for xi in x]
-    return [4.0*s[0]*ee[0]*(xi*xi - xi) for xi in xx]
+    xx = [[math.pow(ri/xi, 6) if xi < c[0] else 0.0 for ri in rr] for xi in x[0]]
+    return [[4.0*s[0]*ei*(xi*xi - xi) for ei, xi in zip(ee, xxi)] for xxi in xx]
 
 def force_function_lennard_jones_combined(*, s, c, ee, rr, x) -> float:
-    xx = [math.pow(rr[0]/x, 6) if xi < c[0] else 0.0 for xi in x]
-    return [-24.0*ee[0]*s[0]*(2.0*y*y - y)/x for y in xx]
+    xx = [[math.pow(ri/xi, 6) if xi < c[0] else 0.0 for ri in rr] for xi in x[0]]
+    return [[24.0*s[0]*ei*(2.0*xi*xi - xi)/x0/ri for ei, xi, ri, x0 in zip(ee, xxi, rr, x[0])] for xxi in xx]
 
 class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
     """
@@ -125,6 +125,13 @@ class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
                 for i, qi in conf_charges.items():
                     if (i,) not in charges:
                         charges[i,] = {"q": []}
+                        # don't add labels because we want to hide these from
+                        # functions that flatten the parameter list for fitting.
+                        # Clearly we cannot optimize a black-box method such as
+                        # this one.
+                        # If we do want this, make sure to add the values to
+                        # cm.topology_terms['q'].values
+                        # labels[i,] = {"q": "am1bcc"}
                     charges[i,]["q"].append(qi)
             pm.values.append(charges)
             pm.labels.append(labels)
@@ -210,7 +217,8 @@ def chemical_model_coulomb(perception):
 
     cm.energy_function = energy_function_coulomb_mix
     cm.force_function = force_function_coulomb_mix
-    cm.internal_function = assignments.smiles_assignment_geometry_distances
+    cm.internal_function = assignments.graph_assignment_geometry_pairs
+    cm.derivative_function = assignments.graph_assignment_jacobian_pairs
     cm.system_terms = {
         "c": mm.system_term("cutoff", "c", "float", "A", [10.0], ""),
         "eps": mm.system_term("dielectric", "eps", "float", "kcal/mol*A/e/e", [332.0636], ""),
@@ -231,7 +239,8 @@ def chemical_model_lennard_jones(perception) -> mm.chemical_model:
 
     cm.energy_function = energy_function_lennard_jones_combined
     cm.force_function = force_function_lennard_jones_combined
-    cm.internal_function = assignments.smiles_assignment_geometry_distances
+    cm.internal_function = assignments.graph_assignment_geometry_pairs
+    cm.derivative_function = assignments.graph_assignment_jacobian_pairs
 
     cm.topology_terms = {
         "e": mm.topology_term("e", "depth", "float", "kcal/mol", {}, "", {}),

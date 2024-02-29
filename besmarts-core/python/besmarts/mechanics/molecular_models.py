@@ -130,9 +130,10 @@ class chemical_model:
 
         self.procedures: List[chemical_model_procedure] = []
 
-        # # the interaction functions
-        self.force_func: Callable = None
-        self.energy_func: Callable = None
+        self.energy_function = None 
+        self.force_function = None 
+        self.internal_function = None
+        self.derivative_function = None
 
 
 class physical_system:
@@ -251,6 +252,28 @@ def chemical_system_get_value_list(csys, key):
         m, t = key
         return csys.models[m].system_terms[t].values
 
+def physical_system_iter_keys(psys_list: physical_system, csys: chemical_system):
+
+    """
+    Generate a flat mapping of keys and values of only the parameters that were
+    applied to the physical systems
+    """
+    kv = {}
+
+    for m, cm in enumerate(csys.models):
+        for t in cm.system_terms:
+            for i, v in enumerate(cm.system_terms[t].values):
+                kv[(m, t, i)] = v
+
+    for psys in psys_list:
+        for m, pm in enumerate(psys.models):
+            for proc in pm.labels:
+                for p in proc.values():
+                    for t, l in p.items():
+                        for i, v in enumerate(csys.models[m].topology_terms[t].values[l]):
+                            kv[(m, t, l, i)] = v
+    return kv
+
 def chemical_system_set_value_list(csys, key, values):
 
     if len(key) == 3:
@@ -328,5 +351,6 @@ def smiles_assignment_function(fn, sys_params, top_params, pos):
             except TypeError as e:
                 print("Partial parameterization: skipping. Error was:")
                 print(e)
+                raise e
 
     return result

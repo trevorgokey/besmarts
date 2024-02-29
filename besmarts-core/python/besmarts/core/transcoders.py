@@ -68,6 +68,7 @@ def transcode(trop, G: graphs.graph, select, h: graphs.structure) -> transcoding
     for h_primary_i in h.topology.primary:
         # we need to compress/remove these
         G_to_remove = list(set(select[x[0]] for x in trop.transcode if x[1] == h_primary_i))
+        G_to_remove = list(set(select[x[0]] for x in trop.transcode if x[1] == h_primary_i))
 
         # assume for now, but maybe interesting to relax this later
         # but maybe its better to be explicit with topology transcode?

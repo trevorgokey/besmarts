@@ -20,7 +20,8 @@ def chemical_model_bond_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
 
     cm.energy_function = force_harmonic.energy_function_spring
     cm.force_function = force_harmonic.force_function_spring
-    cm.internal_function = assignments.smiles_assignment_geometry_bonds
+    cm.internal_function = assignments.graph_assignment_geometry_bonds
+    cm.derivative_function = assignments.graph_assignment_jacobian_bonds
 
     # define the terms of this model
     cm.topology_terms = {
@@ -81,7 +82,8 @@ def chemical_model_angle_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
 
     cm.energy_function = force_harmonic.energy_function_spring
     cm.force_function = force_harmonic.force_function_spring
-    cm.internal_function = assignments.smiles_assignment_geometry_angles
+    cm.internal_function = assignments.graph_assignment_geometry_angles
+    cm.derivative_function = assignments.graph_assignment_jacobian_angles
 
     cm.topology_terms = {
         "k": mm.topology_term(
@@ -202,7 +204,8 @@ def chemical_model_dihedral_periodic_smirnoff(d, pcp):
 
     cm.energy_function = force_periodic.energy_function_periodic_cosine_2term
     cm.force_function = force_periodic.force_function_periodic_cosine_2term
-    cm.internal_function = assignments.smiles_assignment_geometry_torsions
+    # cm.internal_function = assignments.graph_assignment_geometry_torsions
+    # cm.derivative_function = assignments.graph_assignment_jacobian_torsions
 
     cm.topology_terms = {
         "n": mm.topology_term("periodicity", "n", "int", "", {}, "", {}),
@@ -219,7 +222,8 @@ def chemical_model_torsion_periodic_smirnoff(
     cm.topology = topology.torsion
     cm.name = "Torsions"
     cm.symbol = "T"
-    cm.internal_function = assignments.smiles_assignment_geometry_torsions
+    cm.internal_function = assignments.graph_assignment_geometry_torsions
+    cm.derivative_function = assignments.graph_assignment_jacobian_torsions
     smirnoff_dihedral_load(cm, pcp, d)
 
     return cm
@@ -233,7 +237,8 @@ def chemical_model_outofplane_periodic_smirnoff(
     cm.symbol = "I"
     cm.name = "OutOfPlanes"
     cm.topology = topology.outofplane
-    cm.internal_function = assignments.smiles_assignment_geometry_outofplanes
+    cm.internal_function = assignments.graph_assignment_geometry_outofplanes
+    cm.derivative_function = assignments.graph_assignment_jacobian_outofplanes
     smirnoff_dihedral_load(cm, pcp, d)
 
     return cm

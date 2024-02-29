@@ -266,16 +266,19 @@ atom_to_atom = transcode_topology(
     {((0,),) : ((0,),)}
 )
 
+# 2x1
 bond_to_atom = transcode_topology(
     bond,
     atom,
-    [(0,0), (1,0)]
+    [[1],[1]]
 )
 
+# 3x1 mapping
+# each have an equal weight
 angle_to_atom = transcode_topology(
     angle,
     atom,
-    [(0,0), (1,0), (2,0)]
+    [[1],[1],[1]]
 )
 
 torsion_to_atom = transcode_topology(
