@@ -15,6 +15,7 @@ import time
 from typing import Dict, Sequence, Tuple, List
 import heapq
 import gc
+from pprint import pprint
 
 from besmarts.core import (
     codecs,
@@ -214,8 +215,6 @@ def find_successful_candidates_distributed(S, Sj, operation, edits, shm=None):
         hent = Sj
         # print(datetime.datetime.now(), '*** 8')
         groups = clustering_build_ordinal_mappings(cst, sag, [S.name, hent.name])
-        if (S.name not in groups) or (Sj.name not in groups):
-            return False, 0.0, 0.0, 0
         obj = 0.0
         obj = objective.merge(groups[S.name], groups[hent.name], overlap=edits)
         trees.tree_index_node_remove(hidx.index, Sj.index)
@@ -249,7 +248,7 @@ def perform_operations(
 
     topo = hidx.topology
 
-    nodes = []
+    nodes = {}
     for cnd_i, key in keys.items():
         (S, Sj, step, _, _, _, _) = candidates[key]
         (edits, _, p_j) = key
@@ -276,7 +275,7 @@ def perform_operations(
 
             hidx.subgraphs[hent.index] = Sj
             hidx.smarts[hent.index] = sma
-            nodes.append(hent)
+            nodes[cnd_i] = hent
 
             group_number += 1
 
@@ -288,7 +287,7 @@ def perform_operations(
             #     continue
 
             hent = Sj
-            nodes.append(hent)
+            nodes[cnd_i] = hent
             # obj += objective.merge(groups[S.name], groups[hent.name], overlap=edits)
             trees.tree_index_node_remove(hidx.index, Sj.index)
 
@@ -723,11 +722,14 @@ def smarts_clustering_optimize(
 
                 print(f"Matched N={len(assn_s)}")
                 seen = set()
-                depth = graphs.structure_max_depth(S0)
-                extend_cfg = configs.smarts_extender_config(depth, depth, True)
+                # depth = graphs.structure_max_depth(S0)
+                extend_config = config.extender.copy()
+                extend_config.depth_max = S0_depth
+                extend_config.depth_min = S0_depth
                 for seen_i, (i, x) in enumerate(assn_s.items(), 1):
                     g = graphs.graph_to_structure(icd.graph_decode(G[i[0]]), i[1], topo) 
-                    graphs.structure_extend(extend_cfg, [g])
+                    graphs.structure_extend(extend_config, [g])
+                    g = graphs.structure_remove_unselected(g)
                     # if g not in seen:
                     # seen_g.add(g)
                     if seen_i < 100:
@@ -736,12 +738,12 @@ def smarts_clustering_optimize(
                             objective.report([x]),
                             gcd.smarts_encode(g),
                         )
-                        seen.add(graphs.structure_remove_unselected(g))
+                        # seen.add(g)
                 print()
-                if len(seen) < 2 and len(assn_s) < 100:
-                    print(f"Skipping {S.name} since all graphs are the same")
-                    step_tracker[S.name] = strategy.cursor
-                    continue
+                # if len(seen) < 2 and len(assn_s) < 100:
+                #     print(f"Skipping {S.name} since all graphs are the same")
+                #     step_tracker[S.name] = strategy.cursor
+                #     continue
 
                 if objective.single(assn_s.values()) == 0.0:
                     print(f"Skipping {S.name} due to no objective")
@@ -964,7 +966,7 @@ def smarts_clustering_optimize(
         
         n_keep = None
 
-        print(f"Scanning {len(candidates)} candidates for operations")
+        print(f"Scanning {len(candidates)} candidates for operation={step.operation}")
 
         macroamt = strategy.macro_accept_max_total
         macroampc = strategy.macro_accept_max_per_cluster
@@ -997,7 +999,14 @@ def smarts_clustering_optimize(
             cout_sorted_keys = []
 
 
-            shm = compute.shm_local(1, data={"cst": cur_cst, "sag": sag, "gcd": gcd, "labeler": labeler, "objective": objective, "assn": assn}) 
+            shm = compute.shm_local(1, data={
+                "cst": cur_cst,
+                "sag": sag,
+                "gcd": gcd,
+                "labeler": labeler,
+                "objective": objective,
+                "assn": assn
+            }) 
 
             iterable = {
                 i: ((S, Sj, step.operation, edits), {})
@@ -1022,7 +1031,7 @@ def smarts_clustering_optimize(
                 chunksize = 1
 
             addr = ("", 0)
-            if len(iterable) <= procs:
+            if len(iterable)*(shm.procs_per_task or procs) <= procs:
                 addr = ('127.0.0.1', 0)
                 procs=len(iterable)
 
@@ -1050,8 +1059,9 @@ def smarts_clustering_optimize(
                 elif k in iterable:
                     iterable.pop(k)
 
-            if macroamt + macroampc + microamt + microampc == 0:
+            if step.operation != strategy.MERGE and (macroamt + macroampc + microamt + microampc == 0):
                 # use X0 so later dX will be 0 and kept
+                # if we do this for merges, every merge will be taken..
                 work = {i: (1, X0, 0.0, 1) for i in iterable}
 
             else:
@@ -1140,6 +1150,8 @@ def smarts_clustering_optimize(
 
             # print sorted at the end
             print(f"Nanostep {n_nano}: The filtered results of the candidate scan N={len(cout)} total={len(iterable)}:")
+            if len(cout) == 0:
+                continue
             ck_i = 1
 
             cnd_keep = []
@@ -1184,6 +1196,7 @@ def smarts_clustering_optimize(
             # keys = {x[0]: cnd_keys[x[0]] for x in best.values()}
             keys = {x[3]: cnd_keys[x[3]] for x in cnd_keep}
 
+            group_number = max(cur_cst.hierarchy.index.nodes)+1
             print(f"Performing {len(keys)} operations")
             hidx, nodes = perform_operations(
                 cur_cst.hierarchy,
@@ -1219,26 +1232,54 @@ def smarts_clustering_optimize(
             if strategy.prune_empty:
                 prune_count = 0
                 pruned = []
-                new_lbls = [n.name for n in nodes]
-                for lbl in list(groups):
+                new_lbls = [n.name for n in nodes.values()]
+                for n  in list(nodes):
                     # only consider new nodes since we have other state like
                     # the tracker that needs to be managed and would be more
                     # complicated to handle
-                    if len(groups[lbl]) == 0 and lbl in new_lbls:
-                        n = trees.tree_index_node_remove_by_name(cst.hierarchy.index, lbl)
-                        cst.subgraphs.pop(n.index)
-                        cst.smarts.pop(n.index)
-                        prunt_count += 1
-                        del groups[lbl]
-                        if lbl in cst.mappings:
-                            del cst.mappings[lbl]
-                        pruned.append(n.index)
+                    n = nodes[n]
+                    lbl = n.name
+
+                    # also consider the case where we occlude the old pattern
+                    m = cst.hierarchy.index.above.get(n.index, None)
+                    if m is None:
+                        continue
+                    m = cst.hierarchy.index.nodes[m]
+                    
+                    if (len(groups.get(m.name, [])) == 0 or len(groups[lbl]) == 0) and lbl in new_lbls:
+                        n_list = trees.tree_index_node_remove_by_name(cst.hierarchy.index, lbl)
+                        for n in n_list:
+                            cst.hierarchy.subgraphs.pop(n.index)
+                            cst.hierarchy.smarts.pop(n.index)
+                            prune_count += 1
+                            pruned.append(n.index)
+                            micro_count[m.name] -= 1
+                            micro_count[m.name] = max(micro_count[m.name], 0)
+                            macro_count[m.name] -= 1
+                            macro_count[m.name] = max(macro_count[m.name], 0)
+                            print(f"Pruned {n.name} parent len {len(groups.get(m.name, []))} sj len {len(groups[lbl])}")
+                        # del groups[lbl]
+                        # if lbl in cst.mappings:
+                        #     del cst.mappings[lbl]
                         
-                for cnd_i, hent in zip(list(keys), list(nodes)):
+                for cnd_i in list(nodes):
+                    hent = nodes[cnd_i]
                     if hent.index in pruned:
-                        nodes.remove(hent)
+                        del nodes[cnd_i]
+                        ignore.add(cnd_i)
                         del keys[cnd_i]
+                if prune_count:
+                #     groups = clustering_build_ordinal_mappings(cst, sag)
+                    new_assignments = labeler.assign(hidx, gcd, smiles, topo)
+                    # print(datetime.datetime.now(), '*** 5')
+                    new_match = clustering_build_assignment_mappings(hidx, new_assignments)
+
+                    cst = smarts_clustering(hidx, new_assignments, new_match)
+
+                    groups = clustering_build_ordinal_mappings(cst, sag)
+
                 print(f"Pruned {prune_count} empty nodes; candidates now {len(keys)}/{len(cnd_keep)}")
+                print(pruned)
                 del pruned
                 del prune_count
                 del new_lbls
@@ -1246,14 +1287,20 @@ def smarts_clustering_optimize(
             
 
 
+            if not nodes:
+                success = False
+                added = False
+                continue
             success = True
             added = True
             
-            group_number += len(keys)
+            #group_number += len(keys)
             _, X = get_objective(cst, assn, objective.split, step.overlap[0], splitting=False)
             dX = X-X0
 
-            for (cnd_i, key), hent in zip(keys.items(), nodes):
+            for cnd_i, hent in nodes.items():
+                key = keys[cnd_i]
+
                 (S, Sj, step, _, _, _, _) = candidates[key]
                 repeat.add(S.name)
                 sma = Sj_sma[cnd_i-1]
@@ -1346,6 +1393,21 @@ def smarts_clustering_optimize(
 
         print(f"There were {n_added} successful operations")
         cst = cur_cst
+        for ei, e in enumerate(
+            tree_iterators.tree_iter_dive(
+                cst.hierarchy.index,
+                trees.tree_index_roots(cst.hierarchy.index),
+            )
+        ):
+            s = trees.tree_index_node_depth(cst.hierarchy.index, e)
+            obj_repo = ""
+            # if groups[e.name]:
+            obj_repo = objective.report(groups[e.name])
+            print(
+                f"** {s:2d} {ei:3d} {e.name:4s}",
+                obj_repo,
+                cst.hierarchy.smarts.get(e.index),
+            )
 
         print(f"{datetime.datetime.now()} Visited", visited)
         for name in (node.name for node in cst.hierarchy.index.nodes.values()):
@@ -1398,13 +1460,14 @@ def smarts_clustering_find_max_depth(
     struct_lbls = {}
     max_depth = 0
 
-    for i in range(0, maxdepth):
+    for i in range(0, maxdepth+1):
         topo = group.topology
         assignments = {}
         struct_lbls = {}
+        common_lbls = {}
         for moli, mol in enumerate(group.assignments, 0):
             print(
-                f"Assigning molecule {moli+1:5d}/{len(group.assignments):d}",
+                f"Assigning molecule {moli+1:5d}/{len(group.assignments):d} at depth {i}",
                 end="\r",
             )
             N += len(mol.selections)
@@ -1419,48 +1482,72 @@ def smarts_clustering_find_max_depth(
 
                 if lbl not in atom_lbls:
                     atom_lbls[lbl] = []
+                    common_lbls[atom] = set()
 
                 atom_lbls[lbl].append((moli, molj, idx))
                 struct_lbls[atom] = atom_lbls
+                common_lbls[atom].add(lbl)
 
+                # print((moli, molj, idx), gcd.smarts_encode(atom))
+        # for atom, lbl in common_lbls.items():
+        #     print(list(lbl), hash(atom), gcd.smarts_encode(atom))
         print()
         print("Labels per unique structure that need more depth")
         problems = set()
-        for j, lbl in enumerate(struct_lbls.values()):
+        for j, (h, lbl) in enumerate(struct_lbls.items()):
             if len(lbl.values()) > 1:
-                problems.add(tuple(sorted(set(lbl.keys()))))
+                problems.add(tuple((h, *sorted(set(lbl.keys())))))
+
+        # for j, (h, lbl) in enumerate(common_lbls.items()):
+        #     if len(lbl) > 1:
+        #         problems.add(tuple((h, *sorted(lbl))))
 
         print(
             f"There are {len(set(struct_lbls))}/{N} unique structures at depth",
             i,
         )
         print(f"There are {len(problems)} problems:")
-        print(problems)
+        for problem in problems:
+            print("SMARTS", gcd.smarts_encode(problem[0]))
+            print("DATA")
+            pprint(problem[1:])
+            print("ASSN:")
+            pprint(struct_lbls[problem[0]])
+        # print(problems)
         if len(problems) < prev_problems:
             max_depth = i
             prev_problems = len(problems)
 
+        if len(problems) == 0:
+            break
+        bad_mols = set()
         if gcd:
             for moli, mol in enumerate(group.assignments, 0):
-                print(mol.smiles)
+                # print(mol.smiles)
                 for molj, (selection, lbl) in enumerate(mol.selections.items()):
-                    idx = tuple((selection[i] for i in topo.primary))
-                    atom = graphs.graph_to_structure(mol.graph, idx, topo)
-                    suc = mapper.mapper_smarts_extend(
-                        configs.smarts_extender_config(i, i, True), [atom]
-                    )
+                    # idx = tuple((selection[i] for i in topo.primary))
+                    # atom = graphs.graph_to_structure(mol.graph, idx, topo)
+                    # suc = mapper.mapper_smarts_extend(
+                    #     configs.smarts_extender_config(i, i, True), [atom]
+                    # )
                     these_probs = []
                     for problem in problems:
-                        these_probs = []
-                        if lbl in problem:
-                            these_probs.append(problem)
-                    print(
-                        "   ",
-                        these_probs,
-                        selection,
-                        lbl,
-                        gcd.smarts_encode(atom),
-                    )
+                        if lbl in problem[1:]:
+                            bad_mols.add(moli)
+                            # these_probs.append(problem)
+                    # print(
+                    #     "   ",
+                    #     hash(problem[0]), gcd.smarts_encode(problem[0]),
+                    #     these_probs,
+                    #     selection,
+                    #     lbl,
+                    #     hash(atom),
+                    #     gcd.smarts_encode(atom),
+                    # )
+
+        print(f"There were {len(bad_mols)}/{len(group.assignments)} that could not be distinguished:")
+        for mid in bad_mols:
+            print(mid)
 
         if all(len(x.values()) == 1 for x in struct_lbls.values()):
             break

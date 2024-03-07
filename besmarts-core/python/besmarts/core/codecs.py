@@ -145,8 +145,11 @@ class graph_codec:
         if hasattr(g, "topology"):
             tag = True
             primary = [g.select[i] for i in g.topology.primary]
-        if hasattr(g, "select"):
-            h = graphs.subgraph_to_graph(g)
+        elif hasattr(g, "select"):
+            # h = graphs.subgraph_to_graph(g)
+            h = g
+            tag = True
+            primary = tuple(h.select)
 
         smiles: str = graph_visitors.enter_graph(visitor, h, primary, tag=tag)
 

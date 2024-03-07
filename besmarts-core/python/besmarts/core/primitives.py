@@ -52,6 +52,9 @@ class primitive_key:
     LINK_DST = "link_dst"
     VARIABLE = "variable"
 
+    def __init__(self, *args, **kwds):
+        pass
+
     def __repr__(self):
         return f"{self.name}"
 

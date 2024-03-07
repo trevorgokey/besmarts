@@ -319,10 +319,11 @@ def split_partition(
         # for i, ai in enumerate(Ai):
         #     Ta.add(ai)
 
-        ref_a = mapper.union_list_parallel(Ai, union_config, max_depth=depth)
-        a = mapper.intersection_list_parallel(
+        ref_a = mapper.union_list(Ai, union_config, max_depth=depth)
+        a = mapper.intersection_list(
             Ai, config, max_depth=depth, reference=ref_a
         )
+        # a = ref_a
         # graphs.structure_print(a)
         # Tb = None
         if gcd:
@@ -342,10 +343,11 @@ def split_partition(
         # for i, bi in enumerate(Bi):
         #     Tb.add(bi)
 
-        ref_b = mapper.union_list_parallel(Bi, union_config, max_depth=depth)
-        b = mapper.intersection_list_parallel(
+        ref_b = mapper.union_list(Bi, union_config, max_depth=depth)
+        b = mapper.intersection_list(
             Bi, config, max_depth=depth, reference=ref_b
         )
+        # b = ref_b
         # Tb = None
         # print("bu: ", gcd.smarts_encode(ref))
         if gcd:
@@ -390,7 +392,7 @@ def split_partition(
         else:
             lhs = None
 
-        rhs: structure = mapper.difference(ref_a, ref_b, config)
+        rhs: structure = mapper.difference(b, a, config)
         if gcd:
             print("RHS_DIFF: ", gcd.smarts_encode(rhs))
         if graphs.graph_any(rhs):
