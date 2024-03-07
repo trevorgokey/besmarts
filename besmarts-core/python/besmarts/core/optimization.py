@@ -292,39 +292,6 @@ def optimization_strategy_build_macro_iterations(strat: optimization_strategy):
                     if search_cursor < strat.cursor:
                         continue
 
-                    if strat.enable_merge:
-                        steps = []
-                        s = optimization_step()
-                        s.index = 0
-                        s.cluster = None
-                        s.overlap = [overlap]
-                        s.direct_enable = strat.direct_enable
-                        s.direct_limit = strat.direct_limit
-                        s.operation = strat.MERGE
-                        s.iterative_enable = strat.iterative_enable
-
-                        splitter = configs.smarts_splitter_config(
-                            0,
-                            0,
-                            0,
-                            0,
-                            0,
-                            0,
-                            True,
-                            True,
-                            0,
-                            strat.bounds.splitter.split_general,
-                            strat.bounds.splitter.split_specific,
-                            strat.bounds.splitter.unique_compliments,
-                            strat.bounds.splitter.unique_compliments_prefer_min,
-                        )
-                        extender = configs.smarts_extender_config(0, 0, True)
-                        config = configs.smarts_perception_config(
-                            splitter, extender
-                        )
-                        s.pcp = config
-
-                        macro_iters.append(optimization_iteration([s]))
                     if strat.enable_split:
                         steps = []
                         # this will compose with the hierarchy later
@@ -365,6 +332,39 @@ def optimization_strategy_build_macro_iterations(strat: optimization_strategy):
                         s.pcp = config
 
                         steps.append(s)
+                        macro_iters.append(optimization_iteration([s]))
+                    if strat.enable_merge:
+                        steps = []
+                        s = optimization_step()
+                        s.index = 0
+                        s.cluster = None
+                        s.overlap = [overlap]
+                        s.direct_enable = strat.direct_enable
+                        s.direct_limit = strat.direct_limit
+                        s.operation = strat.MERGE
+                        s.iterative_enable = strat.iterative_enable
+
+                        splitter = configs.smarts_splitter_config(
+                            0,
+                            0,
+                            0,
+                            0,
+                            0,
+                            0,
+                            True,
+                            True,
+                            0,
+                            strat.bounds.splitter.split_general,
+                            strat.bounds.splitter.split_specific,
+                            strat.bounds.splitter.unique_compliments,
+                            strat.bounds.splitter.unique_compliments_prefer_min,
+                        )
+                        extender = configs.smarts_extender_config(0, 0, True)
+                        config = configs.smarts_perception_config(
+                            splitter, extender
+                        )
+                        s.pcp = config
+
                         macro_iters.append(optimization_iteration([s]))
 
                         # print("MACRO SPLIT")
