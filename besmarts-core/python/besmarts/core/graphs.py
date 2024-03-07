@@ -183,20 +183,20 @@ class structure(subgraph):
             beg = subgraph(g.nodes, g.edges, g.select)
 
             # overall topology defines uniqueness
-            # depths = tuple(structure_node_depths(self))
+            depths = tuple(structure_node_depths(self))
 
             # we can have a single graph with 2 labeled bonds.. make sure they are
             # unique
-            # core = 0
-            # topo_nodes = tuple((self.select[n] for n in self.topology.primary))
-            # core = structure_remove_nodes(
-            #     self, tuple((n for n in self.nodes if n not in topo_nodes))
-            # )
-            # core = structure_to_graph(core)
-            # adjlens = {i: j for i, j in subgraph_connections(self).items() if i in self.select and j in self.select}
-            # nbr_hash = 0
-            # if adjlens:
-            #     nbr_hash = tuple((tuple([hash(self.nodes[j])] + sorted([hash(self.nodes[i]) for i in adjlens[j]])) for j in topo_nodes))
+            core = 0
+            topo_nodes = tuple((self.select[n] for n in self.topology.primary))
+            core = structure_remove_nodes(
+                self, tuple((n for n in self.nodes if n not in topo_nodes))
+            )
+            core = structure_to_graph(core)
+            adjlens = {i: j for i, j in subgraph_connections(self).items() if i in self.select and j in self.select}
+            nbr_hash = 0
+            if adjlens:
+                nbr_hash = tuple((tuple([hash(self.nodes[j])] + sorted([hash(self.nodes[i]) for i in adjlens[j]])) for j in topo_nodes))
 
             depth = structure_max_depth(g)
             atom_hash = 0
@@ -225,9 +225,9 @@ class structure(subgraph):
                     hash(tuple(atom_hashes[i] for i in y))
                     for y in self.topology.permutations
                 )
-            # preh = (hash(beg), depths, hash(nbr_hash), hash(core), atom_hash)
+            preh = (hash(beg), depths, hash(nbr_hash), hash(core), atom_hash)
             # atom_hash = 0
-            preh = (hash(beg), atom_hash)
+            # preh = (hash(beg), atom_hash)
             # preh = (hash(beg), *depths, hash(core))
             h = hash(preh)
             # print(h, preh)
