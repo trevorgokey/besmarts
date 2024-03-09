@@ -59,27 +59,16 @@ SHM_GLOBAL = None
 ## from https://stackoverflow.com/questions/34361035/python-thread-name-doesnt-show-up-on-ps-or-htop
 
 LIB = "libcap.so.2"
+libcap = None
 try:
     libcap = ctypes.CDLL(LIB)
 except OSError:
-    print("Library {} not found. Unable to set thread name.".format(LIB))
-# else:
-#     def _name_hack(self):
-#         # PR_SET_NAME = 15
-#         # try:
-#         #     libcap.prctl(15, "thread".encode())
-#         # except Exception as e:
-#         #     print(f"Warning, exception {e}")
-#         threading.Thread._bootstrap_original(self)
-
-#     threading.Thread._bootstrap_original = threading.Thread._bootstrap
-#     threading.Thread._bootstrap = _name_hack
-
-###
+    pass
 
 
 def thread_name_set(name):
-    libcap.prctl(15, name.encode())
+    if libcap is not None:
+        libcap.prctl(15, name.encode())
 
 
 class workspace_status:
