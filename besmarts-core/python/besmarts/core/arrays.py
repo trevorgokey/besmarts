@@ -361,3 +361,19 @@ def find_unsigned_typecode_min(N: int):
             code = c
     assert code, "Number is too large for this machine"
     return code
+
+def flatten_list(l, times=1):
+    if times == 0:
+        return l
+    if len(l) == 0:
+        return l
+    if times == -1:
+        if isinstance(l[0], list):
+            ll = [a for b in l if hasattr(b, "__iter__") for a in b]
+            return flatten_list(ll, times)
+        else:
+            return l
+    else:
+        return flatten_list(
+            [a for b in l if hasattr(b, "__iter__") for a in b], times - 1
+        )
