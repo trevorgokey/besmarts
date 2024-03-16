@@ -32,17 +32,11 @@ icd = codecs.intvec_codec(
     pcp.bond_primitives
 )
 
-# smi = "CC(C)(O1)C[C@@H](O)[C@@]1(O2)[C@@H](C)[C@@H]3CC=C4[C@]3(C2)C(=O)C[C@H]5[C@H]4CC[C@@H](C6)[C@]5(C)Cc(n7)c6nc(C[C@@]89(C))c7C[C@@H]8CC[C@@H]%10[C@@H]9C[C@@H](O)[C@@]%11(C)C%10=C[C@H](O%12)[C@]%11(O)[C@H](C)[C@]%12(O%13)[C@H](O)C[C@@]%13(C)CO"
-# smi = "CCCO"
-# smi = "CCCC"
-# trialanine
-smi = "C[C@@H](C(=O)N[C@@H](C)C(=O)N[C@@H](C)C(=O)O)N"
-N = 1000
+smi = "CCO"
 
-# G = pcp.smiles_decode(smi)
 G = {0: pcp.smiles_decode(smi)}
-ic_list = [s for s in graphs.graph_to_structure_torsions(G[0])]
-selections = [(i, x) for i in G for x in graphs.graph_torsions(G[i])]
+ic_list = [s for s in graphs.graph_to_structure_bonds(G[0])]
+selections = [(i, x) for i in G for x in graphs.graph_bonds(G[i])]
 G[0] = icd.graph_encode(G[0])
 
 # set these all to 1 to split on neighbors too
@@ -74,8 +68,8 @@ splitter = configs.smarts_splitter_config(
 extender = configs.smarts_extender_config(branch_depth, branch_depth, True)
 graphs.structure_extend(extender, ic_list)
 
-S0 = pcp.smarts_decode("[*:1]~[*:2]~[*:3]~[*:4]")
-S0 = graphs.structure(S0.nodes, S0.edges, (1, 2, 3, 4,), topology.torsion)
+S0 = pcp.smarts_decode("[*:1]~[*:2]")
+S0 = graphs.structure(S0.nodes, S0.edges, (1, 2), topology.bond)
 
 for i, f in enumerate(ic_list):
     print(i, pcp.smarts_encode(f))
@@ -85,6 +79,7 @@ configs.remote_compute_enable = False
 wq = compute.workqueue_local("127.0.0.1", 63210)
 results: splits.split_return_type = splits.split_structures_distributed(splitter, S0, G, selections, wq, icd)
 
+# custom processing of results
 
 seen = {}
 keep = {}
@@ -140,13 +135,13 @@ for j, (matches, params) in enumerate(unique.items(), 1):
     for k, (Sj, bj) in enumerate(params, 1):
 
         Sj = graphs.structure(Sj.nodes, Sj.edges, Sj.select, results.topology)
-        print(f"   {k:2d} Sj:", pcp.smarts_encode(Sj), hash(Sj))
+        print(f"   {k:2d} Sj:", pcp.smarts_encode(Sj))
         # print(f"   {k:2d} Sj:    ", Sj.nodes)
     if splitter.return_matches:
         print("      ", matches)
         for i, f in enumerate(ic_list):
             if i in matches:
-                print(f"{i:4d}", " -> ", pcp.smarts_encode(f), f.select, hash(f))
+                print(f"{i:4d}", " -> ", f.select, pcp.smarts_encode(f))
             else:
-                print(f"{i:4d}", pcp.smarts_encode(f), f.select, hash(f))
+                print(f"{i:4d}", f.select, pcp.smarts_encode(f))
     print("####################################")

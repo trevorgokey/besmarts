@@ -23,4 +23,4 @@ G = codec_native.graph_codec_native_load("propane.bg")[0]
 print(gcd.smiles_encode(G))
 
 # mapped
-print(gcd.smiles_encode(graphs.graph_to_subgraph(G, tuple(G.nodes))))
+print(gcd.smiles_encode(graphs.graph_as_subgraph(G, tuple(G.nodes))))
