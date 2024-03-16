@@ -193,7 +193,7 @@ def find_successful_candidates_distributed(S, Sj, operation, edits, shm=None):
             # dX = X - X
             # if dX > 0:
             #     keep = False
-            if obj > 0.0:
+            if obj >= 0.0:
                 keep = False
 
             if not (cst.mappings[S.name] and cst.mappings[hent.name]):
@@ -1291,13 +1291,14 @@ def smarts_clustering_optimize(
                 success = False
                 added = False
                 continue
-            success = True
-            added = True
+            success = False
+            added = False
             
             #group_number += len(keys)
             _, X = get_objective(cst, assn, objective.split, step.overlap[0], splitting=False)
             dX = X-X0
 
+            recalc = False
             for cnd_i, hent in nodes.items():
                 key = keys[cnd_i]
 
@@ -1318,21 +1319,51 @@ def smarts_clustering_optimize(
                             groups[S.name], groups[hent.name], overlap=edits
                         )
 
-                    print(
-                        f"\n>>>>> New parameter {cnd_i:4d}/{cnd_n}",
-                        hent.name,
-                        "parent",
-                        S.name,
-                        "Objective",
-                        f"{X:10.5f}",
-                        "Delta",
-                        f"{dX:10.5f}",
-                        f"Partition {len(cst.mappings[S.name])}|{len(cst.mappings[hent.name])}",
-                    )
-                    print(" >>>>>", key, f"Local dObj {obj:10.5f}", sma, end="\n\n")
+                    if obj >= 0.0:
+                        # we get here if we lazily add many params, so now 
+                        # some will no longer satisfy the constraint
+                        kept.remove(cnd_i)
+                        repeat.remove(S.name)
+                        
+                        n_list = trees.tree_index_node_remove_by_name(cst.hierarchy.index, hent.name)
+                        for n in n_list:
+                            recalc = True
+                            cst.hierarchy.subgraphs.pop(n.index)
+                            cst.hierarchy.smarts.pop(n.index)
+                            micro_count[m.name] -= 1
+                            micro_count[m.name] = max(micro_count[m.name], 0)
+                            macro_count[m.name] -= 1
+                            macro_count[m.name] = max(macro_count[m.name], 0)
+                        print(
+                            f"\n>>>>> Skipping parameter {cnd_i:4d}/{cnd_n}",
+                            hent.name,
+                            "parent",
+                            S.name,
+                            "Objective",
+                            f"{X:10.5f}",
+                            "Delta",
+                            f"{dX:10.5f}",
+                            f"Partition {len(cst.mappings[S.name])}|{len(cst.mappings[hent.name])}",
+                        )
+                        print(" >>>>>", key, f"Local dObj {obj:10.5f}", sma, end="\n\n")
+                    else:
+                        success = True
+                        added = True
+                        print(
+                            f"\n>>>>> New parameter {cnd_i:4d}/{cnd_n}",
+                            hent.name,
+                            "parent",
+                            S.name,
+                            "Objective",
+                            f"{X:10.5f}",
+                            "Delta",
+                            f"{dX:10.5f}",
+                            f"Partition {len(cst.mappings[S.name])}|{len(cst.mappings[hent.name])}",
+                        )
+                        print(" >>>>>", key, f"Local dObj {obj:10.5f}", sma, end="\n\n")
 
-                    repeat.add(hent.name)
-                    step_tracker[hent.name] = 0
+                        repeat.add(hent.name)
+                        step_tracker[hent.name] = 0
 
 
                 elif step.operation == strategy.MERGE:
@@ -1349,6 +1380,8 @@ def smarts_clustering_optimize(
                     if above is not None:
                         repeat.add(cst.hierarchy.index.nodes[above].name)
 
+                    success = True
+                    added = True
                     print(
                         f">>>>> Delete parameter {cnd_i:4d}/{cnd_n}",
                         hent.name,
@@ -1360,6 +1393,25 @@ def smarts_clustering_optimize(
                         f"{dX:10.5f}",
                     )
                     print(" >>>>>", key, f"Local dObj {obj:10.5f}", sma, end="\n\n")
+
+            if recalc:
+                print("Detected change in result")
+                print("Operations per parameter for this micro:")
+                print(micro_count)
+                print(f"Micro total: {sum(micro_count.values())}")
+
+                print("Operations per parameter for this macro:")
+                print(macro_count)
+                print(f"Macro total: {sum(macro_count.values())}")
+
+                new_assignments = labeler.assign(hidx, gcd, smiles, topo)
+                # print(datetime.datetime.now(), '*** 5')
+                new_match = clustering_build_assignment_mappings(hidx, new_assignments)
+
+                cst = smarts_clustering(hidx, new_assignments, new_match)
+
+                groups = clustering_build_ordinal_mappings(cst, sag)
+
 
             for ei, e in enumerate(
                 tree_iterators.tree_iter_dive(
