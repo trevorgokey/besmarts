@@ -86,6 +86,87 @@ class clustering_objective_mean_separation(clustering_objective):
         abar = sum(A) / len(A)
         return sum([x * x for x in A]) / len(A) - abar * abar
 
+class clustering_objective_variance_separation(clustering_objective):
+    def __init__(self, split_separation=1.0, merge_separation=1.0):
+        self.split_separation = split_separation
+        self.merge_separation = merge_separation
+
+    def is_discrete(self):
+        return False
+
+    def split(
+        self, A: Sequence[Sequence[float]], B: Sequence[Sequence[float]], overlap=0.0
+    ) -> float:
+
+        A: Sequence[float] = list(itertools.chain.from_iterable(A))
+        B: Sequence[float] = list(itertools.chain.from_iterable(B))
+        if len(A) == 0 or len(B) == 0:
+            return overlap
+        abar = sum(A) / len(A)
+        avar = sum([(ai - abar)**2 for ai in A]) / len(A)
+        bbar = sum(B) / len(B)
+        bvar = sum([(bi - bbar)**2 for bi in B]) / len(B)
+        d = abs(avar - bvar)
+
+        if d < self.split_separation:
+            return d
+        else:
+            return -d
+
+    def merge(
+        self, A: Sequence[Sequence[float]], B: Sequence[Sequence[float]], overlap=0.0
+    ) -> float:
+
+        A: Sequence[float] = list(itertools.chain.from_iterable(A))
+        B: Sequence[float] = list(itertools.chain.from_iterable(B))
+        if len(A) == 0:
+            avar = 0.0
+        else:
+            abar = sum(A) / len(A)
+            avar = sum([(ai - abar)**2 for ai in A]) / len(A)
+
+        if len(B) == 0:
+            bvar = 0.0
+        else:
+            bbar = sum(B) / len(B)
+            bvar = sum([(bi - bbar)**2 for bi in B]) / len(B)
+
+        d = abs(avar - bvar)
+
+        if d < self.merge_separation:
+            return -d
+        else:
+            return d
+
+    def report(self, A: Sequence[Sequence[float]]) -> str:
+
+        A: Sequence[float] = list(itertools.chain.from_iterable(A))
+        if len(A) == 0:
+            abar = 0
+            avar = 0
+            amin = 0
+            amax = 0
+        else:
+            abar = sum(A) / len(A)
+            avar = sum([(x-abar)**2 for x in A])/len(A) 
+            amin = min(A)
+            amax = max(A)
+        return (
+            f" Mean= {abar:9.4f}"
+            + f" Var= {avar:9.4f}"
+            + f" N= {len(A):6d}"
+            + f" Min= {amin:9.4f}"
+            + f" Max= {amax:9.4f}"
+        )
+
+    def single(self, A: Sequence[Sequence[float]], overlap=0.0) -> float:
+        A: Sequence[float] = list(itertools.chain.from_iterable(A))
+        if len(A) == 0:
+            return 0.0
+        abar = sum(A) / len(A)
+        avar = sum([(ai - abar)**2 for ai in A]) / len(A)
+        return avar
+
 class clustering_objective_classification(clustering_objective):
 
     def __init__(self):
