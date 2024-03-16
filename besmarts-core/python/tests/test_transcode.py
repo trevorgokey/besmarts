@@ -56,6 +56,8 @@ def water_to_bead():
     print(gcd.smarts_encode(ret.H))
 
 def cc_to_bead():
+
+    # takes ethane and tranforms the CC to a single bead
     gcd = codec_rdkit.graph_codec_rdkit()
 
     gcd.primitive_codecs["unit"] = codecs.primitive_codec_unit()
@@ -97,12 +99,13 @@ def cc_to_bead():
     s.nodes[1].primitives["unit"][2] = True
     ret = transcoders.transcode(topology.bond_to_atom, g, (2,3), s)
 
-    assns = transcoders.transcode_assignment_positions(
-        topology.bond_to_atom, assn, (2,3)
-    )
+    # assns = transcoders.transcode_assignment_positions(
+    #     topology.bond_to_atom, assn, (2,3)
+    # )
 
     print(gcd.smarts_encode(graphs.graph_to_subgraph(ret.H, ret.H.nodes)))
 
 if __name__ == "__main__":
 
     water_to_bead()
+    # cc_to_bead()
