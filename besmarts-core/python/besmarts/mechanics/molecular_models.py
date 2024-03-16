@@ -301,28 +301,8 @@ def chemical_system_get_value(csys, key):
         m, t, i = key
         return csys.models[m].system_terms[t].values[i]
 
-def chemical_system_vectorize(cs, pos):
-    # get the global list of parameters
-
-    # (0, "s", "s1", 0) : 1.0          
-    # (0, "k", "b1", 0) : 500                         
-    # (3, "k", "t1", 0) : 0.5
-
-    # model, term, parameter, index                   
-
-    # (0, "c", 0): 10.0                               
-    # model, term, index        
-
-    # create the psys and iterate the labels and generate the unique set
-
-    # for each visited label, add to {lbl: value}
-
-    # this means I need a unique label system for each
-
-    # model_index, term_name, term_index
-
+def chemical_system_to_graph_topology_db(cs, pos: assignments.smiles_assignment) -> physical_model:
     pass
-
 def chemical_system_to_physical_system(cs, pos: assignments.smiles_assignment) -> physical_model:
     ps = physical_system([])
 

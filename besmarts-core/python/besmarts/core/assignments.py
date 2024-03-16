@@ -14,27 +14,34 @@ cartesian_coordinates = List[List[Tuple[float, float, float]]]
 POSITIONS = 0
 GRADIENTS = 1
 HESSIANS = 2
-DISTANCES = 3
-ANGLES = 4
-TORSIONS = 5
-OUTOFPLANES = 6
-CHARGES = 7
-GRID = 8
-ESP = 9
-RADII = 10
+ENERGY = 3
+DISTANCES = 4
+ANGLES = 5
+TORSIONS = 6
+OUTOFPLANES = 7
+CHARGES = 8
+GRID = 9
+ESP = 10
+RADII = 11
+PHYSICAL_MODEL_BOND_LABELS = 12
 
+# need a way to load in a lot of positions and graphs
+# xyz with mapped smiles
+# but we also have a bga
 ASSN_NAMES = {
-    POSITIONS : "positions",
-    GRADIENTS : "gradients",
-    HESSIANS : "hessians",
-    DISTANCES : "distances",
-    ANGLES : "angles",
+    # floats
+    POSITIONS : "positions", # atom, 1x3 
+    GRADIENTS : "gradients", # atom, 1x3
+    HESSIANS : "hessians", # bond, 1x9
+    ENERGY : "energy", # null, 1x1 
+    DISTANCES : "distances", # bond, 1x1
+    ANGLES : "angles", # angle, 1x1
     TORSIONS : "torsions",
     OUTOFPLANES : "outofplanes",
     CHARGES : "charges",
-    GRID : "grid",
-    ESP : "esp",
-    RADII : "radii",
+    GRID : "grid", # null, Nx3
+    ESP : "esp", # null, Nx1
+    RADII : "radii", # atom, 1x1
 }
 
 gid_t = int
@@ -707,7 +714,8 @@ def graph_topology_db_add_positions(db, gid, sel: graph_topology_db_table):
         for xyz in data:
             assert len(xyz) == 3
 
-    return graph_topology_dbs_add_selection(db, gid, POSITIONS, sel)
+    graph_topology_db_add_selection(db, gid, POSITIONS, sel)
+    return aid
 
 
 def db_graph_position_assignment(nids, confs):
@@ -725,7 +733,7 @@ def graph_topology_db_add_gradients(db, gid, sel: graph_topology_db_table):
         for xyz in data:
             assert len(xyz) == 3
 
-    return graph_topology_dbs_add_selection(db, gid, GRADIENTS, sel)
+    return graph_topology_db_add_selection(db, gid, GRADIENTS, sel)
 
 
 def graph_topology_db_add_hessians(db, gid, sel: graph_topology_db_table):
@@ -736,7 +744,7 @@ def graph_topology_db_add_hessians(db, gid, sel: graph_topology_db_table):
         for xyz2 in data:
             assert len(xyz2) == 9
 
-    return graph_topology_dbs_add_selection(db, gid, HESSIANS, sel)
+    return graph_topology_db_add_selection(db, gid, HESSIANS, sel)
 
 
 def graph_topology_db_add_distances(db, gid, sel: graph_topology_db_table):
@@ -747,4 +755,4 @@ def graph_topology_db_add_distances(db, gid, sel: graph_topology_db_table):
         data: Sequence[float]
         assert all((type(d) is float for d in data))
 
-    return graph_topology_dbs_add_selection(db, gid, DISTANCES, sel)
+    return graph_topology_db_add_selection(db, gid, DISTANCES, sel)

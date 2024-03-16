@@ -84,6 +84,7 @@ def jacobian_distance(xyz1, xyz2):
         result.append([array_scale(d, -1/r), array_scale(d, 1/r)])
 
     return result
+
 def jacobian_angle_geometric(xyz1, xyz2, xyz3):
     result = []
     basis = array_basis
@@ -99,7 +100,6 @@ def jacobian_angle_geometric(xyz1, xyz2, xyz3):
         term2 = array_scale(array_cross(w, v), 1/ v_norm)
         result.append([term1, array_scale(array_add(term1, term2), -1), term2])
     return result
-    
 
 def jacobian_angle(xyz1, xyz2, xyz3):
 
@@ -122,8 +122,6 @@ def jacobian_angle(xyz1, xyz2, xyz3):
         s3b = array_scale(ebc, rbc - rba*cos) 
         s3 = array_scale(array_add(s3a, s3b), rba*rbc*sin)
         result.append([s1, s3, s2])
-
-        
 
     return result
 

@@ -1496,7 +1496,6 @@ def split_subgraphs_distributed(
             for idx, unit in iterable.items()
             if idx not in completed
         }
-            # we are making general and specific splits, so double the number
         for batch in arrays.batched(unfinished.items(), 100000):
             for chunk in arrays.batched(batch, 100):
                 tasks = {}
