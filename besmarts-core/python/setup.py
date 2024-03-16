@@ -28,5 +28,8 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     python_requires='>=3.6',
-    extras_require={"rdkit": ['besmarts-rdkit']}
+    extras_require={
+        "rdkit": ['besmarts-rdkit'],
+        "scipy": ['besmarts-scipy'],
+    }
 )
