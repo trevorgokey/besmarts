@@ -3,10 +3,12 @@
 Tests for BESMARTS file format round-tripping
 """
 
-from besmarts.codecs import codec_native
-from pprint import pprint
 import io
 import sys
+import unittest
+
+from besmarts.codecs import codec_native
+from pprint import pprint
 
 def build_input():
     inp = """#GRAPH
@@ -159,18 +161,20 @@ def build_input():
 """
     return io.StringIO(inp) 
 
-buf_in = build_input()
-A = codec_native.graph_codec_native_read(buf_in)
-assert len(A) == 1
+class test_io(unittest.TestCase):
+    def test_io(self):
+        buf_in = build_input()
+        A = codec_native.graph_codec_native_read(buf_in)
+        self.assertTrue(len(A) == 1)
 
-buf_out = io.StringIO()
-codec_native.graph_codec_native_write(buf_out, A)
-B = codec_native.graph_codec_native_read(buf_out)
-assert len(B) == 1
+        buf_out = io.StringIO()
+        codec_native.graph_codec_native_write(buf_out, A)
+        B = codec_native.graph_codec_native_read(buf_out)
+        self.assertTrue(len(B) == 1)
 
-# graphs might be iterated differently so just check string length and if
-# indices are present
-assert len(buf_in.getvalue()) == len(buf_out.getvalue())
-assert not set(A[0].nodes).symmetric_difference(B[0].nodes)
-assert not set(A[0].edges).symmetric_difference(B[0].edges)
+        # graphs might be iterated differently so just check string length and
+        # if indices are present
+        self.assertTrue(len(buf_in.getvalue()) == len(buf_out.getvalue()))
+        self.assertFalse(set(A[0].nodes).symmetric_difference(B[0].nodes))
+        self.assertFalse(set(A[0].edges).symmetric_difference(B[0].edges))
 
