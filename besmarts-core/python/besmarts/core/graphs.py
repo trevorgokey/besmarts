@@ -162,6 +162,8 @@ class structure(subgraph):
         super().__init__(nodes, edges, select)
         self.topology: topology.structure_topology = topology
 
+        if len(topology.primary) > len(select):
+            print(topology.primary, print(select))
         assert len(topology.primary) <= len(select)
         for e in topology.connect:
             _edge = edge((select[e[0]], select[e[1]]))
@@ -1731,10 +1733,10 @@ def structure_remove_empty_leaves(g: structure) -> structure:
 
     return g
 
-def structure_branch(template, m: dict, n, d, visited_groups=None) -> Generator:
+def structure_branch(template, m: dict, n, d, visited_groups=None, verbose=True) -> Generator:
 
-    if n < 1:
-        yield structure_copy(template)
+    # if n < 1:
+    #     yield structure_copy(template)
 
     if visited_groups is None:
         visited_groups = set()
@@ -1745,7 +1747,8 @@ def structure_branch(template, m: dict, n, d, visited_groups=None) -> Generator:
     if not nodes:
         yield structure_copy(template)
 
-    print(datetime.datetime.now(), f"Branching depth={d} nodes={len(nodes)} n={n} groups={len(visited_groups)}")
+    if verbose:
+        print(datetime.datetime.now(), f"Branching depth={d} nodes={len(nodes)} n={n} groups={len(visited_groups)}")
 
     for group in range(1, n + 1):
         nck = list(itertools.combinations(nodes, group))
@@ -1765,7 +1768,7 @@ def structure_branch(template, m: dict, n, d, visited_groups=None) -> Generator:
 
             yield structure_copy(g)
             yield from structure_branch(
-                template, m, n - len(node_set), d, visited_groups=visited_groups
+                template, m, n - len(node_set), d, visited_groups=visited_groups, verbose=verbose
             )
 
 def structure_extend(
