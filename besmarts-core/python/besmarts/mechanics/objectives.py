@@ -382,8 +382,6 @@ def array_geom_energy(args, keys, csys, psys: mm.physical_system):
     energy = 0
 
     for m, pm in enumerate(psys.models):
-
-
         refpos = psys.models[m].positions[0]
         pos = copy.deepcopy(refpos)
         # pos = assignments.graph_assignment_float(
