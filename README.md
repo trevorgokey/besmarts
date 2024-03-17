@@ -23,8 +23,8 @@ python -m venv besmarts
 followed by the actual install:
 
 ```
-git clone https://github.com/trevorgokey/besmarts
-cd besmarts/besmarts-core/python
+git clone https://github.com/trevorgokey/besmarts besmarts-git
+cd besmarts-git/besmarts-core/python
 python -m pip install .
 cd ../../besmarts-rdkit/python
 python -m pip install .
@@ -33,7 +33,8 @@ python -m pip install .
 RDKit is needed to decode SMILES into graphs and offers a faster implementation
 of SMARTS matching when labeling from a SMARTS hierarchy.
 
-Geometry optimization uses the SciPy minimizer.
+Geometry optimization uses the SciPy minimizer and can be installed using
+using a similar process as above with `besmarts-scipy`.
 
 
 
