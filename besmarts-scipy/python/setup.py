@@ -1,7 +1,7 @@
 
 import setuptools
 
-requirements = ["scipy", "numpy"]
+requirements = ["besmarts", "scipy", "numpy"]
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
