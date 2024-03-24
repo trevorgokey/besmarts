@@ -1,65 +1,27 @@
+"""
+tests/test_multijection
+"""
 
-from besmarts.codecs import codec_native as native
-from besmarts.core import mapper
 from pprint import pprint
 
-g, h = native.graph_codec_native_load("./mapper.bes")
+from besmarts import graphs, topologies, bijections, multijections
 
-print("g")
-pprint(g.nodes)
-pprint(g.edges)
+from besmarts.codecs import codec_native as native
+from besmarts.codecs.codec_rdkit import graph_codec_rdkit
 
-print("h")
-pprint(h.nodes)
-pprint(h.edges)
+gcd = graph_codec_rdkit()
 
-m = {1:1, 2:2}
-G, H, M = mapper.mapper_compose_graphs(g, h, m, add_nodes=True, fill_new_nodes=True)
+topo = topology.atom
 
+ref = graphs.subgraph_to_structure(gcd.smarts_decode("[*:1]~[*](~[*])"), topo)
+smarts_graphs = list(map(lambda x: graphs.subgraph_to_structure(x, topo), map(gcd.smarts_decode, [
+    "[#6:1]-[#6]-[#1]",
+    "[#6:1]-[#6]-[#6]",
+    "[#6:1]-[#6]-[#8]",
+    "[#6:1]-[#7]-[#1]",
+    "[#6:1]-[#6](-[#6])-[#6]",
+    "[#6:1]-[#6](-[#6])-[#1]"
+])))
 
-print("G")
-pprint(G.nodes)
-pprint(G.edges)
-
-print("H")
-pprint(H.nodes)
-pprint(H.edges)
-
-print("Map")
-pprint(M)
-
-J = mapper.union(G, H, map=M)
-print("UNION")
-pprint(J.nodes)
-pprint(J.edges)
-
-
-print("T")
-T = mapper.structure_mapper(g, add_nodes=True, fill_new_nodes=True)
-T.add(g)
-T.add(h)
-print("Domain:")
-pprint(T.domain.nodes)
-pprint(T.domain.edges)
-
-
-print("Codomains")
-for i, (g, cdo) in enumerate(T.codomain_map.items(), 1):
-    print(i)
-    pprint(cdo.nodes)
-    pprint(cdo.edges)
-    pprint(T.codomain[cdo])
-    print("was built from original:")
-    pprint(g.nodes)
-    pprint(g.edges)
-
-
-mapper.mapper_save(T, "mapped.bem")
-
-
-sub = mapper.subtract_conditional(T.domain, T.codomain_map[h], map=T.codomain[T.codomain_map[h]])
-pprint(T.domain.nodes)
-pprint(h.nodes)
-pprint(sub.nodes)
-sub = mapper.subtract(T.domain, T.codomain_map[h], map=T.codomain[T.codomain_map[h]])
-pprint(sub.nodes)
+FF = multijections.multijection_fit_reference(smarts_graphs, ref, fill=True)
+print(gcd.smarts_encode(multijections.multijection_union(FF)))
