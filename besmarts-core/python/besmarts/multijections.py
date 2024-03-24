@@ -1,32 +1,28 @@
 """
-besmarts.core.graph_multijections
+besmarts.multijections
 
 Multijections are still very experimental
 """
 
 from besmarts.core import graph_bitwise
+from besmarts.core import graphs
+from besmarts.core import mapper
 
 # TODO: transfer this to use workspaces
+# only allow add_nodes=0|1 for now until I can decide what it means to use 2|3
 class multijection:
     def __init__(
         self,
         domain: graphs.structure,
-        mode="high",
-        strict=False,
-        equality=False,
-        add_nodes=0,
-        fill_new_nodes=0,
+        fill=0,
     ):
         self.reference = graphs.structure_copy(domain)
         self.codomain_map = {}
 
         self.domain = graphs.structure_copy(domain)
         self.codomain = {}
-        self.strict = strict
-        self.equality = equality
-        self.mode = mode
-        self.add_nodes = add_nodes
-        self.fill_new_nodes = fill_new_nodes
+        self.add_nodes = 1
+        self.fill = fill
 
     def reset(self):
         self.domain = graphs.structure_copy(self.reference)
@@ -52,15 +48,15 @@ class multijection:
         if g is not None:
             return
 
-        T = map_to(
+        T = mapper.map_to(
             self.domain,
             G,
-            strict=self.strict,
-            equality=self.equality,
+            strict=False,
+            equality=False,
             skip=skip,
-            mode=self.mode,
+            mode="high",
             add_nodes=self.add_nodes,
-            fill=self.fill_new_nodes,
+            fill=self.fill,
         )
 
         if T.map is None:
@@ -81,34 +77,38 @@ class multijection:
         # print("added", m, G, g)
 
         i = 0
-        # print("start")
+        # print("domain", gcd.smarts_encode(self.domain))
+        # print("new domain:", gcd.smarts_encode(d))
         while hash(self.domain) != hash(d):
+
+            # print(gcd.smarts_encode(d))
             i += 1
-            # print(i)
+            # print(i, "set to new domain")
+
             self.domain = d
             old = {k: v for k, v in self.codomain_map.items()}
             for j, (oldG, oldg) in enumerate(old.items()):
                 # print(i,j)
 
-                # print("Iter", i,j)
 
                 _skip = self.codomain[oldg]
-                if False or len(_skip) != len(self.domain.nodes):
+                # print("Visting existing", i,j, gcd.smarts_encode(oldg), "skip is ", _skip)
+                if len(_skip) != len(self.domain.nodes):
                     # print("Iter map", i,j, len(_skip), len(self.domain.nodes))
                     _skip = self.codomain.pop(oldg)
                     # if _skip:
                     #     _skip = {k:v for k,v in _skip.items() if k in self.domain.nodes and v in oldg.nodes}
                     if oldG in self.codomain_map:
                         self.codomain_map.pop(oldG)
-                    _T = map_to(
+                    _T = mapper.map_to(
                         self.domain,
                         oldg,
-                        strict=self.strict,
-                        equality=self.equality,
+                        strict=False,
+                        equality=False,
                         skip=_skip,
-                        mode=self.mode,
+                        mode="high",
                         add_nodes=self.add_nodes,
-                        fill=self.fill_new_nodes,
+                        fill=self.fill,
                     )
 
                     # print("Iter compose", i,j)
@@ -129,11 +129,38 @@ class multijection:
         self.codomain[g] = m
         self.codomain_map[G] = g
 
+def multijection_mcs(A, ref, fill=True):
+
+    M = multijection(ref, fill=fill)
+    M.add_nodes = 1
+    for s in A:
+        M.add(s)
+
+    return M
+
+def multijection_fit_reference(A, ref, fill=True):
+
+    M = multijection(ref, fill=fill)
+    M.add_nodes = 3
+    for s in A:
+        M.add(s)
+
+    return M
+
+def multijection_branch(A, ref, fill=True):
+
+    M = multijection(ref, fill=fill)
+    M.add_nodes = 1
+    for s in A:
+        M.add(s)
+
+    return M
+
 def multijection_union(T: multijection):
 
     result = graphs.structure_clear(T.domain)
     for codomain, M in T.codomain.items():
-        result = graph_bitwise.union(result, codomain, map=M)
+        result = graph_bitwise.subgraph_union(result, codomain, M)
     return result
 
 
@@ -150,7 +177,7 @@ def multijection_intersection(T: multijection):
 
     reference = T.domain
     T.add_nodes
-    config = configs.mapper_config(T.add_nodes, T.fill_new_nodes, "low")
+    config = configs.mapper_config(T.add_nodes, T.fill, "low")
 
     return intersection_list_parallel(
         list(T.codomain_map.values()), config, reference=reference
@@ -179,7 +206,7 @@ def multijection_load(
     strict=False,
     equality=False,
     add_nodes=False,
-    fill_new_nodes=False,
+    fill=False,
 ) -> multijection:
     header = []
     domain = None
@@ -225,7 +252,7 @@ def multijection_load(
                         strict=strict,
                         equality=equality,
                         add_nodes=add_nodes,
-                        fill_new_nodes=fill_new_nodes,
+                        fill=fill,
                     )
 
     return T

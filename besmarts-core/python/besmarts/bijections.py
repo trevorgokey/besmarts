@@ -1,13 +1,15 @@
 """
-besmarts.core.graph_bijections
+besmarts.bijections
+
+Definitions and functions to define a mapping between two input graphs that 
+are potentially modified such that a bijection is formed.
 """
 
 import functools
 
-from besmarts.core import topology
-from besmarts.core import graphs
-from besmarts.core import mapper
-from besmarts.core import graph_bitwise
+from besmarts import graphs, topology
+# from besmarts.core import mapper
+from besmarts.core import graph
 
 
 # TODO convert to workspaces?
@@ -40,42 +42,46 @@ class bijection:
         self.h = h
         self.t = t
 
+def structure_bijection(
+    G: graphs.structure,
+    H: graphs.structure,
+    add_nodes=0,
+    fill=0
+):
+    T = graph.mappings.map_to(G, H, add_nodes=add_nodes, fill=fill)
+    F = mapped_to_bijection(T)
+    return F
 
-def mapped_to_bijection(M: mapped_type) -> bijection:
+def mapped_to_bijection(M: graph_map.mapped_type) -> bijection:
     g = graphs.structure_to_subgraph(M.G)
-    g = graphs.structure_to_subgraph(M.H)
+    h = graphs.structure_to_subgraph(M.H)
     t = M.map
-    F = bijection(G.topology, g, h, t)
+    assert not (
+        set(t.keys()).symmetric_difference(g.nodes) or 
+        set(t.values()).symmetric_difference(h.nodes)
+    )
+    F = bijection(M.G.topology, g, h, t)
     return F
 
-
-def bijection_mcs(G: graphs.structure, H: graphs.structure) -> bijection:
-    M = mapper.map_to(G, H, add_nodes=0)
-    F = mapped_to_bijection(M)
+def structure_bijection_mcs(G: graphs.structure, H: graphs.structure) -> bijection:
+    F = structure_bijection(G, H, add_nodes=0)
     return F
 
-
-def bijection_constant_left(
+def structure_bijection_constant_right(
     G: graphs.structure, H: graphs.structure
 ) -> bijection:
-    M = mapper.map_to(G, H, add_nodes=2, fill=True)
-    F = mapped_to_bijection(M)
+    F = structure_bijection(G, H, add_nodes=1, fill=True)
     return F
 
-
-def bijection_constant_right(
+def structure_bijection_constant_left(
     G: graphs.structure, H: graphs.structure
 ) -> bijection:
-    M = mapper.map_to(G, H, add_nodes=2, fill=True)
-    F = mapped_to_bijection(M)
+    F = structure_bijection(G, H, add_nodes=2, fill=True)
     return F
 
-
-def bijection_branch(G: graphs.structure, H: graphs.structure) -> bijection:
-    M = mapper.map_to(G, H, add_nodes=3, fill=True)
-    F = mapped_to_bijection(M)
+def structure_bijection_branch(G: graphs.structure, H: graphs.structure) -> bijection:
+    F = structure_bijection(G, H, add_nodes=3, fill=True)
     return F
-
 
 def bijection_invert(F: bijection) -> bijection:
     """
@@ -117,25 +123,26 @@ def bijection_compose_pair(F1: bijection, F2: bijection) -> bijection:
 def bijection_compose(F: list[bijection]) -> bijection:
     return functools.reduce(bijection_compose_pair, F)
 
-
-def bijection_union(F: bijection) -> graphs.structure:
-    return graph_bitwise.union(F.g, F.h, F.t)
-
+def bijection_union(F: bijection) -> graphs.subgraph:
+    return graph.bitwise.subgraph_union(F.g, F.h, F.t)
 
 def bijection_intersection(F: bijection) -> graphs.structure:
-    return graph_bitwise.intersection(F.g, F.h, F.t)
+    return graph.bitwise.subgraph_intersection(F.g, F.h, F.t)
 
+def bijection_xor(F: bijection) -> graphs.structure:
+    return graph.bitwise.subgraph_xor(F.g, F.h, F.t)
 
-def bijection_difference(F: bijection) -> graphs.structure:
-    return graph_bitwise.difference(F.g, F.h, F.t)
-
+def bijection_subtract(F: bijection) -> graphs.structure:
+    return graph.bitwise.subgraph_subtract(F.g, F.h, F.t)
 
 def bijection_symmetric_difference(F: bijection) -> graphs.structure:
-    return graph_bitwise.symmetric_difference(F.g, F.h, F.t)
+    return graph.bitwise.symmetric_difference(F.g, F.h, F.t)
 
 
-def bijection_subset(F: bijection) -> graphs.structure:
-    return graph_bitwise.symmetric_difference(F.g, F.h, F.t)
+def bijection_subset(F: bijection) -> bool:
+    diff = graph.bitwise.subgraph_subtract(F.g, F.h, F.t)
+    bits = graphs.graph_bits(diff)
+    return bits == 0
 
 
 def bijection_equal(F: bijection) -> graphs.structure:
@@ -157,7 +164,7 @@ def bijection_superset_equal(F: bijection) -> graphs.structure:
 def structure_union_bijection_mcs(
     G: graphs.structure, H: graphs.structure
 ) -> graphs.structure:
-    M = mapper.map_to(G, H, add_nodes=0)
+    M = graph.mappings.map_to(G, H, add_nodes=0)
     F = mapped_to_bijection(M)
     g = graph_bitwise.union(F)
     return g
@@ -166,7 +173,7 @@ def structure_union_bijection_mcs(
 def structure_union_bijection_constant_left(
     G: graphs.structure, H: graphs.structure
 ) -> graphs.structure:
-    M = mapper.map_to(G, H, add_nodes=2)
+    M = graph.mappings.map_to(G, H, add_nodes=2)
     F = mapped_to_bijection(M)
     g = graph_bitwise.union(F)
     return g
@@ -175,7 +182,7 @@ def structure_union_bijection_constant_left(
 def structure_union_bijection_constant_right(
     G: graphs.structure, H: graphs.structure
 ) -> graphs.structure:
-    M = mapper.map_to(G, H, add_nodes=1)
+    M = graph.mappings.map_to(G, H, add_nodes=1)
     F = mapped_to_bijection(M)
     g = graph_bitwise.union(F)
     return g
@@ -184,7 +191,7 @@ def structure_union_bijection_constant_right(
 def structure_union_bijection_branch(
     G: graphs.structure, H: graphs.structure
 ) -> graphs.structure:
-    M = mapper.map_to(G, H, add_nodes=3)
+    M = mappings.map_to(G, H, add_nodes=3)
     F = mapped_to_bijection(M)
     g = bijection_union(F)
     return g
@@ -193,7 +200,7 @@ def structure_union_bijection_branch(
 def structure_intersection_bijection_mcs(
     G: graphs.structure, H: graphs.structure
 ) -> graphs.structure:
-    M = mapper.map_to(G, H, add_nodes=0, fill=True)
+    M = mappings.map_to(G, H, add_nodes=0, fill=True)
     F = mapped_to_bijection(M)
     g = bijection_intersection(F)
     return g
@@ -202,7 +209,7 @@ def structure_intersection_bijection_mcs(
 def structure_intersection_bijection_constant_left(
     G: graphs.structure, H: graphs.structure
 ) -> graphs.structure:
-    M = mapper.map_to(G, H, add_nodes=2, fill=True)
+    M = mappings.map_to(G, H, add_nodes=2, fill=True)
     F = mapped_to_bijection(M)
     g = bijection_intersection(F)
     return g
@@ -211,7 +218,7 @@ def structure_intersection_bijection_constant_left(
 def structure_intersection_bijection_constant_right(
     G: graphs.structure, H: graphs.structure
 ) -> graphs.structure:
-    M = mapper.map_to(G, H, add_nodes=1, fill=True)
+    M = mappings.map_to(G, H, add_nodes=1, fill=True)
     F = mapped_to_bijection(M)
     g = bijection_intersection(F)
     return g

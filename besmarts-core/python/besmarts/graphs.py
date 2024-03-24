@@ -1,5 +1,5 @@
 """
-besmarts.core.graphs
+besmarts.graphs
 
 Definitions and basic functions of the three graph data types of the BESMARTS
 package. The *graph* class is the most basic, followed by the *subgraph*
@@ -1272,7 +1272,8 @@ def structure_to_subgraph(g: structure) -> subgraph:
     subgraph
         A graph only containing the subgraph
     """
-    return subgraph_copy(subgraph(g.nodes, g.edges, g.select))
+    select = tuple((g.select[i] for i in g.topology.primary))
+    return subgraph_copy(subgraph(g.nodes, g.edges, select))
 
 
 def structure_node_depths(g: structure) -> Sequence[int]:
