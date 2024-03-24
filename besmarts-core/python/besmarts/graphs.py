@@ -2056,8 +2056,7 @@ def structure_clear(g: structure) -> structure:
     g_ = structure(g_.nodes, g_.edges, tuple(g.select), g.topology)
     return g_
 
-
-def structure_remove_unselected(g: structure) -> structure:
+def subgraph_remove_unselected(g: subgraph) -> subgraph:
     """
     Return a structure that has all unselected nodes removed from the graph.
 
@@ -2077,9 +2076,27 @@ def structure_remove_unselected(g: structure) -> structure:
         i: chem.bechem_copy(g.edges[i])
         for i in subgraph_edges(g)
     }
-    g_ = structure(nodes, edges, tuple(g.select), g.topology)
-
+    g_ = subgraph(nodes, edges, tuple(g.select))
     return g_
+
+def structure_remove_unselected(g: structure) -> structure:
+    """
+    Return a structure that has all unselected nodes removed from the graph.
+
+    Parameters
+    ----------
+    g : structure
+        The input structure
+
+    Returns
+    -------
+    structure
+        A new structure with no unselected nodes
+    """
+    topo = g.topology
+    g_ = subgraph_remove_unselected(g)
+
+    return subgraph_as_structure(g_, g.topology)
 
 
 def structure_remove_hydrogen(g: structure) -> structure:

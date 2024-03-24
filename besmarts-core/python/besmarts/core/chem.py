@@ -495,6 +495,10 @@ def bechem_check_sane_compare(bc: bechem, o: bechem) -> bool:
         raise Exception("chem operations must use same type")
     return True
 
+def bechem_conditional(c, a):
+    for p in c.primitives:
+        if c.primitives[p].is_null():
+            c.primitives[p] = a.primitives[p].copy()
 
 def bechem_dispatch_op(bc: bechem, o: bechem, fn) -> bechem:
     """
@@ -521,6 +525,11 @@ def bechem_dispatch_op(bc: bechem, o: bechem, fn) -> bechem:
 def bechem_add(a: bechem, b: bechem) -> bechem:
     return a + b
 
+def bechem_add_cl(a: bechem, b: bechem) -> bechem:
+    return bechem_conditiona(bechem_add(a, b), a)
+
+def bechem_add_cr(a: bechem, b: bechem) -> bechem:
+    return bechem_conditiona(bechem_add(a, b), b)
 
 def bechem_iadd(a: bechem, b: bechem) -> bechem:
     a += b
@@ -531,22 +540,24 @@ def bechem_subtract(a: bechem, b: bechem) -> bechem:
     return a - b
 
 
-def bechem_subtract_conditional(a: bechem, b: bechem) -> bechem:
-    c = a - b
-    for p in c.primitives:
-        if c.primitives[p].is_null():
-            c.primitives[p] = a.primitives[p].copy()
-    return c
+def bechem_subtract_cl(a: bechem, b: bechem) -> bechem:
+    return bechem_conditional(bechem_subtract(a, b), a)
 
+def bechem_subtract_cr(a: bechem, b: bechem) -> bechem:
+    return bechem_conditional(bechem_subtract(a, b), b)
 
 def bechem_isubtract(a: bechem, b: bechem):
     a -= b
     return a
 
-
 def bechem_xor(a: bechem, b: bechem):
     return a ^ b
 
+def bechem_xor_cl(a: bechem, b: bechem):
+    return bechem_conditional(bechem_xor(a, b), a)
+
+def bechem_xor_cr(a: bechem, b: bechem):
+    return bechem_conditional(bechem_xor(a, b), b)
 
 def bechem_ixor(a: bechem, b: bechem):
     a ^= b
@@ -557,15 +568,13 @@ def bechem_and(a: bechem, b: bechem):
     return a & b
 
 
-def bechem_and_conditional(a: bechem, b: bechem):
-    c = a & b
-
-    for p in c.primitives:
-        if c.primitives[p].is_null():
-            c.primitives[p] = a.primitives[p].copy()
-
+def bechem_and_cl(a: bechem, b: bechem):
+    c = bechem_conditional(bechem_and(a, b), a)
     return c
 
+def bechem_and_cr(a: bechem, b: bechem):
+    c = bechem_conditional(bechem_and(a, b), b)
+    return c
 
 def bechem_iand(a: bechem, b: bechem):
     a &= b
@@ -575,6 +584,11 @@ def bechem_iand(a: bechem, b: bechem):
 def bechem_or(a: bechem, b: bechem):
     return a | b
 
+def bechem_or_cl(a: bechem, b: bechem):
+    return bechem_conditional(bechem_or(a, b), a)
+
+def bechem_or_cr(a: bechem, b: bechem):
+    return bechem_conditional(bechem_or(a, b), b)
 
 def bechem_ior(a: bechem, b: bechem):
     a |= b
