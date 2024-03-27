@@ -1962,9 +1962,12 @@ def union_list_parallel(
 
     if len(selections) == 1:
         # return graphs.structure_copy(A[0])
-        i = selections[0][0][0]
+        i = selections[0][0]
         sel = selections[0][1]
-        g = graphs.graph_to_structure(G[i], sel, topo)
+        if icd:
+            g = graphs.graph_to_structure(icd.graph_decode(G[i]), sel, topo)
+        else:
+            g = graphs.graph_to_structure(G[i], sel, topo)
         return g
 
     # icd = None

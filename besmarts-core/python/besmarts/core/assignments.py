@@ -25,9 +25,6 @@ ESP = 10
 RADII = 11
 PHYSICAL_MODEL_BOND_LABELS = 12
 
-# need a way to load in a lot of positions and graphs
-# xyz with mapped smiles
-# but we also have a bga
 ASSN_NAMES = {
     # floats
     POSITIONS : "positions", # atom, 1x3 
@@ -550,7 +547,6 @@ def smiles_assignment_geometry_torsions(
             
 
     return torsion_assignment_float(selections)
-
 
 def graph_assignment_geometry_bonds(
     pos: graph_assignment_float,

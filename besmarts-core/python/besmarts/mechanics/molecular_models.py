@@ -283,7 +283,7 @@ def chemical_system_set_value_list(csys, key, values):
         m, t = key
         csys.models[m].system_terms[t].values = values
 
-def chemical_system_set_value(cys, key, value):
+def chemical_system_set_value(csys, key, value):
 
     if len(key) == 4:
         m, t, l, i = key
@@ -303,17 +303,20 @@ def chemical_system_get_value(csys, key):
 
 def chemical_system_to_graph_topology_db(cs, pos: assignments.smiles_assignment) -> physical_model:
     pass
-def chemical_system_to_physical_system(cs, pos: assignments.smiles_assignment) -> physical_model:
+def chemical_system_to_physical_system(cs, pos: assignments.smiles_assignment, ref=None, reuse=None) -> physical_model:
     ps = physical_system([])
 
-    for cm in cs.models:
-        pm = physical_model(pos, [], [])
-        print(f"{datetime.datetime.now()} Processing", cm.name)
-        for proc in cm.procedures:
-            print(f"{datetime.datetime.now()}     Procedure", proc.name)
-            procedure: chemical_model_procedure
-            pm = proc.assign(cm, pm)
-        ps.models.append(pm)
+    for ci, cm in enumerate(cs.models):
+        if (ref is not None and reuse is not None) and ci in reuse:
+            ps.models.append(ref.models[ci])
+        else:
+            pm = physical_model(pos, [], [])
+            print(f"{datetime.datetime.now()} Processing", cm.name)
+            for proc in cm.procedures:
+                print(f"{datetime.datetime.now()}     Procedure", proc.name)
+                procedure: chemical_model_procedure
+                pm = proc.assign(cm, pm)
+            ps.models.append(pm)
     return ps
 
 def smiles_assignment_function(fn, sys_params, top_params, pos):

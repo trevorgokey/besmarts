@@ -455,7 +455,11 @@ class Server(managers.Server):
                 t = threading.Thread(target=self.handle_request, args=(c,))
                 # pool.apply_async(self.handle_request, (c,))
                 t.daemon = True
-                t.start()
+                try:
+                    t.start()
+                except RuntimeError:
+                    # possible on large jobs with many threads?
+                    continue
 
             else:
                 if len(recvs) < 32:
