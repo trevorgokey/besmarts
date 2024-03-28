@@ -758,7 +758,6 @@ def smarts_clustering_optimize(
                         assn_i.extend(groups[S.name])
                     else:
                         # or form matches based on unique smarts
-                        assert False
                         lbls = set(a)
                         if len(lbls) < step.direct_limit:
                             lbls = dict()
@@ -768,7 +767,6 @@ def smarts_clustering_optimize(
                                 assn_i.append(lbl_i)
 
                     if len(set(assn_i)) < step.direct_limit:
-                        assert False
                         pcp = step.pcp.copy()
                         pcp.extender = cfg
                         print("Direct splitting....")
