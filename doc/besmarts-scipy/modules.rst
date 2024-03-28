@@ -1,5 +1,5 @@
-besmarts
-========
+besmarts-scipy
+==============
 
 .. toctree::
    :maxdepth: 4
