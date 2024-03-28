@@ -38,6 +38,8 @@ def primitive_load(line, primitive_codecs):
 
 def graph_load(lines, dtype=arrays.bitvec):
 
+    lines = [l.split() for l in lines]
+
     atom_codecs = [key for key in primitives.primitive_key_set]
     bond_codecs = [key for key in primitives.primitive_key_set]
 
@@ -161,7 +163,7 @@ def graph_codec_native_read(f) -> Sequence:
     for i, start in enumerate(graph_lines[:-1], 1):
         n = graph_lines[i] - start
         lines = [next(f) for _ in range(n)]
-        lines = [l.split() for l in lines if l]
+        # lines = [l.split() for l in lines if l]
         graph = graph_load(lines)
         graphs.append(graph)
 
