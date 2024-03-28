@@ -17,11 +17,6 @@
 # don't do the above, it breaks everything
 import os
 import sys
-sys.path.insert(0, '/home/tgokey/projects/besmarts-core/python//')
-sys.path.insert(0, '/home/tgokey/projects/besmarts-hierarchy/')
-sys.path.insert(0, '/home/tgokey/projects/besmarts-rdkit/')
-sys.path.insert(0, '/home/tgokey/projects/besmarts-resolve/')
-sys.path.insert(0, '/home/tgokey/projects/besmarts-splitter/')
 
 # add_module_names = False
 # autodoc_typehints = 'description'
@@ -47,8 +42,8 @@ extensions = [
    'sphinx.ext.autodoc',
    'sphinx.ext.autosummary',
    'sphinx.ext.napoleon',
-   'IPython.sphinxext.ipython_console_highlighting',
-   'IPython.sphinxext.ipython_directive',
+#   'IPython.sphinxext.ipython_console_highlighting',
+#   'IPython.sphinxext.ipython_directive',
 ]
 napoleon_google_docstring = False
 napoleon_use_param = False
@@ -67,7 +62,7 @@ language = 'en'
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+exclude_patterns = ['_build']
 
 
 # -- Options for HTML output -------------------------------------------------

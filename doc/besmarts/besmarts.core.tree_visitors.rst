@@ -1,7 +1,7 @@
-besmarts.codecs.codec\_rdkit module
+besmarts.core.tree\_visitors module
 ===================================
 
-.. automodule:: besmarts.codecs.codec_rdkit
+.. automodule:: besmarts.core.tree_visitors
    :members:
    :undoc-members:
    :show-inheritance:
