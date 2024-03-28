@@ -4,4 +4,4 @@ besmarts
 .. toctree::
    :maxdepth: 4
 
-   besmarts
+   besmarts.mechanics
