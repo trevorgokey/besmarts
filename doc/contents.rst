@@ -5,7 +5,6 @@ Package Contents
 .. toctree::
    :maxdepth: 8
 
-   besmarts/besmarts.core.rst
-   besmarts/besmarts.assign.rst
-   besmarts/besmarts.cluster.rst
-   besmarts/besmarts.codecs.rst
+   besmarts/besmarts.rst
+   besmarts-rdkit/besmarts.rst
+   besmarts-scipy/besmarts.rst
