@@ -143,14 +143,14 @@ class smarts_visitor(encoding_visitor):
             # bo = self.on_edge(idx, self.ring_edges[edge])
             bo = ""
 
-            if edge in self.ring_counter:
-                n = self.ring_counter[edge]
-            elif self.ring_counter:
-                n = max(self.ring_counter.values()) + 1
-                self.ring_counter[edge] = n
-            else:
-                n = 1
-                self.ring_counter[edge] = n
+            n = list(self.ring_edges).index(edge) + 1
+            # if edge in self.ring_counter:
+            #     n = self.ring_counter[edge]
+            # elif self.ring_counter:
+            #     self.ring_counter[edge] = n
+            # else:
+            #     n = 1
+            #     self.ring_counter[edge] = n
 
             if len(self.ring_edges) > 9:
                 closures += bo + "%" + str(n)
