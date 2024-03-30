@@ -662,8 +662,6 @@ def smarts_clustering_optimize(
             )
 
             cfg = config.extender.copy()
-            if graphs.structure_max_depth(S0) > config.extender.depth_max:
-                continue
 
             S0_depth = graphs.structure_max_depth(S0)
             d = max(S0_depth, config.splitter.branch_depth_limit)
@@ -724,8 +722,8 @@ def smarts_clustering_optimize(
                 seen = set()
                 # depth = graphs.structure_max_depth(S0)
                 extend_config = config.extender.copy()
-                extend_config.depth_max = S0_depth
-                extend_config.depth_min = S0_depth
+                extend_config.depth_max = config.splitter.branch_depth_limit
+                extend_config.depth_min = config.splitter.branch_depth_min
                 for seen_i, (i, x) in enumerate(assn_s.items(), 1):
                     g = graphs.graph_to_structure(icd.graph_decode(G[i[0]]), i[1], topo) 
                     graphs.structure_extend(extend_config, [g])
@@ -738,35 +736,59 @@ def smarts_clustering_optimize(
                             objective.report([x]),
                             gcd.smarts_encode(g),
                         )
-                        # seen.add(g)
+                        seen.add(g)
                 print()
-                # if len(seen) < 2 and len(assn_s) < 100:
-                #     print(f"Skipping {S.name} since all graphs are the same")
-                #     step_tracker[S.name] = strategy.cursor
-                #     continue
+                if len(seen) < 2 and len(assn_s) < 100:
+                    print(f"Skipping {S.name} since all graphs are the same")
+                    step_tracker[S.name] = strategy.cursor
+                    continue
+
+                if len(set(map(tuple, groups[S.name]))) == 1:
+                    print(f"Skipping {S.name} since all data are the same")
+                    step_tracker[S.name] = strategy.cursor
+                    continue
+
+
+                if len(seen) < 2 and len(assn_s) < 100:
+                    print(f"Skipping {S.name} since all graphs are the same")
+                    step_tracker[S.name] = strategy.cursor
+                    continue
 
                 if objective.single(assn_s.values()) == 0.0:
                     print(f"Skipping {S.name} due to no objective")
                     step_tracker[S.name] = strategy.cursor
                     continue
 
-                if (
-                    step.direct_enable
-                ):  # and config.splitter.bit_search_limit > 2:
-                    assn_i = []
-                    if objective.is_discrete():
-                        assn_i.extend(groups[S.name])
-                    else:
-                        # or form matches based on unique smarts
-                        lbls = set(a)
-                        if len(lbls) < step.direct_limit:
-                            lbls = dict()
-                            for (i, idx), sg in a.items():
-                                lbl_i = lbls.get(a, len(lbls))
-                                lbls[a] = lbl_i
-                                assn_i.append(lbl_i)
+                if graphs.structure_max_depth(S0) > config.splitter.branch_depth_min:
+                    print("This parameter exceeds current depth. Skipping")
+                    step_tracker[S.name] = strategy.cursor
+                    continue
 
-                    if len(set(assn_i)) < step.direct_limit:
+                if step.direct_enable and config.splitter.bit_search_limit < len(assn_s):
+                    assn_i = []
+                    if len(assn_s) < step.direct_limit:
+                        # or form matches based on unique smarts
+                        a = []
+                        extend_config = config.extender.copy()
+                        extend_config.depth_max = config.splitter.branch_depth_limit
+                        extend_config.depth_min = config.splitter.branch_depth_min
+                        for seen_i, (i, x) in enumerate(assn_s.items(), 1):
+                            g = graphs.graph_to_structure(icd.graph_decode(G[i[0]]), i[1], topo) 
+                            graphs.structure_extend(extend_config, [g])
+                            g = graphs.structure_remove_unselected(g)
+                            a.append(g)
+                        # if len(a) < step.direct_limit:
+                        #     lbls = dict()
+                            # for (i, idx), sg in a.items():
+                            #     lbl_i = lbls.get(a, len(lbls))
+                            #     lbls[a] = lbl_i
+                            #     assn_i.append(lbl_i)
+
+                        if objective.is_discrete():
+                            assn_i.extend(groups[S.name])
+                        else:
+                            assn_i = list(range(len(a)))
+
                         pcp = step.pcp.copy()
                         pcp.extender = cfg
                         print("Direct splitting....")
@@ -775,14 +797,14 @@ def smarts_clustering_optimize(
                         ret = splits.split_all_partitions(
                             topo,
                             pcp,
-                            list(a.values()),
+                            a,
                             assn_i,
                             gcd=gcd,
                             maxmoves=0,
                         )
 
                         for p_j, (Sj, Sj0, matches, unmatches) in enumerate(ret.value, 0):
-                            print(f"Found {p_j+1}")
+                            print(f"Found {p_j+1} {gcd.smarts_encode(Sj)}")
 
                             edits = 0
                             matches = [
@@ -813,7 +835,7 @@ def smarts_clustering_optimize(
                             print("Direct found nothing")
 
 
-                if step.iterative_enable: #and not direct_success:
+                if step.iterative_enable and not direct_success:
                     # Q = mapper.union_list_parallel(
                     #     list(a.values()),
                     #     reference=S0,
@@ -1514,7 +1536,6 @@ def smarts_clustering_find_max_depth(
         topo = group.topology
         assignments = {}
         struct_lbls = {}
-        common_lbls = {}
         for moli, mol in enumerate(group.assignments, 0):
             print(
                 f"Assigning molecule {moli+1:5d}/{len(group.assignments):d} at depth {i}",
@@ -1522,35 +1543,28 @@ def smarts_clustering_find_max_depth(
             )
             N += len(mol.selections)
             for molj, (selection, lbl) in enumerate(mol.selections.items()):
-                idx = tuple((selection[i] for i in topo.primary))
+                idx = tuple((selection[j] for j in topo.primary))
                 atom = graphs.graph_to_structure(mol.graph, idx, topo)
                 suc = mapper.mapper_smarts_extend(
-                    configs.smarts_extender_config(i, i, True), [atom]
+                    configs.smarts_extender_config(i, i, False), [atom]
                 )
+                atom = graphs.structure_remove_unselected(atom)
                 atom_lbls = struct_lbls.get(atom, dict())
                 assignments[(moli, molj)] = lbl
 
                 if lbl not in atom_lbls:
                     atom_lbls[lbl] = []
-                    common_lbls[atom] = set()
 
-                atom_lbls[lbl].append((moli, molj, idx))
+                atom_lbls[lbl].append((moli, molj, idx, hash(atom)))
                 struct_lbls[atom] = atom_lbls
-                common_lbls[atom].add(lbl)
 
                 # print((moli, molj, idx), gcd.smarts_encode(atom))
-        # for atom, lbl in common_lbls.items():
-        #     print(list(lbl), hash(atom), gcd.smarts_encode(atom))
         print()
         print("Labels per unique structure that need more depth")
         problems = set()
         for j, (h, lbl) in enumerate(struct_lbls.items()):
             if len(lbl.values()) > 1:
                 problems.add(tuple((h, *sorted(set(lbl.keys())))))
-
-        # for j, (h, lbl) in enumerate(common_lbls.items()):
-        #     if len(lbl) > 1:
-        #         problems.add(tuple((h, *sorted(lbl))))
 
         print(
             f"There are {len(set(struct_lbls))}/{N} unique structures at depth",
