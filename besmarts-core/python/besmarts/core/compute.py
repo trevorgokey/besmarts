@@ -1899,14 +1899,14 @@ class workspace_remote(workspace):
 
         self.remote_state = None
 
-    def start(self):
+    def start(self, input_queue_size=1):
         if self.is_connected:
             print("Connecting queues...")
             self.remote_iqueue = self.get_iqueue()
             self.remote_oqueue = self.get_oqueue()
             print("Connecting state...")
             self.remote_state = self.get_state()
-            self.iqueue = myqueue(maxsize=1)
+            self.iqueue = myqueue(maxsize=input_queue_size)
             self.oqueue = myqueue()
 
             if not (
@@ -2992,7 +2992,8 @@ def workspace_remote_shm_init(ws, timeout=TIMEOUT):
     return False
 
 
-def compute_remote(addr, port, processes=1):
+def compute_remote(addr, port, processes=1, queue_size=1):
+
     retry = 0
     # connect to the work workqueue, which will serve workspaces
     retry_n = 240
@@ -3023,7 +3024,7 @@ def compute_remote(addr, port, processes=1):
 
                 if ws is not None:
                     ws.nproc = processes
-                    success = ws.start()
+                    success = ws.start(queue_size)
 
                     # this needs to copy everything
                     if success:
