@@ -324,7 +324,7 @@ def optimization_strategy_build_macro_iterations(strat: optimization_strategy):
                             strat.bounds.splitter.unique_compliments_prefer_min,
                         )
                         extender = configs.smarts_extender_config(
-                            branches, branches, True
+                            branches, branches, strat.bounds.extender.include_hydrogen
                         )
                         config = configs.smarts_perception_config(
                             splitter, extender
