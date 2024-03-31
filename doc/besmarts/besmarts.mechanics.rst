@@ -7,10 +7,6 @@ Submodules
 .. toctree::
    :maxdepth: 4
 
-<<<<<<< HEAD
-   besmarts.mechanics.objectives_scipy
-   besmarts.mechanics.optimizers_scipy
-=======
    besmarts.mechanics.force_harmonic
    besmarts.mechanics.force_pairwise
    besmarts.mechanics.force_periodic
@@ -19,4 +15,3 @@ Submodules
    besmarts.mechanics.objectives
    besmarts.mechanics.smirnoff_models
    besmarts.mechanics.smirnoff_xml
->>>>>>> main
