@@ -51,10 +51,10 @@ of SMARTS matching when labeling from a SMARTS hierarchy.
 Geometry optimization uses the SciPy minimizer and can be installed using
 using a similar process as above with `besmarts-scipy`.
 
-Energy and gradient evaluations are implemented, but require partial charges. By
-default, `besmarts` with try to charge molecules using the `sqm` program from
-`ambertools` suite. Consequently, make sure `sqm` is in your path by installing
-via `conda` or by other means.
+Molecular mechanics energy and gradient evaluations are implemented, but
+require partial charges. By default, `besmarts` will try to charge molecules
+with `am1bcc` using the `sqm` program from `ambertools` suite. Consequently,
+make sure `sqm` is in your `PATH` by installing via `conda` or by other means.
 
 # Documentation
 
