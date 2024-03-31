@@ -1,3 +1,0 @@
-
-Binary Encoded SMARTS (besmarts)
-
