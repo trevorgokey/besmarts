@@ -4,15 +4,16 @@
 *A toolkit for data-driven force field design based on binary-encoded SMARTS*
 
 Highlights of this package are:
-    * Map and perform bitwise operations between two molecular substructures of
-      arbitrary size
-    * Search/iterate a substructure at the SMARTS-primitive level, using both
-      _numerical_ and _analytic_ approaches
-    * Cluster molecular data by SMARTS using a SMARTS hierarchy
-    * Calculate energy and gradients using a classical force field based on (a
-      basic implementation of) the SMIRNOFF format
-    * Geometry optimization
-    * Force field parameter optimization (under development)
+
+* Map and perform bitwise operations between two molecular substructures of
+  arbitrary size
+* Search/iterate a substructure at the SMARTS-primitive level, using both
+  _numerical_ and _analytic_ approaches
+* Cluster molecular data by SMARTS using a SMARTS hierarchy
+* Calculate energy and gradients using a classical force field based on (a
+  basic implementation of) the SMIRNOFF format
+* Geometry optimization
+* Force field parameter optimization (under development)
 
 See the ChemRxiv [preprint](https://doi.org/10.26434/chemrxiv-2023-v969f-v3)
 for the theoretical unpinnings on which this package is based.
