@@ -64,6 +64,6 @@ Documentation in this repository is hosted on [RTD](https://besmarts.readthedocs
 
 Contributions in the form of bug reports, enhancements, and general discussions
 are very welcome. See
-[CONTRIBUTING.md](https://github.com/trevorgokey/besmarts/CONTRIBUTING.md) for
+[CONTRIBUTING.md](https://github.com/trevorgokey/besmarts/blob/main/CONTRIBUTING.md) for
 more details.
 
