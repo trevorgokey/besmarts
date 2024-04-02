@@ -60,3 +60,10 @@ make sure `sqm` is in your `PATH` by installing via `conda` or by other means.
 
 Documentation in this repository is hosted on [RTD](https://besmarts.readthedocs.io)
 
+# Contributing
+
+Contributions in the form of bug reports, enhancements, and general discussions
+are very welcome. See
+[CONTRIBUTING.md](https://github.com/trevorgokey/besmarts/CONTRIBUTING.md) for
+more details.
+
