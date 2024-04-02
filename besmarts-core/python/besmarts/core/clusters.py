@@ -22,6 +22,7 @@ from besmarts.core import (
     configs,
     mapper,
     graphs,
+    topology,
     hierarchies,
     assignments,
     optimization,
@@ -1662,16 +1663,28 @@ def clustering_initial_conditions(
     hidx = hierarchies.structure_hierarchy(trees.tree_index(), {}, {}, topo)
 
     hidx.index.node_add(None, trees.tree_node(0, "parameter", "", "p0"))
-    graph = gcd.smiles_decode(sag.assignments[0].smiles)
-    select = next(iter(sag.assignments[0].selections.keys()))
 
-    S0 = graphs.graph_to_structure(graph, select, topo)
-    S0 = graphs.structure_remove_unselected(S0)
-    S0 = graphs.structure_relabel_nodes(
-        S0, {n: i for i, n in enumerate(S0.select, 1)}
-    )
+    if topo == topology.atom:
+        S0 = gcd.smarts_decode("[*:1]")
+    elif topo == topology.bond:
+        S0 = gcd.smarts_decode("[*:1]~[*:2]")
+    elif topo == topology.angle:
+        S0 = gcd.smarts_decode("[*:1]~[*:2]~[*:3]")
+    elif topo == topology.torsion:
+        S0 = gcd.smarts_decode("[*:1]~[*:2]~[*:3]~[*:4]")
+    elif topo == topology.outofplane:
+        S0 = gcd.smarts_decode("[*:1]~[*:2](~[*:3])~[*:4]")
 
-    graphs.subgraph_fill(S0)
+    # graph = gcd.smiles_decode(sag.assignments[0].smiles)
+    # select = next(iter(sag.assignments[0].selections.keys()))
+
+    # S0 = graphs.graph_to_structure(graph, select, topo)
+    # S0 = graphs.structure_remove_unselected(S0)
+    # S0 = graphs.structure_relabel_nodes(
+    #     S0, {n: i for i, n in enumerate(S0.select, 1)}
+    # )
+
+    # graphs.subgraph_fill(S0)
 
     hidx.subgraphs[0] = graphs.structure_to_subgraph(S0)
     if gcd:
