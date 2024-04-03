@@ -177,10 +177,10 @@ def structure_hierarchy_merge(
                 # print("Composing keys for", new_desc)
                 # print("Seen", seen)
                 work = {}
-                if sym in "lr" or configs.processors == 1:
-                    _pool = multiprocessing.pool.ThreadPool
-                else:
-                    _pool = multiprocessing.Pool
+                # if sym in "lr" or configs.processors == 1:
+                #     _pool = multiprocessing.pool.ThreadPool
+                # else:
+                _pool = multiprocessing.Pool
                 with _pool(configs.processors) as pool:
                     for hent in new_desc:
                         if hent.name in seen:
