@@ -2522,8 +2522,8 @@ def workspace_local_run(ws: workspace_local):
 
 
 def workspace_submit_and_flush(
-    ws, fn, iterable, chunksize=1, timeout=1.0, batchsize=0
-):
+    ws, fn, iterable: Dict, chunksize=1, timeout=1.0, batchsize=0
+) -> Dict:
     results = {}
     j = len(results)
 
@@ -2552,7 +2552,8 @@ def workspace_submit_and_flush(
                 )
             )
         j = len(results)
-    print(f"Batch: {j/n*100:5.2f}%  {j:8d}/{n}")
+    if configs.compute_verbosity > 1:
+        print(f"Batch: {j/n*100:5.2f}%  {j:8d}/{n}")
     return results
 
 
@@ -2586,7 +2587,12 @@ def workspace_flush(ws: workspace_local, indices, timeout: float = TIMEOUT):
         if idx in ws.holding_remote:
             ws.holding_remote.pop(idx)
 
-    ttp = 10  # times to print; 100 is every 1%
+    ttp = 0  # times to print; 100 is every 1%, 0 disables
+    if configs.compute_verbosity == 1:
+        ttp = 1
+    elif configs.compute_verbosity > 1:
+        ttp = 10
+
     update = set()
     force_update = True
     remote_finished = 0
@@ -2612,42 +2618,43 @@ def workspace_flush(ws: workspace_local, indices, timeout: float = TIMEOUT):
         iqsize = ws.iqueue.qsize()
         oqsize = ws.oqueue.qsize()
 
-        if dt < 10.0:
-            force_update = False
-        else:
-            force_update = True
+        if ttp > 0:
+            if dt < 10.0:
+                force_update = False
+            else:
+                force_update = True
 
-        progress = int(i / n * ttp) % ttp
-        if i == n:
-            progress = ttp
-        if force_update or progress not in update:
-            update.add(progress)
-            ti = time.monotonic()
-            riqsize = ws.remote_iqueue_size
-            if riqsize is None:
-                riqsize = -1
-            roqsize = ws.remote_oqueue_size
-            if roqsize is None:
-                roqsize = -1
-            erc = 0
-            if ws.finished > 0:
-                erc = ws.finished_remote * ws.nproc / ws.finished
-            print(
-                f"\r{datetime.now()} P: {i/n*100:6.2f}%  {n-i:4d}/{n} "
-                f"IQ: {iqsize:4d} OQ: {oqsize:4d} "
-                f"IP: {len(ws.holding):4d} "
-                f"LF: {ws.finished:4d} "
-                f"RF: {ws.finished_remote:4d} "
-                f"RIQ: {riqsize:4d} ROQ: {roqsize:4d} "
-                f"RIP: {len(ws.holding_remote):4d} ",
-                f"ERC: {erc:6.1f} ",
-                end="",
-            )
-            # show the first entry for timing comparsions
-            if first:
-                print()
-                first = False
-            force_update = False
+            progress = int(i / n * ttp) % ttp
+            if i == n:
+                progress = ttp
+            if force_update or progress not in update:
+                update.add(progress)
+                ti = time.monotonic()
+                riqsize = ws.remote_iqueue_size
+                if riqsize is None:
+                    riqsize = -1
+                roqsize = ws.remote_oqueue_size
+                if roqsize is None:
+                    roqsize = -1
+                erc = 0
+                if ws.finished > 0:
+                    erc = ws.finished_remote * ws.nproc / ws.finished
+                print(
+                    f"\r{datetime.now()} P: {i/n*100:6.2f}%  {n-i:4d}/{n} "
+                    f"IQ: {iqsize:4d} OQ: {oqsize:4d} "
+                    f"IP: {len(ws.holding):4d} "
+                    f"LF: {ws.finished:4d} "
+                    f"RF: {ws.finished_remote:4d} "
+                    f"RIQ: {riqsize:4d} ROQ: {roqsize:4d} "
+                    f"RIP: {len(ws.holding_remote):4d} ",
+                    f"ERC: {erc:6.1f} ",
+                    end="",
+                )
+                # show the first entry for timing comparsions
+                if first:
+                    print()
+                    first = False
+                force_update = False
         if len(indices.difference(results)) == 0:
             break
 
@@ -2686,7 +2693,8 @@ def workspace_flush(ws: workspace_local, indices, timeout: float = TIMEOUT):
         # print("JOINING GOT", i)
 
     # print("\nDone flushing.")
-    print()
+    if ttp > 0:
+        print()
     return results
 
 

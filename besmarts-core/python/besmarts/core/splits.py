@@ -129,7 +129,11 @@ def split_all_partitions(
     partition, and the other will match the fragments not in the partition.
     """
 
-    lbls = set(assignments)
+    lbls = []
+    for x in assignments:
+        if x not in lbls:
+            lbls.append(x)
+
     bitmin = perception.splitter.bit_search_min
     bitmax = perception.splitter.bit_search_limit
     # bitmax = max(1, len(lbls) // 2)
@@ -151,7 +155,7 @@ def split_all_partitions(
                 "Direct on",
                 b,
                 "combo",
-                combo,
+                tuple(sorted(combo)),
                 "depth",
                 perception.extender.depth_min,
                 perception.extender.depth_max,
@@ -191,6 +195,8 @@ def split_all_partitions(
             unmatch.difference_update(lhs_removeB)
             unmatch.update(lhs_removeA)
 
+            # if lhs or rhs:
+            #     results.append((lhs, rhs, matched, unmatch))
             if lhs:
                 results.append((lhs, rhs, matched, unmatch))
             elif rhs:
@@ -406,22 +412,21 @@ def split_partition(
             if gcd:
                 print("RHS_INTR: ", gcd.smarts_encode(rhs))
             valid = True
-            if maxmoves > 0:
-                for i in partition:
-                    if len(rhs_removeA) > maxmoves:
-                        break
-                    ai = A[i]
-                    if mapper.mapper_match(ai, rhs):
-                        rhs_removeA.add(i)
-                        # print("RHS Did match but shouldn't:", i, gcd.smarts_encode(ai))
+            for i in partition:
+                if len(rhs_removeA) > maxmoves:
+                    break
+                ai = A[i]
+                if mapper.mapper_match(ai, rhs):
+                    rhs_removeA.add(i)
+                    # print("RHS Did match but shouldn't:", i, gcd.smarts_encode(ai))
 
-                for i in part_diff:
-                    if len(rhs_removeA) + len(rhs_removeB) > maxmoves:
-                        break
-                    ai = A[i]
-                    if not mapper.mapper_match(ai, rhs):
-                        rhs_removeB.add(i)
-                        # print("RHS Didn't match but should:", i, gcd.smarts_encode(ai))
+            for i in part_diff:
+                if len(rhs_removeA) + len(rhs_removeB) > maxmoves:
+                    break
+                ai = A[i]
+                if not mapper.mapper_match(ai, rhs):
+                    rhs_removeB.add(i)
+                    # print("RHS Didn't match but should:", i, gcd.smarts_encode(ai))
             if len(rhs_removeA) + len(rhs_removeB) > maxmoves:
                 valid = False
 
@@ -1469,7 +1474,7 @@ def split_subgraphs_distributed(
         offsets[i] = idx_offset
 
     addr = ("", 0)
-    if len(iterable) <= nproc:
+    if len(iterable) <= nproc*3:
         addr = ('127.0.0.1', 0)
         nproc = len(iterable)
 
@@ -1755,14 +1760,14 @@ def split_subgraphs_distributed(
                 unmatch = sorted(indices.difference(match))
 
                 key = match
-                if splitter.unique_compliments:
+                if splitter.unique_complements:
                     if len(unmatch) < len(match):
                         key = unmatch
                 key = tuple(key)
 
                 if key in keep:
                     # prefer the one that matched the least
-                    if splitter.unique_compliments_prefer_min:
+                    if splitter.unique_complements_prefer_min:
                         if len(keep[key][2]) > len(match):
                             keep[key] = Sj, bj, match
                     elif len(keep[key][2]) < len(match):

@@ -67,7 +67,6 @@ def smarts_hierarchy_copy(smahi: smarts_hierarchy) -> smarts_hierarchy:
 
     return smarts_hierarchy(index, smarts)
 
-
 def structure_hierarchy_copy(th: structure_hierarchy) -> structure_hierarchy:
     index = th.index.copy()
     smarts = th.smarts.copy()

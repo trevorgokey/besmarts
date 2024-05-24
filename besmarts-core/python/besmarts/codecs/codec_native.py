@@ -185,6 +185,9 @@ def graph_codec_native_save(fname, graphs):
         graph_codec_native_write(f, graphs)
     return True
 
+def graph_codec_native_encode(graphs):
+    return ["\n".join(graph_save(g)) for g in graphs]
+
 
 class graph_codec_native(codecs.graph_codec):
     def __init__(

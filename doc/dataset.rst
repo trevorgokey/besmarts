@@ -4,7 +4,7 @@ Datasets
 
 
 Expanding one SMARTS to many SMILES
---------------------------------------
+-----------------------------------
 
 The last useful task that this package performs is related to dataset design.
 Using a set of rules, one can take a SMARTS pattern and filter all satisfactory

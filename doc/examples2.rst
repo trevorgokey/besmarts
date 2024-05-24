@@ -1,3 +1,4 @@
+
 Examples
 ========
 
@@ -32,8 +33,6 @@ SMARTS split
 
 Force field fit
 ---------------
-
-Note that this example requires that you download openff-2.1.0.offxml
 
 .. literalinclude:: examples/ff_fit.py
    :language: python

@@ -126,6 +126,7 @@ class find_successful_candidates_ctx:
     objective = None
 
 
+
 def find_successful_candidates_distributed(S, Sj, operation, edits, shm=None):
     sag = shm.sag
     cst = shm.cst
@@ -426,6 +427,7 @@ def check_lbls_data_selections_equal(
         print(
             f"WARNING: suppressed {warnings - warning_max} additional warnings"
         )
+
 
 def smarts_clustering_optimize(
     gcd: codecs.graph_codec,
@@ -1087,6 +1089,7 @@ def smarts_clustering_optimize(
 
             else:
                 ws = compute.workqueue_new_workspace(wq, address=addr, nproc=procs, shm=shm)
+                # this modifies the cst, relabels and computes objective
                 work = compute.workspace_submit_and_flush(
                     ws,
                     find_successful_candidates_distributed,

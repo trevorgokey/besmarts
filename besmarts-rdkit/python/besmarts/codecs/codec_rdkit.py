@@ -110,7 +110,7 @@ def rdkit_smarts_decode(
 ) -> graphs.graph:
 
     if r"$" in sma:
-        print(f"Warning, recursive SMARTS {sma} detected, skipping")
+        # print(f"Warning, recursive SMARTS {sma} detected, skipping")
         return sma
     mol = Chem.MolFromSmarts(sma)
 

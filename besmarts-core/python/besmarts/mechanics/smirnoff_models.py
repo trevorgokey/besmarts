@@ -36,6 +36,7 @@ def chemical_model_bond_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     proc = mm.chemical_model_procedure_smarts_assignment(
         pcp, cm.topology_terms
     )
+    pid = len(cm.procedures)
     proc.name = f"{cm.name} SMARTS assignment"
 
     proc.unit_hierarchy = hierarchies.structure_hierarchy(
@@ -43,23 +44,29 @@ def chemical_model_bond_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     )
     u = proc.unit_hierarchy.index.node_add_below(None)
     u.name = "u1"
+    uid = u.index
 
     proc.unit_hierarchy.smarts[u.index] = "[*:1]"
 
     h = hierarchies.structure_hierarchy(
         trees.tree_index(), {}, {}, topology.bond
     )
-    proc.smarts_hierarchies = {u.index: h}
+    proc.smarts_hierarchies = {uid: h}
 
     root = proc.smarts_hierarchies[u.index].index.node_add_below(None)
     root.name = "Bonds"
+    root.category = [-1, pid, uid]
+    root.type = "hierarchy"
     proc.smarts_hierarchies[u.index].smarts[root.index] = None
 
+    uid = u.index
     for param in d["parameters"]:
         node = proc.smarts_hierarchies[u.index].index.node_add_below(
             root.index
         )
         node.name = param.get("id", "")
+        node.type = "parameter"
+        node.category = [-1, pid, uid]
         h.smarts[node.index] = param.get("smirks", None)
         # print(f"Loading {node.name} {h.smarts[node.index]}")
 
@@ -76,6 +83,8 @@ def chemical_model_bond_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     cm.procedures.append(proc)
 
     return cm
+
+
 
 def chemical_model_angle_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     cm = mm.chemical_model("A", "Angles", topology.angle)
@@ -97,6 +106,7 @@ def chemical_model_angle_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     proc = mm.chemical_model_procedure_smarts_assignment(
         pcp, cm.topology_terms
     )
+    pid = len(cm.procedures)
     proc.name = f"{cm.name} SMARTS assignment"
 
     proc.unit_hierarchy = hierarchies.structure_hierarchy(
@@ -104,24 +114,30 @@ def chemical_model_angle_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     )
     u = proc.unit_hierarchy.index.node_add_below(None)
     u.name = "u1"
+    uid = 0
 
-    proc.unit_hierarchy.smarts[u.index] = "[*:1]"
+    proc.unit_hierarchy.smarts[uid] = "[*:1]"
 
     h = hierarchies.structure_hierarchy(
         trees.tree_index(), {}, {}, topology.angle
     )
-    proc.smarts_hierarchies = {u.index: h}
+    proc.smarts_hierarchies = {uid: h}
 
     root = proc.smarts_hierarchies[u.index].index.node_add_below(None)
     root.name = "Angles"
+    root.category = [-1, pid, uid]
+    root.type = "hierarchy"
     proc.smarts_hierarchies[u.index].smarts[root.index] = None
 
+    uid = u.index
     for param in d["parameters"]:
 
         node = proc.smarts_hierarchies[u.index].index.node_add_below(
             root.index
         )
         node.name = param.get("id", "")
+        node.type = "parameter"
+        node.category = [-1, pid, uid]
         h.smarts[node.index] = param.get("smirks", None)
 
         kval = float(param["k"].split()[0])
@@ -143,6 +159,7 @@ def smirnoff_dihedral_load(cm, pcp, d):
     proc = mm.chemical_model_procedure_smarts_assignment(
         pcp, cm.topology_terms
     )
+    pid = len(cm.procedures)
     proc.name = f"{cm.name} SMARTS assignment"
 
     proc.unit_hierarchy = hierarchies.structure_hierarchy(
@@ -150,21 +167,27 @@ def smirnoff_dihedral_load(cm, pcp, d):
     )
     u = proc.unit_hierarchy.index.node_add_below(None)
     u.name = "u1"
+    uid = 0
 
-    proc.unit_hierarchy.smarts[u.index] = "[*:1]"
+    proc.unit_hierarchy.smarts[uid] = "[*:1]"
 
     h = hierarchies.structure_hierarchy(
         trees.tree_index(), {}, {}, cm.topology
     )
-    proc.smarts_hierarchies = {u.index: h}
+    proc.smarts_hierarchies = {uid: h}
 
     root = proc.smarts_hierarchies[u.index].index.node_add_below(None)
     root.name = cm.name
+    root.category = [-1, pid, uid]
+    root.type = "hierarchy"
     proc.smarts_hierarchies[u.index].smarts[root.index] = None
 
+    uid = u.index
     for param in d["parameters"]:
         node = h.index.node_add_below(root.index)
         node.name = param.get("id", "")
+        node.type = "parameter"
+        node.category = [-1, pid, uid]
         h.smarts[node.index] = param.get("smirks", None)
 
         pdict = {}
@@ -221,7 +244,7 @@ def chemical_model_torsion_periodic_smirnoff(
     cm = chemical_model_dihedral_periodic_smirnoff(d, pcp)
     cm.topology = topology.torsion
     cm.name = "Torsions"
-    cm.symbol = "T"
+    cm.symbol = "I"
     cm.internal_function = assignments.graph_assignment_geometry_torsions
     cm.derivative_function = assignments.graph_assignment_jacobian_torsions
     smirnoff_dihedral_load(cm, pcp, d)
@@ -250,6 +273,7 @@ def chemical_model_electrostatics_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     proc = force_pairwise.chemical_model_procedure_antechamber(
         cm.topology_terms
     )
+    pid = len(cm.procedures)
     proc.name = "Electrostatics antechamber AM1BCC"
     cm.procedures.append(proc)
 
@@ -268,22 +292,28 @@ def chemical_model_electrostatics_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     proc = force_pairwise.chemical_model_procedure_combine_coulomb(
         cm.topology_terms
     )
+    pid = len(cm.procedures)
     proc.name = "Electrostatics combine"
     cm.procedures.append(proc)
 
     proc = mm.chemical_model_procedure_smarts_assignment(
         pcp, cm.topology_terms
     )
+    pid = len(cm.procedures)
     proc.name = "Electrostatics scaling"
+    uid = 0
     proc.smarts_hierarchies = {
-        0: hierarchies.structure_hierarchy(
+        uid: hierarchies.structure_hierarchy(
             trees.tree_index(), {}, {}, topology.pair
         )
     }
+    pid = len(cm.procedures)
 
     # NB scaling (off)
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "s1"
+    i.type = "parameter"
+    i.category = [-1, pid, uid]
     proc.smarts_hierarchies[0].smarts[i.index] = "[*:1].[*:2]"
     proc.topology_parameters[(0, i.name)] = {"s": i.name}
     cm.topology_terms["s"].values[i.name] = [1.0]
@@ -298,6 +328,8 @@ def chemical_model_electrostatics_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     # 13 scaling (on)
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "s3"
+    i.type = "parameter"
+    i.category = [-1, pid, uid]
     proc.smarts_hierarchies[0].smarts[i.index] = "[*:1]~[*]~[*:2]"
     proc.topology_parameters[(0, i.name)] = {"s": i.name}
     cm.topology_terms["s"].values[i.name] = [0.0]
@@ -305,6 +337,8 @@ def chemical_model_electrostatics_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     # 14 scaling (0.83)
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "s4"
+    i.type = "parameter"
+    i.category = [-1, pid, uid]
     proc.smarts_hierarchies[0].smarts[i.index] = "[*:1]~[*]~[*]~[*:2]"
     proc.topology_parameters[(0, i.name)] = {"s": i.name}
     cm.topology_terms["s"].values[i.name] = [1 / 1.2]
@@ -319,6 +353,7 @@ def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     proc = mm.chemical_model_procedure_smarts_assignment(
         pcp, cm.topology_terms
     )
+    pid = len(cm.procedures)
     proc.name = f"{cm.name} SMARTS assignment"
 
     proc.unit_hierarchy = hierarchies.structure_hierarchy(
@@ -326,23 +361,29 @@ def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     )
     u = proc.unit_hierarchy.index.node_add_below(None)
     u.name = "u1"
+    uid = u.index
 
     proc.unit_hierarchy.smarts[u.index] = "[*:1]"
 
     h = hierarchies.structure_hierarchy(
         trees.tree_index(), {}, {}, topology.atom
     )
-    proc.smarts_hierarchies = {u.index: h}
+    proc.smarts_hierarchies = {uid: h}
 
-    root = proc.smarts_hierarchies[u.index].index.node_add_below(None)
+    root = proc.smarts_hierarchies[uid].index.node_add_below(None)
     root.name = "vdW"
+    root.category = [-1, pid, uid]
+    root.type = "hierarchy"
     proc.smarts_hierarchies[u.index].smarts[root.index] = None
 
+    uid = u.index
     for param in d["parameters"]:
         node = proc.smarts_hierarchies[u.index].index.node_add_below(
             root.index
         )
         node.name = param.get("id", "")
+        node.type = "parameter"
+        node.category = [-1, pid, uid]
         h.smarts[node.index] = param.get("smirks", None)
 
         if "sigma" in param:
@@ -370,14 +411,17 @@ def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
         )
     )
     proc.name = "vdW combining Lorentz-Berthelot"
+    pid = len(cm.procedures)
     cm.procedures.append(proc)
 
     proc = mm.chemical_model_procedure_smarts_assignment(
         pcp, cm.topology_terms
     )
+    pid = len(cm.procedures)
     proc.name = f"vdW scaling"
+    uid = 0
     proc.smarts_hierarchies = {
-        0: hierarchies.structure_hierarchy(
+        uid: hierarchies.structure_hierarchy(
             trees.tree_index(), {}, {}, topology.pair
         )
     }
@@ -385,6 +429,8 @@ def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     # NB scaling (off)
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "s1"
+    i.type = "parameter"
+    i.category = [-1, pid, uid]
     proc.smarts_hierarchies[0].smarts[i.index] = "[*:1].[*:2]"
     proc.topology_parameters[(0, i.name)] = {"s": i.name}
     cm.topology_terms["s"].values[i.name] = [1.0]
@@ -399,6 +445,8 @@ def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     # 13 scaling (on)
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "s3"
+    i.type = "parameter"
+    i.category = [-1, pid, uid]
     proc.smarts_hierarchies[0].smarts[i.index] = "[*:1]~[*]~[*:2]"
     proc.topology_parameters[(0, i.name)] = {"s": i.name}
     cm.topology_terms["s"].values[i.name] = [0.0]
@@ -406,6 +454,8 @@ def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     # 14 scaling (0.5)
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "s4"
+    i.type = "parameter"
+    i.category = [-1, pid, uid]
     proc.smarts_hierarchies[0].smarts[i.index] = "[*:1]~[*]~[*]~[*:2]"
     proc.topology_parameters[(0, i.name)] = {"s": i.name}
     cm.topology_terms["s"].values[i.name] = [0.5]
@@ -442,5 +492,8 @@ def smirnoff_load(
             vdw,
         ],
     )
+    for m, cm in enumerate(csys.models):
+        for node in mm.chemical_model_iter_smarts_hierarchies_nodes(cm):
+            node.category = tuple([m, node.category[1], node.category[2]])
 
     return csys

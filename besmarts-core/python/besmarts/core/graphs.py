@@ -163,6 +163,7 @@ class structure(subgraph):
         self.topology: topology.structure_topology = topology
 
         if len(topology.primary) > len(select):
+            breakpoint()
             print(topology.primary, print(select))
         assert len(topology.primary) <= len(select)
         for e in topology.connect:
@@ -450,6 +451,36 @@ def graph_minimum_spanning_tree(
                 visited.add(n)
     g.edges = {e: g.edges[e] for e in edges}
     return g
+
+def graph_relabel_nodes(g: graph, M: Dict[node_id, node_id]) -> graph:
+    """
+    Return the nodes selected by the subgraph.
+
+    Parameters
+    ----------
+    g: subgraph
+        The input subgraph
+
+    Returns
+    -------
+    Sequence[node_id]
+        The selected nodes
+    """
+    assert len(set(M)) == len(set(M.values()))
+    nodes = {}
+    edges = {}
+    M = {k: v for k, v in M.items() if v is not None}
+
+    for tn, fn in M.items():
+        # tc = bes.nodes.pop(tn)
+        nodes[fn] = chem.bechem_copy(g.nodes[tn])
+    for (i, j) in list(g.edges):
+        tc = g.edges[(i, j)]
+        a, b = (M.get(i, i), M.get(j, j))
+        e = edge((a, b))
+        edges[e] = chem.bechem_copy(tc)
+    g_ = graph(nodes, edges)
+    return g_
 
 
 def graph_remove_hydrogen(g: graph) -> graph:
@@ -836,8 +867,9 @@ def graph_set_primitives_bond(beg, select):
     """
 
     for bet in beg.edges.values():
+        bet.select = tuple()
         for p in select:
-            bet.enable(select)
+            bet.enable(p)
 
 
 def graph_is_null(g: graph) -> bool:
@@ -947,7 +979,7 @@ def graph_all(g: graph) -> bool:
     return True
 
 
-def graph_bits(g: graph, maxbits=False) -> int:
+def graph_bits(g: graph, maxbits=True) -> int:
     """
     Return the number of bits set across all primitives
 
@@ -1150,6 +1182,38 @@ def graph_outofplanes(g: graph) -> Sequence[Tuple[int, int, int, int]]:
     return tuple(
         sorted(list(set(dihedrals)), key=lambda x: (x[1], x[0], x[2], x[3]))
     )
+
+def graph_topology(g, topo):
+    """
+    Return the IDs of the primary atoms defined by the topology
+
+    Parameters
+    ----------
+    g : graph
+        The input the graph
+
+    Returns
+    -------
+    Sequence[Tuple[int, int, int, int]]
+        A sequence of 4-tuples containing the dihedral IDs
+    """
+
+    if topo == topology.atom:
+        return graph_atoms(g)
+    if topo == topology.bond:
+        return graph_bonds(g)
+    if topo == topology.angle:
+        return graph_angles(g)
+    if topo == topology.torsion:
+        return graph_torsions(g)
+    if topo == topology.outofplane:
+        return graph_outofplanes(g)
+    if topo == topology.null:
+        return [(0,)]
+
+    return []
+
+
 
 def subgraph_connection(g: subgraph, a: int) -> Sequence[node_id]:
     """
@@ -1576,21 +1640,9 @@ def subgraph_relabel_nodes(g: subgraph, M: Dict[node_id, node_id]) -> subgraph:
     Sequence[node_id]
         The selected nodes
     """
-    assert len(set(M)) == len(set(M.values()))
-    nodes = {}
-    edges = {}
-    M = {k: v for k, v in M.items() if v is not None}
-
-    for tn, fn in M.items():
-        # tc = bes.nodes.pop(tn)
-        nodes[fn] = chem.bechem_copy(g.nodes[tn])
-    for (i, j) in list(g.edges):
-        tc = g.edges[(i, j)]
-        a, b = (M.get(i, i), M.get(j, j))
-        e = edge((a, b))
-        edges[e] = chem.bechem_copy(tc)
-    g_ = subgraph(nodes, edges, tuple((M.get(i, i) for i in g.select)))
-    return g_
+    select = tuple((M.get(i, i) for i in g.select))
+    g_ = graph_relabel_nodes(g, M)
+    return graph_as_subgraph(g_, select)
 
 
 def subgraph_fill(g: subgraph) -> None:
@@ -1630,6 +1682,29 @@ def subgraph_bits(g: subgraph) -> int:
     b = graph_bits(g_)
     return b
 
+def subgraph_remove_unselected(g: structure) -> structure:
+    """
+    Return a subgraph that has all unselected nodes removed from the graph.
+
+    Parameters
+    ----------
+    g : subgraph
+        The input structure
+
+    Returns
+    -------
+    subgraph
+        A new subgraph with no unselected nodes
+    """
+    # g = structure_copy(g)
+    nodes = {i: chem.bechem_copy(g.nodes[i]) for i in g.select}
+    edges = {
+        i: chem.bechem_copy(g.edges[i])
+        for i in subgraph_edges(g)
+    }
+    g_ = subgraph(nodes, edges, tuple(g.select))
+
+    return g_
 
 def subgraph_any(g: subgraph) -> bool:
     """
@@ -2038,6 +2113,7 @@ def structure_topology_edges(g: structure) -> Sequence[edge_id]:
 
 def structure_up_to_depth(g: structure, i: int, adj=None):
 
+    g = structure_copy(g)
     to_remove = []
     for d in range(structure_max_depth(g), i, -1):
         nodes = structure_vertices_at_depth(g, d, adj=adj)

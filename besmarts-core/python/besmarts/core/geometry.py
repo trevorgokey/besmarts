@@ -5,6 +5,7 @@ Functions to process the geometry of a molecular graph.
 """
 
 import math
+from besmarts.core import topology
 
 def is_outofplane(combo, edges) -> bool:
     return (
@@ -277,7 +278,13 @@ def measure_angle(xyz1, xyz2, xyz3):
         rr12 = [x/r12 for x in rr12]
 
         proj = sum([a*b for a,b in zip(rr10, rr12)])
-        theta = math.acos(proj)
+
+        if proj >= 1.0:
+            theta = 0.0
+        elif proj <= -1.0:
+            theta = math.pi
+        else:
+            theta = math.acos(proj)
 
         result.append([theta])
 

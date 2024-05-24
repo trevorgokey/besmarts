@@ -79,6 +79,7 @@ class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
                         f.write(f"{elem} {name} {x:12.9f} {y:12.9f} {z:12.9f}\n")
                     f.write("\n")
 
+                print("RUNNING ANTECHAMBER FOR CHARGES")
                 subprocess.run([
                     "sqm", "-O",
                     "-i", "mdin",
@@ -213,7 +214,7 @@ class chemical_model_procedure_combine_lj_lorentz_berthelot(mm.chemical_model_pr
 
 def chemical_model_coulomb(perception):
 
-    cm = mm.chemical_model("Q", "electrostatics", topology.pair)
+    cm = mm.chemical_model("Q", "Electrostatics", topology.pair)
 
     cm.energy_function = energy_function_coulomb_mix
     cm.force_function = force_function_coulomb_mix
@@ -235,7 +236,7 @@ def chemical_model_coulomb(perception):
 
 def chemical_model_lennard_jones(perception) -> mm.chemical_model:
 
-    cm = mm.chemical_model("N", "vdw", topology.pair)
+    cm = mm.chemical_model("N", "vdW", topology.pair)
 
     cm.energy_function = energy_function_lennard_jones_combined
     cm.force_function = force_function_lennard_jones_combined

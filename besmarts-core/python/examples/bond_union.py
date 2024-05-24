@@ -20,8 +20,35 @@ bond_primitives = list(codec_native.primitive_codecs_get_bond())
 gcd = codec_native.graph_codec_native(codecs, atom_primitives, bond_primitives)
 
 
+propane="""#GRAPH
+#ATOM element hydrogen connectivity_total connectivity_ring ring_smallest aromatic formal_charge
+#BOND bond_ring bond_order
+  1   1  64   8  16   1   1   1   1
+  2   2  64   4  16   1   1   1   1
+  3   3  64   8  16   1   1   1   1
+  4   4   2   1   2   1   1   1   1
+  5   5   2   1   2   1   1   1   1
+  6   6   2   1   2   1   1   1   1
+  7   7   2   1   2   1   1   1   1
+  8   8   2   1   2   1   1   1   1
+  9   9   2   1   2   1   1   1   1
+ 10  10   2   1   2   1   1   1   1
+ 11  11   2   1   2   1   1   1   1
+  1   2   1   2
+  1   4   1   2
+  1   5   1   2
+  1   6   1   2
+  2   3   1   2
+  2   7   1   2
+  2   8   1   2
+  3   9   1   2
+  3  10   1   2
+  3  11   1   2"""
+
+propane = [x.split() for x in propane.split('\n')]
+
 # load in a pre-decoded propane graph
-G = codec_native.graph_codec_native_load("propane.bg")[0]
+G = codec_native.graph_load(propane)
 print("SMARTS of propane:")
 print(gcd.smarts_encode(G))
 
