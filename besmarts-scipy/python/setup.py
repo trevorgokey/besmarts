@@ -7,7 +7,7 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name='besmarts-rdkit',
+    name='besmarts-scipy',
     description="BESMARTS SciPy plugin",
     license="MIT",
     author="Trevor Gokey",
