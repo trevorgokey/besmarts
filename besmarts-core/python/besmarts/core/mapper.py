@@ -59,6 +59,7 @@ class map_vertices_ctx:
     strict = False
     equality = False
 
+verbose=False
 
 def mapper_invert(T: mapped_type) -> mapped_type:
     """
@@ -167,7 +168,7 @@ def map_vertices_parallel(permA, permB, a, b):
             o, j
         ):
             S += H[(i, j)] + edge_score + 1
-    dprint("mapped vertices:", S, mapping)
+    dprint("mapped vertices:", S, mapping, on=verbose)
     return permA, permB, S, mapping
 
 def mapper(
@@ -522,7 +523,7 @@ def map_to(
         map_scores[0] = [{i: skip[i] for i in cg_primary}]
 
     if len(map_scores) == 0:
-        dprint("returned {}")
+        dprint("returned {}", on=verbose)
         ret = mapped_type(cg_orig, o_orig, {})
         if return_all:
             # this path needs to be tested better
@@ -530,7 +531,7 @@ def map_to(
         else:
             return ret
 
-    dprint("map_scores1", map_scores)
+    dprint("map_scores1", map_scores, on=verbose)
 
     if mode == "high":
         best_score = max(map_scores)
@@ -573,7 +574,7 @@ def map_to(
     best_maps = map_scores.pop(best_score)
 
     lvl = 1
-    dprint("starting map_to_descend depth", lvl)
+    dprint("starting map_to_descend depth", lvl, on=verbose)
     total_score, total_maps = map_to_descend(
         cg,
         o,
@@ -757,7 +758,7 @@ def map_to_descend(
         The score of best mapping
     """
 
-    dprint("map_to_descend", mappings, "level", lvl, on=add_nodes == 2)
+    dprint("map_to_descend", mappings, "level", lvl, on=verbose)
     best_s = 0
     best_map = {}
 
@@ -851,7 +852,7 @@ def map_to_descend(
                 best_maps.append(total_map)
                 best_s = s
 
-    dprint("map_to best_map", "score:", best_s, "map", best_map)
+    dprint("map_to best_map", "score:", best_s, "map", best_map, on=verbose)
     return best_s, best_maps
 
 
@@ -916,11 +917,11 @@ def map_vertices(
         A mapping of scores to node maps
     """
 
-    dprint(f"map_vertices begin on lvl {lvl}", on=add_nodes == 2)
+    dprint(f"map_vertices begin on lvl {lvl}",  on=verbose)
     cgl = graphs.structure_max_depth(cg)
     ol = graphs.structure_max_depth(o)
     dprint(
-        f"map_vertices begin on lvl {lvl} cgl {cgl} ol {ol}", on=add_nodes == 2
+        f"map_vertices begin on lvl {lvl} cgl {cgl} ol {ol}", on=verbose
     )
 
     if lvl > cgl and lvl > ol:
@@ -984,7 +985,7 @@ def map_vertices(
         # )
         o.cache.clear()
 
-        dprint("0ADDING nbrs:", len(sucA), len(sucB), len(new_b))
+        dprint("0ADDING nbrs:", len(sucA), len(sucB), len(new_b), on=verbose)
         for add_idx in range(
             len(sucA) - len(sucB) - len(new_b) + len(preA) - len(preB)
         ):
@@ -1065,7 +1066,7 @@ def map_vertices(
             len(new_a),
             len(preA),
             len(preB),
-            on=True,
+            on=verbose,
         )
 
         for add_idx in range(
@@ -1172,7 +1173,7 @@ def map_vertices(
         pool = multiprocessing.pool.Pool()
 
     work = []
-    dprint(f"Number of pairs: {len(pairs)}", on=add_nodes == 2)
+    dprint(f"Number of pairs: {len(pairs)}", on=verbose)
     for (Ai, permA), (Bi, permB) in pairs:
         permA = tuple(permA)
         permB = tuple(permB)
@@ -1318,13 +1319,13 @@ def overlap_scores(cg, o, skip=None, cg_depth_cache=None, o_depth_cache=None):
 def pairwise_overlap(cg, A, o, B):
     H = {}
 
-    dprint(f"pairwise overlap {len(A)} {len(B)}")
+    dprint(f"pairwise overlap {len(A)} {len(B)}", on=verbose)
     for i in A:
         prim_i = cg.nodes[i]
         bonds_i = tuple(
             tuple(sorted((i, j))) for j in graphs.subgraph_connection(cg, i)
         )
-        dprint(f"pairwise overlap bonds to permute", bonds_i)
+        dprint(f"pairwise overlap bonds to permute", bonds_i, on=verbose)
         if len(bonds_i) > 4:
             breakpoint()
         for j in B:
@@ -1342,7 +1343,7 @@ def pairwise_overlap(cg, A, o, B):
                 best_score = max(best_score, score)
 
             H[(i, j)] = (prim_i & prim_j).bits(maxbits=True) + best_score + 1
-    dprint(f"pairwise overlap {A} {B} {H[(i, j)]}")
+    dprint(f"pairwise overlap {A} {B} {H[(i, j)]}", on=verbose)
 
     return H
 

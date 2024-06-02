@@ -818,12 +818,24 @@ def graph_db_iter_values(db):
                     kv[(aid, gid, sid, did)] = v
     return kv
 
-def graph_db_add_graph(db: graph_db, g) -> gid_t:
+def graph_db_add_graph(gdb: graph_db, smi, g) -> gid_t:
     """
     """
-    i = len(db.graphs)
-    db.graphs[i] = g
-    return i
+    for gid, g0 in gdb.graphs.items():
+        if graphs.graph_same(g, g0):
+            return gid
+    gid = max(len(gdb.graphs), 0 if not len(gdb.graphs) else max(gdb.graphs) + 1)
+    gdb.graphs[gid] = g
+    gdb.smiles[gid] = smi
+
+    topo = topology.index_of(topology.atom)
+    if topo not in gdb.selections:
+        gdb.selections[topo] = {}
+    gdb.selections[topo][gid] = {k: v for k, v in enumerate(graphs.graph_atoms(g))}
+    # gdb.selections[topology.index_of(topology.bond)] = {
+    #     gid: {k: v for k, v in enumerate(graphs.graph_bonds(g))}
+    # }
+    return gid
 
 def graph_db_add_selection(
     gdb: graph_db,
@@ -838,6 +850,107 @@ def graph_db_add_selection(
     if aid not in gdb.entries:
         db.assignments[aid] = {}
     db.assignments[aid][gid] = sel
+
+def graph_assignment_to_graph_db_row(ga) -> graph_db_row:
+
+    gdr = graph_db_row()
+    for ic, xyzdata in ga.selections.items():
+        for i in range(0,len(xyzdata),3):
+            if i//3 not in gdr.columns:
+                gdr.columns[i//3] = graph_db_column()
+            gdr.columns[i//3].selections[ic] = xyzdata[i:i+3]
+    return gdr
+
+
+def graph_db_add_single_molecule_state(
+    gdb: graph_db,
+    positions: graph_assignment,
+    gradients: graph_assignment = None,
+    hessian: graph_assignment = None,
+    energy: float = None) -> eid_t:
+
+    """
+    A simple function to add a SMILES and positions to a gdb dataset
+    
+    Assumes multiple confs are in the same state (columns)
+
+    Call this again for different systems 
+    """
+
+    if gradients:
+        assert gradients.smiles == positions.smiles
+    if hessian:
+        assert hessian.smiles == positions.smiles
+
+    # x = {
+    #     gid: {
+    #         tid: {
+    #             0: {
+    #                 0: [0.0, 0.0, 0.0],
+    #             },
+    #             1: {
+    #                 0: [0.0, 0.0, 0.0],
+    #             }
+    #         }
+    #     },
+    #     "Na+": {
+    #         POS: {
+    #             0: {
+    #                 0: [0.0, 0.0, 0.0],
+    #                 1: [1.0, 0.0, 0.0],
+    #                 2: [2.0, 0.0, 0.0],
+    #             },
+    #             1: {
+    #                 0: [0.0, 0.0, 0.0],
+    #                 1: [1.0, 0.0, 0.0],
+    #                 2: [2.0, 0.0, 0.0],
+    #             }
+    #         }
+    #     }
+    # }
+
+    g = positions.graph
+    smi = positions.smiles
+
+    gid = graph_db_add_graph(gdb, smi, g)
+
+    gde = graph_db_entry()
+    eid = max(len(gdb.entries), 0 if not gdb.entries else max(gdb.entries)+1)
+    gdb.entries[eid] = gde
+
+    gdt = graph_db_table(topology.atom)
+    gdg = graph_db_graph()
+    gdt.graphs[gid] = gdg
+
+    rid = 0
+    gdg.rows[rid] = graph_assignment_to_graph_db_row(positions)
+
+    tid = POSITIONS
+    gde.tables[tid] = gdt
+
+    if gradients:
+        gdt = graph_db_table(topology.atom)
+        gdg = graph_db_graph()
+        gdt.graphs[gid] = gdg
+
+        rid = 0
+        gdg.rows[rid] = graph_assignment_to_graph_db_row(gradients)
+
+        tid = GRADIENTS
+        gde.tables[tid] = gdt
+        gdt.values.extend([x for y in gradients.selections.values() for x in y])
+
+    if energy:
+        gdt = graph_db_table(topology.atom)
+        gdg = graph_db_graph()
+        gdt.graphs[gid] = gdg
+
+        gdt.values.append(energy)
+
+        tid = ENERGY
+        gde.tables[tid] = gdt
+
+    return eid, gid
 
 
 def graph_db_add_positions(db, gid, sel: graph_db_table):
@@ -926,8 +1039,8 @@ def graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid, cid=None) -> gra
         gdc = {k: gdr.columns[k] for k in cid}
 
     for c, col in gdc.items():
-        for sid, values in col.selections.items():
-            ic = gic[sid]
+        for ic, values in col.selections.items():
+            # ic = gic[sid]
             if ic not in sel:
                 sel[ic] = []
             sel[ic].append(list(values))

@@ -2,6 +2,7 @@
 besmarts.mechanics.fits
 """
 
+import os
 import copy
 import heapq
 import datetime
@@ -9,6 +10,7 @@ import pickle
 import multiprocessing
 import collections
 import sys
+import math
 from typing import List, Dict, Tuple
 from besmarts.core import configs
 from besmarts.core import arrays
@@ -23,6 +25,8 @@ from besmarts.core import splits
 from besmarts.core import trees
 from besmarts.core import tree_iterators
 from besmarts.core import optimization
+from besmarts.core import primitives
+from besmarts.core import logs
 from besmarts.mechanics import optimizers_scipy 
 from besmarts.mechanics import objectives
 from besmarts.mechanics import molecular_models as mm
@@ -68,21 +72,26 @@ class compute_config:
 
         results: List[Dict[assignments.tid_t, assignments.graph_db_table]] = []
 
-        for k, v in self.keys.items():
+        # for k, v in self.keys.items():
             # print(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.6g} to {v:.6g} d={v-mm.chemical_system_get_value(csys, k):.6g}")
-            mm.chemical_system_set_value(csys, k, v)
+            # mm.chemical_system_set_value(csys, k, v)
             # mm.physical_system_set_value(self.psys, k, v)
 
         for eid, gdb in GDB.entries.items():
             tbl = assignments.graph_db_table(topology.null)
             for gid in gdb.graphs:
                 # pos0 = assignments.graph_db_entry_to_graph_assignment(gdb, tbl_idx, gid)
-                pos0 = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid)
+                rid = 0
+                pos0 = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
 
                 # this means fold all graphs into a single graph
                 # pos0 = assignments.graph_db_entry_to_graph_assignment(gdb, eid, tid)
 
                 psys = mm.chemical_system_to_physical_system(csys, [pos0], ref=self.psys, reuse=self.reuse)
+                for k, v in self.keys.items():
+                    # print(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.10g} to {v:.10g} d={v-mm.chemical_system_get_value(csys, k):.10g}")
+                    # mm.chemical_system_set_value(csys, k, v)
+                    mm.physical_system_set_value(psys, k, v)
                 ene = objectives.physical_system_energy(psys, csys)
                 
                 # ene_ga = assignments.graph_assignment("", {(0,): [[energy]]}, gdb.graphs[gid])
@@ -98,7 +107,6 @@ class compute_config:
 class compute_config_energy(compute_config):
 
     """
-    Default is single point energy
     """
 
     def run(self) -> List[Dict[assignments.tid_t, assignments.graph_db_entry]]:
@@ -108,9 +116,9 @@ class compute_config_energy(compute_config):
         tbl_idx = assignments.ENERGY
         tid = assignments.POSITIONS
 
-        for k, v in self.keys.items():
+        # for k, v in self.keys.items():
             # print(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.6g} to {v:.6g} d={v-mm.chemical_system_get_value(csys, k):.6g}")
-            mm.chemical_system_set_value(csys, k, v)
+            # mm.chemical_system_set_value(csys, k, v)
 
         results: List[Dict[assignments.tid_t, assignments.graph_db_table]] = []
         for eid, gde in gdb.entries.items():
@@ -121,7 +129,7 @@ class compute_config_energy(compute_config):
                 for gid in gdb.graphs:
                 # pos0 = assignments.graph_db_entry_to_graph_assignment(gdb, assignments.POSITIONS, gid)
 
-                    pos0 = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, rid, gid)
+                    pos0 = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
                     system.append(pos0)
 
 
@@ -134,6 +142,10 @@ class compute_config_energy(compute_config):
                 # such as (gid, sid, rid)
 
                 psys = mm.chemical_system_to_physical_system(csys, system, ref=self.psys, reuse=self.reuse)
+                for k, v in self.keys.items():
+                    # print(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.10g} to {v:.10g} d={v-mm.chemical_system_get_value(csys, k):.10g}")
+                    # mm.chemical_system_set_value(csys, k, v)
+                    mm.physical_system_set_value(psys, k, v)
 
                 # this must put everything in the psys into a single system
                 # this must mean that we flatten
@@ -161,7 +173,6 @@ class compute_config_energy(compute_config):
 class compute_config_gradient(compute_config):
 
     """
-    Default is single point energy
     """
 
     def run(self) -> List[Dict[assignments.tid_t, assignments.graph_db_entry]]:
@@ -171,9 +182,11 @@ class compute_config_gradient(compute_config):
         tbl_idx = assignments.GRADIENTS
         tid = assignments.POSITIONS
 
-        for k, v in self.keys.items():
+        verbose=True
+
+        # for k, v in self.keys.items():
             # print(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.6g} to {v:.6g} d={v-mm.chemical_system_get_value(csys, k):.6g}")
-            mm.chemical_system_set_value(csys, k, v)
+            # mm.chemical_system_set_value(csys, k, v)
 
         results: List[Dict[assignments.tid_t, assignments.graph_db_table]] = []
         for eid, gde in gdb.entries.items():
@@ -181,10 +194,14 @@ class compute_config_gradient(compute_config):
             rids = assignments.graph_db_table_get_row_ids(gde[tid])
             for rid in rids:
                 system = []
-                for gid in gdb.graphs:
+                for gid in gde.tables[tid].graphs:
                 # pos0 = assignments.graph_db_entry_to_graph_assignment(gdb, assignments.POSITIONS, gid)
 
-                    pos0 = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, rid, gid)
+                    pos0 = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
+                    for k, v in self.keys.items():
+                        # dprint(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.10g} to {v:.10g} d={v-mm.chemical_system_get_value(csys, k):.10g}", on=verbose)
+                        # mm.chemical_system_set_value(csys, k, v)
+                        mm.physical_system_set_value(psys, k, v)
                     system.append(pos0)
 
 
@@ -226,23 +243,38 @@ class compute_config_position(compute_config):
     """
 
     def run(self) -> List[Dict[assignments.tid_t, assignments.graph_db_table]]:
+        """
+        compute_config_position::run
+        """
         csys = self.csys
         gdb = self.GDB
         tbl_idx = assignments.POSITIONS
         tid = assignments.POSITIONS
 
-        for k, v in self.keys.items():
-            # print(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.6g} to {v:.6g} d={v-mm.chemical_system_get_value(csys, k):.6g}")
-            mm.chemical_system_set_value(csys, k, v)
+        # for k, v in self.keys.items():
+            # print(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.10g} to {v:.10g} d={v-mm.chemical_system_get_value(csys, k):.10g}")
+            # mm.chemical_system_set_value(csys, k, v)
+            # mm.physical_system_set_value(psys, k, v)
+        # if not self.keys:
+        #     print(f"-> Obj Setting no values")
         # need to make this work for multi conformations
         results: List[Dict[assignments.tid_t, assignments.graph_db_table]] = []
         for eid, gde in gdb.entries.items():
             tbl = assignments.graph_db_table(topology.atom)
             for gid in gdb.graphs:
                 for rid in gde[tid][gid].rows:
-                    pos0 = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, rid, gid)
+                    pos0 = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
                     psys = mm.chemical_system_to_physical_system(csys, [pos0], ref=self.psys, reuse=self.reuse)
+                    for k, v in self.keys.items():
+                        # mm.physical_system_get_value(psys, k, v)
+                        # print(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.10g} to {v:.10g} d={v-mm.chemical_system_get_value(csys, k):.10g}")
+                        # mm.chemical_system_set_value(csys, k, v)
+                        mm.physical_system_set_value(psys, k, v)
+                    # print(f"Initial xyz for EID {eid}:")
+                    # print("\n".join(print_xyz(pos0)))
                     pos = optimizers_scipy.optimize_positions_scipy(csys, psys)
+                    # print(f"Optimized xyz for EID {eid}:")
+                    # print("\n".join(print_xyz(pos)))
                     # pos = copy.deepcopy(pos0)
                     # struct = assignments.graph_assignment_to_graph_db_struct(pos, topology.atom)
                     gdg = assignments.graph_assignment_to_graph_db_graph(pos, topology.atom)
@@ -278,6 +310,8 @@ class objective_config:
         so it is a list of tables (with their own tid)
                                    
         which now means that each is a table with structs which have indices
+        this is the parameter deriv, which should be 2(X-X0)dX/dp
+        and this is in particular dX/dpj
         """
         dx = []
         for etbls, dtbls  in zip(E, D):
@@ -289,15 +323,15 @@ class objective_config:
                         egdr = egdg.rows[rid]
                         for cid, dgdc in dgdr.columns.items():
                             egdc = egdr.columns[cid]
-                            for v, v0 in zip(egdc.selections.values(), dgdc.selections.values()):
+                            for ev, dv in zip(egdc.selections.values(), dgdc.selections.values()):
                                 # vstr = "["+",".join([f"{vi:10.5f}" for vi in v]) + "]"
                                 # v0str = "["+",".join([f"{vi:10.5f}" for vi in v0]) + "]"
-                                x = arrays.array_difference(v0, v)
-                                dx.extend(x)
+                                dx.extend(arrays.array_difference(dv, ev))
+                                # dx += sum(x)
                                 # print(f"{rid:3d} Position SSE: {sse:10.5f} {vstr} {vstr}")
         # print(f"Total Position SSE: {obj:10.5f} A^2")
         dx = arrays.array_scale(dx, 1.0/(2*h))
-        DX = arrays.array_inner_product(X0, dx)
+        DX = 2 * arrays.array_inner_product(X0, dx)
 
         return DX
 
@@ -319,11 +353,11 @@ class objective_config:
                         for cid, gdc in gdr.columns.items():
                             gdc0 = gdr0.columns[cid]
                             for v, v0 in zip(gdc.selections.values(), gdc0.selections.values()):
-                                vstr = "["+",".join([f"{vi:10.5f}" for vi in v]) + "]"
-                                v0str = "["+",".join([f"{vi:10.5f}" for vi in v0]) + "]"
+                                # vstr = "["+",".join([f"{vi:10.5f}" for vi in v]) + "]"
+                                # v0str = "["+",".join([f"{vi:10.5f}" for vi in v0]) + "]"
                                 x = arrays.array_difference(v, v0)
                                 obj.extend(x)
-                                # print(f"{rid:3d} Position SSE: {sse:10.5f} {vstr} {vstr}")
+                                # print(f"{rid:3d} F= {vstr} F0= {v0str}")
         # print(f"Total Position SSE: {obj:10.5f} A^2")
         return obj
 
@@ -345,8 +379,8 @@ class objective_config:
                         for cid, gdc in gdr.columns.items():
                             gdc0 = gdr0.columns[cid]
                             for v, v0 in zip(gdc.selections.values(), gdc0.selections.values()):
-                                vstr = "["+",".join([f"{vi:10.5f}" for vi in v]) + "]"
-                                v0str = "["+",".join([f"{vi:10.5f}" for vi in v0]) + "]"
+                                # vstr = "["+",".join([f"{vi:10.5f}" for vi in v]) + "]"
+                                # v0str = "["+",".join([f"{vi:10.5f}" for vi in v0]) + "]"
                                 x = arrays.array_difference(v, v0)
                                 sse = arrays.array_inner_product(x, x)
                                 obj += sse
@@ -375,9 +409,9 @@ class objective_config_gradient(objective_config):
                 x = arrays.array_difference(dtbl.values, etbl.values)
                 dx.extend(x)
         dx = arrays.array_scale(dx, 1.0/(2*h))
-        DX = arrays.array_inner_product(X0, dx)
+        DX = 2 * arrays.array_inner_product(X0, dx)
 
-        return DX
+        return dx
 
     def compute_diff(self, GDB: assignments.graph_db, D: List[Dict[int, assignments.graph_db_table]]):
         """
@@ -486,25 +520,65 @@ class objective_tier:
             "c": (0,None), # cutoff
             "r": (0,None), # sigma
             "e": (0,None), # epsilon
-            "k": (0,None), # epsilon
+            "k": (0,None), # 
+            ("k", "b"): (0,None), # scale
+            ("l", "b"): (0,None), # scale
+            ("k", "a"): (0,None), # scale
+            ("l", "a"): (0, 3.1415), # scale
+            ("k", "t"): (-10,10), # scale
+            ("k", "i"): (-10,10), # scale
+            ("s", "q"): (0,None), # scale
+            ("s", "n"): (0,None), # scale
             None: (None, None)
         }
-        self.key_filter = lambda x: True if x[0] in [0,1,2,3] else False
+        self.fit_models = None
+        self.fit_symbols = None
+        self.fit_names = None
+        self.fit_names_exclude = None
         self.step_limit = None
         self.accept: int = 0 # 0 keeps all (essentially disables)
+
+    def key_filter(self, x):
+        if self.fit_models is None or self.fit_symbols is None:
+            return True
+
+        r = (x[0] in self.fit_models) and (x[1] in self.fit_symbols)
+        if r and self.fit_names:
+            r &= x[2] in self.fit_names
+        if r and self.fit_names_exclude:
+            r &= x[2] not in self.fit_names_exclude
+
+        return r
+
 
 def objective_tier_get_keys(ot, csys):
     keys = *filter(ot.key_filter, mm.chemical_system_iter_keys(csys)),
     return keys
     
-def gdb_to_physical_systems(gdb, csys):
+def gdb_to_physical_systems(gdb, csys, ref=None, reuse=None):
     psysref = {}
-    for eid, gde in gdb.entries.items():
+    failures = 0
+    if len(gdb.entries) > 100:
+        print(f"{datetime.datetime.now()} Starting parameterization")
+    for i, (eid, gde) in enumerate(gdb.entries.items(), 1):
+        if len(gdb.entries) > 100:
+            print(f"\r{datetime.datetime.now()} Parameterizing.. {i:6d}/{len(gdb.entries)}", end="")
         tid = assignments.POSITIONS
-        gid = 0
+        gid = list(gde.tables[tid].graphs)[0]
         rid = 0
         pos = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
-        psysref[eid] = mm.chemical_system_to_physical_system(csys, [pos])
+        try:
+            psysref[eid] = mm.chemical_system_to_physical_system(csys, [pos], ref=ref, reuse=reuse)
+        except Exception as e:
+            print(f"\n\nWarning: could not parameterize {eid}, skipping.")
+            print(f"SMILES: {pos.smiles}") 
+            print("Exception:")
+            print(e)
+            failures += 1
+    if len(gdb.entries) > 100:
+        print()
+    if failures:
+        print(f"There were {failures} failures that will be skipped")
     return psysref
 
 def objective_tier_run(
@@ -512,17 +586,20 @@ def objective_tier_run(
     oid=None, psysref=None, reuse=None, wq=None, verbose=False
 ):
 
-    # csys = copy.deepcopy(csys)
+    # need this to avoid race conditions
+    csys = copy.deepcopy(csys)
     # build the dataset and input ff
     ws = None
     if wq:
         ws = compute.workqueue_new_workspace(wq, shm={})
+    else:
+        ws = compute.workspace_local('127.0.0.1', 0, shm={})
 
     
 
     # build the initial psys (for charges)
-    if verbose:
-        print(datetime.datetime.now(), "Building physical systems")
+    # if verbose:
+    #     print(datetime.datetime.now(), "Building physical systems")
     if psysref is None:
         psysref = gdb_to_physical_systems(gdb, csys)
 
@@ -538,9 +615,9 @@ def objective_tier_run(
     # model_ids = list(range(len(csys.models)))
     # fit_ids = [0,1,2,3,4,5]
     # kv = {k:v for k, v in kv.items() if k[0] in fit_ids and k[1] in "s"}
-    keys = [k for k in keys if ot.key_filter(k)]
-    assigned = [(i, k, v) for psys in psysref.values() for i,m in enumerate(psys.models) for a in m.labels[0].values() for k, v in a.items()]
-    keys = [k for k in keys if tuple(k[:3]) in assigned or k[1] in "s"]
+    # keys = [k for k in keys if ot.key_filter(k)]
+    # assigned = [(i, k, v) for psys in psysref.values() for i,m in enumerate(psys.models) for a in m.labels[0].values() for k, v in a.items()]
+    # keys = [k for k in keys if tuple(k[:3]) in assigned or k[1] in "s"]
     # reuse = []
     # # reuse = [i for i, m in enumerate(csys.models) if m.name in ["vdW", "Electrostatics"]]
     # # reuse = [i for i, m in enumerate(csys.models) if m.name in ["Electrostatics"]]
@@ -554,12 +631,28 @@ def objective_tier_run(
     # for k, v0 in zip(keys, x0):
     #     print(k, v0)
     
-    args = (keys, csys, gdb, objectives, psysref, reuse, ws, verbose)
+    # we need history to identify work for each iteration
+    # otherwise we might accidentally use work from step n-1 that gets sent in
+    # when we are already at step n
+    history = []
+
+    args = (keys, csys, gdb, objectives, history, psysref, reuse, ws, verbose)
     # y0 = optimizers_scipy.fit_gdb(x0, *args) 
 
     bounds = []
     for k in keys:
-        bounds.append(ot.bounds.get(k[1], (None, None)))
+        b = ot.bounds.get((k[1], k[2].lower()), False)
+
+        if b is False:
+            b = ot.bounds.get((k[1], k[2][0].lower()), False)
+
+        if b is False:
+            b = ot.bounds.get(k[1], False)
+
+        if b is False:
+            b = (None, None)
+
+        bounds.append(b)
 
     result, y0, y1, gx = optimizers_scipy.optimize_forcefield_gdb_scipy(x0, args, bounds=bounds, step_limit=ot.step_limit)
 
@@ -571,61 +664,11 @@ def objective_tier_run(
 
     if ws:
         ws.close()
+        ws = None
 
     kv = {k: v for k,v in zip(keys, result)}
 
     return kv, y0, y1, gx
-
-def objective_tier_take(
-    ot: objective_tier,
-    gdb,
-    candidate_keys: List[Tuple],
-    candidates: List[mm.chemical_system],
-    strategy,
-    psysref=None,
-    wq=None
-):
-    """
-    evaluate each candidate with the given objective_tier
-    what should call this?
-    something that just generated all candidates should call this b
-    for the strat, we will continuously add params until the limit is hit, then
-    return those candidates... probably just want to cap this to 1 per macro for now
-    """
-
-    results = []
-    params = []
-
-    if take_n is None:
-        take_n = len(params)
-
-    if wq is None:
-        tasks = {i: csys for i, csys in enumerate(candidates)}
-        for i, csys in tasks.items() :
-            # need a method to get the keys from the csys
-            keys = candidate_keys[i]
-            p, x = objective_tier_run(ot, gdb, csys, keys, psysref, wq=wq)
-            
-            heapq.heappush(results, (x, i))
-            params.append({k: v for k, v in zip(keys, p)})
-        results = heapq.nsmallest(take_n, results)
-        results = {i: (x, params[i]) for x, i in results}
-    else:
-        ws = compute.workqueue_new_workspace(wq)
-        
-        tasks = {}
-        for i, cys in enumerate(candidates):
-            keys = candidate_keys[i]
-            tasks[i] = ((ot, gdb, csys, keys), {"psysref": psysref, "wq": wq})
-        ret = compute.workspace_submit_and_flush(ws, objective_tier_run, tasks)
-        results = ((x, i) for i, (_, x) in ret.items())
-        results = heapq.heapify(results)
-        results = heapq.nsmallest(take_n, results)
-        params = zip(tasks[i][0][3], ret[i][0])
-        results = {i: (x, {k: v for k, v in params}) for x, i in results}
-        ws.close()
-
-    return results
 
 def objective_run_distributed(obj, shm=None):
     return obj.run()
@@ -1118,6 +1161,15 @@ def ff_optimize(
     N_str = "{:" + str(len(str(n_ics))) + "d}"
     success = False
 
+    keys = mm.chemical_system_iter_keys(csys)
+    keys = [k for k in keys if initial_objective.key_filter(k)]
+    assigned_nodes = set([v for psys in psystems.values() for i,m in enumerate(psys.models) for a in m.labels[0].values() for k, v in a.items() if i in strategy.bounds])
+
+    print("Initial assignments:")
+    print_chemical_system(csys, show_parameters=assigned_nodes)
+    # fitnodes = [k[2] for k in keys if k[0] in strategy.bounds]
+    # this is now chemical objective
+
     # roots = trees.tree_index_roots(hidx.index)
 
     # print(f"{datetime.datetime.now()} Labeling subgraphs")
@@ -1132,13 +1184,7 @@ def ff_optimize(
     # check_lbls_data_selections_equal(cst.group, sag)
     wq = compute.workqueue_local('0.0.0.0', configs.workqueue_port)
 
-    # this is now chemical objective
-    print(f"{datetime.datetime.now()} Computing chemical objective")
-    # TODO: Compute chemical and physical objectives
-    # and the CO would 
 
-    C0 = chemical_objective(csys)
-    C = C0
 
     # _, X0 = get_objective(
     #     cyss, assn, objective.split, strategy.overlaps[0], splitting=True
@@ -1146,6 +1192,7 @@ def ff_optimize(
 
     print(f"{datetime.datetime.now()} Computing physical objective")
     # need a physical objective
+
 
 
 
@@ -1163,13 +1210,25 @@ def ff_optimize(
         wq=wq,
         verbose=True
     )
+    print(f"{datetime.datetime.now()} Computing chemical objective")
+    # TODO: Compute chemical and physical objectives
+    # and the CO would 
+
+    CP0 = P0
+    CX0 = mm.chemical_system_smarts_complexity(csys)
+
+    C0 = chemical_objective(csys, P0=CP0, C0=CX0)
+    C = C0
+    print(f"{datetime.datetime.now()} C0={C0}")
     X0 = P0 + C0
     P = P0
-    print(datetime.datetime.now(), f"Initial objective: {P0:13.6g} C={C0:13.6g}")
+    print(datetime.datetime.now(), f"Initial objective: X={P0+C0:13.6g} P={P0:13.6g} C={C0:13.6g}")
     for k, v in kv.items():
         v0 = mm.chemical_system_get_value(csys0, k)
         mm.chemical_system_set_value(csys, k, v)
         print(f"{str(k):20s} | New: {v:12.6g} Ref {v0:12.6g} Diff {v-v0:12.6g}")
+        for psys in psystems.values():
+            mm.physical_system_set_value(psys, k, v)
     # for i, tier in enumerate(tiers):
     #     _, P00, P0, gp0 = objective_tier_run(
     #         tier,
@@ -1231,6 +1290,7 @@ def ff_optimize(
             x
             for x in strategy.tree_iterator(csys)
             if x.type == "parameter"
+            and x.name in assigned_nodes
             # if strategy.cursor == -1
             # or strategy.cursor >= step_tracker.get((x.category, x.name), 0)
             # and x.type == "parameter"
@@ -1276,22 +1336,22 @@ def ff_optimize(
             )
             print(f"*******************")
             print()
-        print("Tree:")
-        for ei, e in enumerate(
-            mm.chemical_system_iter_smarts_hierarchies_nodes(csys)
-        ):
-            # s = trees.tree_index_node_depth(cst.hierarchy.index, e)
-            s = 0
-            # obj_repo = ""
-            # if groups[e.name]:
-            # obj_repo = objective.report(groups[e.name])
-            obj_repo = ""
-            print(
-                f"** {s:2d} {ei:3d} {e.category} {e.name:4s}",
-                # obj_repo,
-                # cst.hierarchy.smarts.get(e.index),
-            )
-        print("=====\n")
+        # print("Tree:")
+        # for ei, e in enumerate(
+        #     mm.chemical_system_iter_smarts_hierarchies_nodes(csys)
+        # ):
+        #     # s = trees.tree_index_node_depth(cst.hierarchy.index, e)
+        #     s = 0
+        #     # obj_repo = ""
+        #     # if groups[e.name]:
+        #     # obj_repo = objective.report(groups[e.name])
+        #     obj_repo = ""
+        #     print(
+        #         f"** {s:2d} {ei:3d} {e.category} {e.name:4s}",
+        #         # obj_repo,
+        #         # cst.hierarchy.smarts.get(e.index),
+        #     )
+        # print("=====\n")
 
         # compute the current psystems
 
@@ -1299,7 +1359,7 @@ def ff_optimize(
         psys = {}
         for eid, gde in gdb.entries.items():
             tid = assignments.POSITIONS
-            gid = 0
+            gid = list(gde.tables[tid].graphs)[0]
             rid = 0
             pos = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
             psys[eid] = mm.chemical_system_to_physical_system(csys, [pos], ref=psystems[eid], reuse=reuse)
@@ -1359,11 +1419,13 @@ def ff_optimize(
             selected_ics = []
             selected_graphs = set()
             for eid, ps in psystems.items():
-                for gid, lbls in enumerate(ps.models[int(S.category[0])].labels):
+                gids = list(gdb.entries[eid].tables[assignments.POSITIONS].graphs)
+                for gidx, lbls in enumerate(ps.models[int(S.category[0])].labels):
+                    gid = gids[gidx]
                     for ic, term_lbls in lbls.items():
                         if S.name in term_lbls.values():
-                            selected_ics.append((eid, ic))
-                            selected_graphs.add(eid)
+                            selected_ics.append((gid, ic))
+                            selected_graphs.add(gid)
             # aa = cst.mappings[S.name]
             # selected_graphs = set((x[0] for x in aa))
             aa = selected_ics
@@ -1628,7 +1690,10 @@ def ff_optimize(
                 Sj_lst = [x[1] for x in candidates.values()]
             elif step.operation == strategy.MERGE:
                 Sj_lst = [
-                    graphs.subgraph_as_structure(mm.chemical_system_get_node_hierarchy(csys, x[1]).subgraphs[x[1].index], mm.chemical_system_get_node_hierarchy(csys, x[1]).topology)
+                    graphs.subgraph_as_structure(
+                        mm.chemical_system_get_node_hierarchy(csys, x[1]).subgraphs[x[1].index],
+                        mm.chemical_system_get_node_hierarchy(csys, x[1]).topology
+                    )
                     for x in candidates.values()
                 ]
                 # Sj_lst = [
@@ -1660,7 +1725,7 @@ def ff_optimize(
 
         t = datetime.datetime.now()
 
-        print_chemical_system(csys)
+        print_chemical_system(csys, show_parameters=assigned_nodes)
 
         visited.clear()
         repeat.clear()
@@ -1676,24 +1741,35 @@ def ff_optimize(
         print(f"Scoring and filtering {len(candidates)} candidates for operation={step.operation}")
         for t, tier in enumerate(tiers):
             print(f"Tier {t}: Scoring and filtering {len(candidates)} candidates for operation={step.operation}")
+            if tier.accept == 0:
+                print(f"Tier {t}: Accepting all so we skip")
+                continue
+            elif len(candidates) <= tier.accept:
+                print(f"Tier {t}: Accepting all candidates so we skip")
+                continue
             cnd_keys = {i: k for i, k in enumerate(candidates, 1)}
 
             fitkeys = objective_tier_get_keys(tier, csys)
             fitkeys = [k for k in fitkeys if k[1] in "skeler" and tier.key_filter(k)]
+
             fitting_models = set([x[0] for x in fitkeys])
+            fitting_models.update(strategy.bounds)
+
             reuse=[k for k,_ in enumerate(csys.models) if k not in fitting_models]
 
             # reuse = [x for x in range(len(csys.models)) if x != cid]
-            tier_psystems = {
-                i: mm.chemical_system_to_physical_system(
-                    csys,
-                    psystems[i].models[0].positions,
-                    ref=psystems[i],
-                    reuse=reuse
-                ) for i in psystems
-            }
+
+            # tier_psystems = {
+            #     i: mm.chemical_system_to_physical_system(
+            #         csys,
+            #         psystems[i].models[0].positions,
+            #         ref=psystems[i],
+            #         reuse=reuse
+            #     ) for i in psystems
+            # }
+            tier_psystems = psystems
             reuse = [x for x in range(len(csys.models))]
-            shm = compute.shm_local(1, data={
+            shm = compute.shm_local(0, data={
                 "objective": tier,
                 "csys": csys,
                 "gdb": gdb,
@@ -1732,14 +1808,17 @@ def ff_optimize(
                 addr = ('127.0.0.1', 0)
                 procs=len(iterable)
 
-            if configs.processors == 1:
+            if configs.processors == 1 and not configs.remote_compute_enable:
                 work = {}
                 for k, v in iterable.items():
-                    r = calc_tier_distributed(*v[0], **v[1], shm=shm)
+                    r = calc_tier_distributed(*v[0], **v[1], verbose=True, shm=shm)
                     work[k] = r
-            else:
+            elif len(tier.objectives) < 500 and len(candidates) > 1 and configs.remote_compute_enable:
+                print(logs.timestamp(), f"Each worker will compute a full candidate N={len(iterable)}")
                 ws = compute.workqueue_new_workspace(wq, address=addr, nproc=procs, shm=shm)
                 # # this modifies the csys, relabels and computes objective
+                chunksize = 1
+                # need to loop through candidates for large fits rather than one worker per candidate
                 work = compute.workspace_submit_and_flush(
                     ws,
                     calc_tier_distributed,
@@ -1747,22 +1826,37 @@ def ff_optimize(
                     chunksize,
                     1.0,
                     len(iterable),
+                    verbose=True
                 )
                 ws.close()
                 ws = None
+            else:
+                # the means we have candidates with lots of things to compute,
+                # so do each one at a time
+                print(logs.timestamp(), f"Dispatching candidate tasks= {len(iterable)} in serial")
+                work = {}
+                for i, unit in iterable.items():
+                    print(logs.timestamp(), f"Running candidate task {i[0]}/{len(iterable)}")
+                    args = unit[0]
+                    kwds = unit[1]
+                    kwds["wq"] = wq
+                    kwds["verbose"] = True
+                    work[i] = calc_tier_distributed(*args, **kwds, shm=shm)
             # now just sum over the jobs
             # return keep, X, obj, match_len
             work_new = {}
             for i, _ in enumerate(candidates, 1):
                 if i not in work_new:
-                    work_new[i] = [0, 0, 0, 0]
+                    work_new[i] = [0, 0, 0, 0, {}]
                 for ij, j in work:
                     if i == ij:
                         line = work[(i,j)]
                         work_new[i][0] |= int(line[0])
                         work_new[i][1] += line[1]
-                        work_new[i][2] += line[2]
+                        work_new[i][2]  = line[2]
                         work_new[i][3] += line[3]
+                        # probably use average or something else
+                        work_new[i][4].update(line[4])
                     
             work_full = work
             work = work_new
@@ -1770,46 +1864,68 @@ def ff_optimize(
             tier_scores = []
             max_line = 0
             for j, cnd_i in enumerate(sorted(work), 1):
-                (keep, X, obj, match_len) = work[cnd_i]
+                (keep, cP, c, match_len, kv) = work[cnd_i]
                 # cnd_i, key, unit = unit
                 (S, Sj, step, _, _, _, _) = candidates[cnd_keys[cnd_i]]
 
-                cX = X + obj
-                dcX = X + obj - X0
+                cC = chemical_objective(csys, P0=CP0, C0=CX0, c=c)
+                cX = cP + cC
                 if keep:
                     heapq.heappush(tier_scores, (cX, cnd_i))
-            if tier.accept:
+            accept = tier.accept
+            if accept:
+                if accept > 0 and accept < 1:
+                    accept = min(1, len(tier_scores)*accept)
+                    print(f"Fraction acceptance {tier.accept*100}% N={accept}/len(tier_scores)")
                 accepted_keys = [
-                    x[1] for x in heapq.nsmallest(tier.accept, tier_scores)
+                    x[1] for x in heapq.nsmallest(accept, tier_scores)
                 ]
-                print(f"Accepted {len(accepted_keys)} candidates from tier:")
-                for j, cnd_i in enumerate(sorted(work), 1):
-                    if cnd_i not in accepted_keys:
-                        continue
-                    (keep, X, obj, match_len) = work[cnd_i]
-                    # cnd_i, key, unit = unit
-                    (S, Sj, step, _, _, _, _) = candidates[cnd_keys[cnd_i]]
-                    cX = X + obj
-                    dcX = X + obj - X0
-                    K = "Y" if keep else "N"
-                    cout_line = (
-                        f"Cnd. {cnd_i:4d}/{len(work)}"
-                        f" {S.name:6s}  " 
-                        f" X= {cX:10.5f}"
-                        f" X0= {X0:10.5f}"
-                        f" dX= {dcX:10.5f} N= {match_len:6d} K= {K} {Sj_sma[cnd_i-1]}"
-                    )
-                    max_line = max(len(cout_line), max_line)
-                    # print(datetime.datetime.now())
-                    print(cout_line)
-                    sys.stdout.flush()
+            else:
+                accepted_keys = [
+                    x[1] for x in heapq.nsmallest(len(tier_scores), tier_scores)
+                ]
 
-                Sj_sma = [Sj_sma[k-1] for k in accepted_keys]
-                candidates = {
-                    cnd_keys[k]: candidates[cnd_keys[k]]
-                        for k in accepted_keys
-                }
-                cnd_keys = {i: k for i, k in enumerate(candidates, 1)}
+            cout_line = (
+                f" Initial objectives: "
+                f" X= {C0+P0:10.5f}"
+                f" P= {P0:10.5f}"
+                f" C= {C0:10.5f}"
+            )
+            print(cout_line)
+            print(f"Accepted {len(accepted_keys)} candidates from tier:")
+            for j, cnd_i in enumerate(accepted_keys + list(set(work).difference(accepted_keys)), 1):
+                (keep, cP, c, match_len, kv) = work[cnd_i]
+                # cnd_i, key, unit = unit
+                (S, Sj, step, _, _, _, _) = candidates[cnd_keys[cnd_i]]
+                cC = chemical_objective(csys, P0=CP0, C0=CX0, c=c)
+                cX = cP + cC
+                dP = cP - P0
+                dC = cC - C0
+                K = "Y" if j <= len(accepted_keys) else "N"
+                F = ">" if j <= len(accepted_keys) else " "
+                cout_line = (
+                    f"{F} Cnd. {cnd_i:4d}/{len(work)}"
+                    f" N= {match_len:6d}"
+                    f" dP= {dP:10.5f}"
+                    f" dC= {dC:10.5f}"
+                    # f" X0= {X0:10.5f}"
+                    f" d(P+C)= {dP+dC:10.5f}"
+                    f" {S.name:6s}  " 
+                    f" {Sj_sma[cnd_i-1]}"
+                )
+                max_line = max(len(cout_line), max_line)
+                # print(datetime.datetime.now())
+                print(cout_line)
+                if j == len(accepted_keys):
+                    print("-"*max_line)
+                sys.stdout.flush()
+
+            Sj_sma = [Sj_sma[k-1] for k in accepted_keys]
+            candidates = {
+                cnd_keys[k]: candidates[cnd_keys[k]]
+                    for k in accepted_keys
+            }
+            cnd_keys = {i: k for i, k in enumerate(candidates, 1)}
         print(f"Scanning {len(candidates)} candidates for operation={step.operation}")
 
         macroamt = strategy.macro_accept_max_total
@@ -1844,7 +1960,7 @@ def ff_optimize(
             cout_sorted_keys = []
 
 
-            shm = compute.shm_local(1, data={
+            shm = compute.shm_local(0, data={
                 "objective": initial_objective,
                 "csys": csys,
                 "gdb": gdb,
@@ -1915,14 +2031,18 @@ def ff_optimize(
                 work = {i: (1, X0, 0.0, 1) for i in cnd_keys}
 
             else:
-                if configs.processors == 1:
+                if configs.processors == 1 and not configs.remote_compute_enable:
                     work = {}
                     for k, v in iterable.items():
-                        r = calc_tier_distributed(*v[0], **v[1], shm=shm)
+                        r = calc_tier_distributed(*v[0], **v[1], verbose=True, shm=shm)
                         work[k] = r
-                else:
+                elif len(initial_objective.objectives) < 500 and len(candidates) > 1 and configs.remote_compute_enable:
+                    # this means each candidate has relatively few targets to compute, so we can let each worker handle one candidate
+                    print(logs.timestamp(), f"Each worker will compute a full candidate N={len(iterable)}")
                     ws = compute.workqueue_new_workspace(wq, address=addr, nproc=procs, shm=shm)
                     # # this modifies the csys, relabels and computes objective
+                    # so i should use objective_tier_run instead and loop through the iterable
+                    chunksize = 1
                     work = compute.workspace_submit_and_flush(
                         ws,
                         calc_tier_distributed,
@@ -1930,27 +2050,42 @@ def ff_optimize(
                         chunksize,
                         1.0,
                         len(iterable),
+                        verbose=True,
                     )
                     ws.close()
                     ws = None
+                else:
+                    # the means we have candidates with lots of things to compute,
+                    # so do each one at a time
+                    print(logs.timestamp(), f"Dispatching candidate tasks= {len(iterable)} in serial")
+                    work = {}
+                    for i, unit in iterable.items():
+                        print(logs.timestamp(), f"Running candidate task {i[0]}/{len(iterable)}")
+                        args = unit[0]
+                        kwds = unit[1]
+                        kwds["wq"] = wq
+                        kwds["verbose"] = True
+                        work[i] = calc_tier_distributed(*args, **kwds, shm=shm)
+
                 # now just sum over the jobs
                 # return keep, X, obj, match_len
                 work_new = {}
                 for i, _ in enumerate(candidates, 1):
                     if i not in work_new:
-                        work_new[i] = [0, 0, 0, 0]
+                        work_new[i] = [0, 0, 0, 0, {}]
                     for ij, j in work:
                         if i == ij:
                             line = work[(i,j)]
                             work_new[i][0] |= int(line[0])
                             work_new[i][1] += line[1]
-                            work_new[i][2] += line[2]
+                            work_new[i][2]  = line[2]
                             work_new[i][3] += line[3]
+                            work_new[i][4].update(line[4])
                         
                 work_full = work
                 work = work_new
             
-            print(f"The unfiltered results of the candidate scan N={len(work)} total={len(iterable)}:")
+            print(f"The unfiltered results of the candidate scan N={len(work)} total={len(iterable)} oper={step.operation}:")
 
 
             best_reuse = None
@@ -1959,12 +2094,27 @@ def ff_optimize(
                 best_reuse = sorted(reuse_cnd.items(), key=lambda y: (-y[1][0], y[1][1], y[1][2], y[1][3]))[0]
                 work[best_reuse[0]] = best_reuse[1]
             
+            cout_line = (
+                f" Initial objectives: "
+                f" X= {C0+P0:10.5f}"
+                f" P= {P0:10.5f}"
+                f" C= {C0:10.5f}"
+            )
+            print(cout_line)
+            cnd_kv = {}
             for j, cnd_i in enumerate(sorted(work), 1):
-                (keep, X, obj, match_len) = work[cnd_i]
+                (keep, cP, c, match_len, kv) = work[cnd_i]
                 # cnd_i, key, unit = unit
                 (S, Sj, step, _, _, _, _) = candidates[cnd_keys[cnd_i]]
 
-                dX = X + obj - X0
+                dP = cP - P0
+                # cC = C0 + dcC
+                cC = chemical_objective(csys, P0=CP0, C0=CX0, c=c)
+                cX = cP + cC
+                dP = cP - P0
+                dC = cC - C0
+                dX = dP + dC
+                # dX = cX - X0
                 keep = keep and dX <= 0.0
 
                 if step.operation == strategy.SPLIT:
@@ -1977,16 +2127,27 @@ def ff_optimize(
                 if best_reuse is not None and cnd_i == best_reuse[0]:
                     reused_line="*"
                 K = "Y" if keep else "N"
+                # cout_line = (
+                #     f"Cnd. {cnd_i:4d}/{len(work)}"
+                #     f" {S.name:6s} {reused_line}" 
+                #     f" P= {cP:10.5f}"
+                #     f" C= {cC:10.5f}"
+                #     f" X= {cX:10.5f}"
+                #     f" X0= {X0:10.5f}"
+                #     f" dX= {dX:10.5f} N= {match_len:6d} K= {K} {Sj_sma[cnd_i-1]}"
+                # )
                 cout_line = (
                     f"Cnd. {cnd_i:4d}/{len(work)}"
+                    f" N= {match_len:6d} K= {K}"
+                    f" dP= {dP:10.5f}"
+                    f" dC= {dC:10.5f}"
+                    f" d(P+C)= {dP+dC:10.5f}"
                     f" {S.name:6s} {reused_line}" 
-                    f" X= {X:10.5f}"
-                    f" X0= {X0:10.5f}"
-                    f" dX= {dX:10.5f} N= {match_len:6d} K= {K} {Sj_sma[cnd_i-1]}"
+                    f" {Sj_sma[cnd_i-1]}"
                 )
                 max_line = max(len(cout_line), max_line)
                 # print(datetime.datetime.now())
-                print('\r' + cout_line, end=" " * (max_line - len(cout_line)))
+                print(cout_line, end=" " * (max_line - len(cout_line)))
                 sys.stdout.flush()
 
                 if match_len == 0:
@@ -2010,11 +2171,12 @@ def ff_optimize(
 
                 # print sorted at the end but only for new
                 # this is to speed things up
-                cout_key = (-int(keep), X, match_len, cnd_i, S.name)
+                cout_key = (-int(keep), cX, match_len, cnd_i, S.name)
                 cout[cout_key] = cout_line
 
                 # use these below to determine the best ones to keep
                 heapq.heappush(cout_sorted_keys, cout_key)
+                cnd_kv[cout_key] = kv
 
             print("\r" + " " * max_line)
 
@@ -2026,7 +2188,7 @@ def ff_optimize(
             #     break
 
             # print sorted at the end
-            print(f"Nanostep {n_nano}: The filtered results of the candidate scan N={len(cout)} total={len(iterable)}:")
+            print(f"Nanostep {n_nano}: The filtered results of the candidate scan N={len(cout)} total={len(iterable)} oper={step.operation}:")
             if len(cout) == 0:
                 continue
             ck_i = 1
@@ -2083,6 +2245,7 @@ def ff_optimize(
                 keys,
                 Sj_sma,
             )
+
 
             print(f"There are {len(nodes)} nodes returned")
 
@@ -2168,60 +2331,87 @@ def ff_optimize(
 
             success = False
             added = False
+            if len(cnd_keep) == 1 and len(nodes) == 1:
+                print("Only one modification, keeping result")
+                kv = cnd_kv[cnd_keep[0]]
+                for k, v in kv.items():
+                    mm.chemical_system_set_value(csys, k, v)
+                C = chemical_objective(csys, P0=CP0, C0=CX0)
+                X = cnd_keep[0][1]
+                P = X - C
+                print(datetime.datetime.now(), f"Macro objective: {P:13.6g} C={C:13.6g} DX={P+C-X0:13.6g}")
+
+                psysref = {
+                    i: mm.chemical_system_to_physical_system(
+                        csys,
+                        psystems[i].models[0].positions,
+                        ref=psystems[i],
+                        reuse=reuse0
+                    ) for i in psystems
+                }
+
             
-            fitkeys = objective_tier_get_keys(initial_objective, csys)
-            fitkeys = [k for k in fitkeys if k[1] in "skeler" and initial_objective.key_filter(k)]
-            fitting_models = set((n.category[0] for n in nodes.values()))
-            reuse=[k for k,_ in enumerate(csys.models) if k not in fitting_models]
+            else:
+                # fitkeys = objective_tier_get_keys(initial_objective, csys)
+                # fitkeys = [k for k in fitkeys if k[1] in "skeler" and initial_objective.key_filter(k)]
+                # fitting_models = set((n.category[0] for n in nodes.values()))
+                # reuse = reuse0
+                # reuse=[k for k,_ in enumerate(csys.models) if k not in fitting_models]
 
-            # reuse = [x for x in range(len(csys.models)) if x != cid]
-            psystems = {
-                i: mm.chemical_system_to_physical_system(
+                print("Multiple modifications, doing another fit with all accepted*")
+                # print("*just force testing this code path")
+                psysref = {
+                    i: mm.chemical_system_to_physical_system(
+                        csys,
+                        psystems[i].models[0].positions,
+                        ref=psystems[i],
+                        reuse=reuse0
+                    ) for i in psystems
+                }
+                reuse = [x for x in range(len(csys.models))]
+                fitkeys = mm.chemical_system_iter_keys(csys)
+                fitkeys = [k for k in fitkeys if initial_objective.key_filter(k)]
+                assigned = [(i, k, v) for psys in psysref.values() for i,m in enumerate(psys.models) for a in m.labels[0].values() for k, v in a.items()]
+                fitkeys = [k for k in fitkeys if tuple(k[:3]) in assigned or k[1] in "s"]
+                kv0 = {k: mm.chemical_system_get_value(csys, k) for k in fitkeys}
+                # for k, v in kv0.items():
+                #     print(f"{str(k):20s} | v0 {v:12.6g}")
+                print_chemical_system(csys, show_parameters=assigned_nodes.union([x.name for x in nodes.values()]))
+                kv, P00, P, gp = objective_tier_run(
+                    initial_objective,
+                    gdb,
                     csys,
-                    psystems[i].models[0].positions,
-                    ref=psystems[i],
-                    reuse=reuse
-                ) for i in psystems
-            }
-            reuse = [x for x in range(len(csys.models))]
-            kv0 = {k: mm.chemical_system_get_value(csys, k) for k in fitkeys}
-            for k, v in kv0.items():
-                print(f"{str(k):20s} | v0 {v:12.6g}")
-            kv, P00, P, gp = objective_tier_run(
-                initial_objective,
-                gdb,
-                csys,
-                fitkeys,
-                psysref=psystems,
-                reuse=reuse,
-                wq=wq,
-                verbose=True
-            )
-            C = chemical_objective(csys)
-            X = P + C
-            dX = X - X0
-            print(datetime.datetime.now(), f"Accepting objective: {P:13.6g} C={C:13.6g} DX={P+C-X0:13.6g}")
-            if dX > 0:
-                print(datetime.datetime.now(), f"Objective raised. Skipping")
-                success = False
-                added = False
-                csys = csys_ref
-                for c in cnd_keep:
-                    ignore.add(c[3])
-                    if c[3] in kept:
-                        kept.remove(c[3])
-                    sname = c[4]
-                    micro_count[sname] -= 1
-                    macro_count[sname] -= 1
-                    micro_added -= 1
-                    n_added -= 1
-                continue
+                    fitkeys,
+                    psysref=psysref,
+                    reuse=reuse,
+                    wq=wq,
+                    verbose=True
+                )
+                C = chemical_objective(csys, P0=CP0, C0=CX0)
+                X = P + C
+                dX = X - X0
+                print(datetime.datetime.now(), f"Macro objective: {P:13.6g} C={C:13.6g} DX={P+C-X0:13.6g}")
+                if dX > 0:
+                    print(datetime.datetime.now(), f"Objective raised. Skipping")
+                    success = False
+                    added = False
+                    csys = csys_ref
+                    for c in cnd_keep:
+                        ignore.add(c[3])
+                        if c[3] in kept:
+                            kept.remove(c[3])
+                        sname = c[4]
+                        micro_count[sname] -= 1
+                        macro_count[sname] -= 1
+                        micro_added -= 1
+                        n_added -= 1
+                    continue
 
-            for k, v in kv.items():
-                v0 = kv0[k]
-                # v0 = mm.chemical_system_get_value(csys, k)
-                mm.chemical_system_set_value(csys, k, v)
-                print(f"{str(k):20s} | New: {v:12.6g} Ref {v0:12.6g} Diff {v-v0:12.6g}")
+                for k, v in kv.items():
+                    v0 = kv0[k]
+                    # v0 = mm.chemical_system_get_value(csys, k)
+                    mm.chemical_system_set_value(csys, k, v)
+                    print(f"{str(k):20s} | New: {v:12.6g} Ref {v0:12.6g} Diff {v-v0:12.6g}")
 
 
             recalc = False
@@ -2241,6 +2431,8 @@ def ff_optimize(
 
                 if step.operation == strategy.SPLIT:
 
+                    # g = hidx.sugraphs[Sj.index]
+                    # dC = mm.graph_complexity(g, M=len(hidx.topology.primary))
                     # obj = edits
                     # if groups[S.name] and groups[hent.name]:
                     #     obj = objective.split(
@@ -2277,20 +2469,21 @@ def ff_optimize(
                     # else:
                     success = True
                     added = True
-                    print(
-                        f"\n>>>>> New parameter {cnd_i:4d}/{cnd_n}",
-                        hent.name,
-                        "parent",
-                        S.name,
-                        "Objective",
-                        f"{X:10.5f}",
-                        "Delta",
-                        f"{dX:10.5f}",
-                        # f"Partition {len(cst.mappings[S.name])}|{len(cst.mappings[hent.name])}",
-                    )
-                    print(" >>>>>", key, f"Local dObj {obj:10.5f}", sma, end="\n\n")
+                    # print(
+                    #     f"\n>>>>> New parameter {cnd_i:4d}/{cnd_n}",
+                    #     hent.name,
+                    #     "parent",
+                    #     S.name,
+                    #     "Objective",
+                    #     f"{X:10.5f}",
+                    #     "Delta",
+                    #     f"{dX:10.5f}",
+                    #     # f"Partition {len(cst.mappings[S.name])}|{len(cst.mappings[hent.name])}",
+                    # )
+                    # print(" >>>>>", key, f"dC {dC:10.5f}", sma, end="\n\n")
 
                     repeat.add(hent.name)
+                    assigned_nodes.add(hent.name)
                     step_tracker[(hent.category, hent.name)] = 0
 
 
@@ -2309,19 +2502,21 @@ def ff_optimize(
                     if above is not None:
                         repeat.add((hidx.index.nodes[above].category, hidx.index.nodes[above].name))
 
+                    if hent.name in assigned_nodes:
+                        assigned_nodes.remove(hent.name)
                     success = True
                     added = True
-                    print(
-                        f">>>>> Delete parameter {cnd_i:4d}/{cnd_n}",
-                        hent.name,
-                        "parent",
-                        S.name,
-                        "Objective",
-                        f"{X:10.5f}",
-                        "Delta",
-                        f"{dX:10.5f}",
-                    )
-                    print(" >>>>>", key, f"Local dObj {obj:10.5f}", sma, end="\n\n")
+                    # print(
+                    #     f">>>>> Delete parameter {cnd_i:4d}/{cnd_n}",
+                    #     hent.name,
+                    #     "parent",
+                    #     S.name,
+                    #     "Objective",
+                    #     f"{X:10.5f}",
+                    #     "Delta",
+                    #     f"{dX:10.5f}",
+                    # )
+                    # print(" >>>>>", key, f"Local dObj {obj:10.5f}", sma, end="\n\n")
 
             if False and recalc:
                 print("Detected change in result")
@@ -2343,7 +2538,7 @@ def ff_optimize(
 
 
             # print the tree
-            print_chemical_system(csys)
+            print_chemical_system(csys, show_parameters=assigned_nodes)
             # mod_lbls = cluster_assignment.smiles_assignment_str_modified(
             #     cur_cst.group.assignments, cst.group.assignments
             # )
@@ -2353,6 +2548,7 @@ def ff_optimize(
             X0 = X
             P0 = P
             C0 = C
+            psystems = psysref
 
         # wq.close()
         # wq = None
@@ -2409,12 +2605,15 @@ def ff_optimize(
     # return csys
     wq.close()
 
-    print_chemical_system(csys)
+    print_chemical_system(csys, show_parameters=assigned_nodes)
 
     return csys, P, C
 
-def calc_tier_distributed(S, Sj, operation, edits, oid, shm=None):
+def calc_tier_distributed(S, Sj, operation, edits, oid, verbose=False, wq=None, shm=None):
+
+    # copy once
     csys = copy.deepcopy(shm.csys)
+    # csys = shm.csys
 
     hidx = mm.chemical_system_get_node_hierarchy(csys, S)
     cm = mm.chemical_system_get_node_model(csys, S)
@@ -2439,7 +2638,7 @@ def calc_tier_distributed(S, Sj, operation, edits, oid, shm=None):
         psysref = gdb_to_physical_systems(gdb, csys)
     
     keep = True
-    kv, y0, X, gx, C = {}, 0, 0, [], 0
+    kv, y0, P, gx, C = {}, 0, 0, [], 0
     # need to perform the operation and then add to keys
     # would also need to add the node to the FF
     if operation == optimization.optimization_strategy.SPLIT:
@@ -2447,14 +2646,21 @@ def calc_tier_distributed(S, Sj, operation, edits, oid, shm=None):
         hidx.subgraphs[node.index] = Sj
         sma = gcd.smarts_encode(Sj)
         hidx.smarts[node.index] = sma
+        # dC = mm.graph_complexity(Sj, scale=.01, offset=-len(hidx.topology.primary)*.01)
 
 
     elif operation == optimization.optimization_strategy.MERGE:
         node = Sj
         sma = hidx.smarts[node.index]
+        g = hidx.subgraphs[node.index]
+        # dC = -mm.graph_complexity(Sj, scale=.01, offset=-len(hidx.topology.primary)*.01)
         mm.chemical_model_smarts_hierarchy_remove_node(cm, cid, pid, uid, Sj)
 
+    # since we only changed by Sj
     reuse = [x for x in range(len(csys.models)) if x != cid]
+
+    # this does the param refresh after the modification
+    # so it will reSMARTS cid
     psysref = {
         i: mm.chemical_system_to_physical_system(
             csys,
@@ -2463,15 +2669,18 @@ def calc_tier_distributed(S, Sj, operation, edits, oid, shm=None):
             reuse=reuse
         ) for i in psysref
     }
+    # now that we have all reSMARTS, just reuse everything
     reuse = [x for x in range(len(csys.models))]
 
     keys = mm.chemical_system_iter_keys(csys)
-    # print_chemical_system(csys)
     keys = [k for k in keys if objective.key_filter(k)]
     assigned = [(i, k, v) for psys in psysref.values() for i,m in enumerate(psys.models) for a in m.labels[0].values() for k, v in a.items()]
     keys = [k for k in keys if tuple(k[:3]) in assigned or k[1] in "s"]
     # print("Fitting keys are:")
     # print(keys)
+    kv0 = {k: mm.chemical_system_get_value(csys, k) for k in keys}
+    # for k, v in kv0.items():
+    #     print(f"{str(k):20s} | v0 {v:12.6g}")
 
     if operation == optimization.optimization_strategy.SPLIT:
 
@@ -2501,14 +2710,19 @@ def calc_tier_distributed(S, Sj, operation, edits, oid, shm=None):
 
     # print("Matches", match_len, "Old matches", old_match)
     # C = graphs.graph_bits(Sj) / len(Sj.nodes) /1000 + len(Sj.nodes)
+    # configs.remote_compute_enable = False
+    # wq = compute.workqueue_local('127.0.0.1', 0)
+    kv = {}
     if keep:
-        C = mm.chemical_system_smarts_complexity(csys)
-        kv, y0, X, gx = objective_tier_run(objective, gdb, csys, keys, oid=oid, psysref=psysref, reuse=reuse, wq=None, verbose=False)
-    print(f"{S.name}->{sma:40s} OID={oid} {keep} {X} {C} {match_len}")
+        kv, y0, P, gx = objective_tier_run(objective, gdb, csys, keys, oid=oid, psysref=psysref, reuse=reuse, wq=wq, verbose=verbose)
+    # print(f"{S.name}->{sma:40s} OID={oid} {keep} {X} {C} {match_len}")
+    c = mm.chemical_system_smarts_complexity(csys)
 
-    return keep, X, C, match_len 
+    # if wq:
+    #     wq.close()
+    return keep, P, c, match_len, kv
 
-def print_chemical_system(csys):
+def print_chemical_system(csys, show_parameters=None):
     print("Model:")
     for ei, hidx in enumerate(
         mm.chemical_system_iter_smarts_hierarchies(csys)
@@ -2517,17 +2731,26 @@ def print_chemical_system(csys):
         for root in trees.tree_index_roots(hidx.index):
             for e in tree_iterators.tree_iter_dive(hidx.index, root):
                 s = trees.tree_index_node_depth(hidx.index, e)
+                w = " "*s
                 obj_repo = ""
                 # if groups[e.name]:
                 # obj_repo = objective.report(groups[e.name])
-                print(
-                    f"** {s:2d} {ei:3d} {e.name:4s}",
-                    hidx.smarts.get(e.index, ""),
-                )
+                if e.type != 'parameter' or (show_parameters is None) or e.name in show_parameters:
+                    sma = hidx.smarts.get(e.index, "")
+                    if sma is None:
+                        sma = ""
+                    print(
+                        f"** {s:2d} {ei:3d} {w}{e.name:4s}",
+                        hidx.smarts.get(e.index, ""),
+                    )
 
 
-def chemical_objective(csys):
-    return mm.chemical_system_smarts_complexity(csys)
+def chemical_objective(csys, P0=1.0, C0=1.0, A=0.01, B=1.0, C=1.0, c=None):
+
+    if c is None:
+        c = mm.chemical_system_smarts_complexity(csys, B=B, C=C)
+    CC = A * P0 * math.exp(A * (c - C0))
+    return CC
 
 def perform_operations(
         csys: mm.chemical_system,
@@ -2538,6 +2761,7 @@ def perform_operations(
 
 
     nodes = {}
+    ignore = set()
     for cnd_i, key in keys.items():
         (S, Sj, step, _, _, _, _) = candidates[key]
         (edits, _, p_j) = key
@@ -2547,10 +2771,14 @@ def perform_operations(
         cid, pid, uid = S.category
         cm = csys.models[cid]
 
-        hidx = mm.chemical_system_get_node_hierarchy(csys, S)
-        topo = hidx.topology
 
         if step.operation == optimization.optimization_strategy.SPLIT:
+            hidx = mm.chemical_system_get_node_hierarchy(csys, S)
+            if hidx is None:
+                breakpoint()
+                print(f"Invalid node for operation: {S.name}")
+                continue
+            topo = hidx.topology
             # param_name = "p" + str(group_number)
             node = mm.chemical_model_smarts_hierarchy_copy_node(cm, cid, pid, uid, S, None)
 
@@ -2567,8 +2795,30 @@ def perform_operations(
             nodes[cnd_i] = node
 
         elif step.operation == optimization.optimization_strategy.MERGE:
+            # S might have been deleted previously
+            # and Sj is a graph in splitting
+            if Sj.name in ignore:
+                continue
+            hidx = mm.chemical_system_get_node_hierarchy(csys, Sj)
+            if hidx is None:
+                breakpoint()
+                print(f"Invalid node for operation: {Sj.name}")
+                continue
+            topo = hidx.topology
 
             mm.chemical_model_smarts_hierarchy_remove_node(cm, cid, pid, uid, Sj)
+            ignore.add(Sj.name)
             nodes[cnd_i] = Sj
 
     return csys, nodes
+
+def print_xyz(pos, comment="") -> List[str]:
+    lines = []
+    lines.append(str(len(pos.selections)))
+    lines.append(comment)
+    for ic, xyz in pos.selections.items():
+        n = pos.graph.nodes[ic[0]]
+        sym = primitives.element_tr[str(n.primitives['element'].on()[0])]
+        x, y, z = xyz[0][:3]
+        lines.append(f"{sym:8s} {x:.6f} {y:.6f} {z:.6f}")
+    return lines

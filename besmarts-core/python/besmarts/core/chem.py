@@ -148,6 +148,9 @@ class bechem:
     def bits(self, maxbits=False) -> int:
         return bechem_bits(self, maxbits=maxbits)
 
+    def bits_max(self) -> int:
+        return bechem_bits_max(self)
+
     def any(self):
         return bechem_any(self)
 
@@ -328,7 +331,23 @@ def bechem_bits(bc: bechem, maxbits=False, return_all=False) -> int:
     for i, name in enumerate(bc.select):
         arr: arrays.bitvec = bc.primitives[name]
         bits.append(arr.bits(maxbits=maxbits))
-    n_bits = (sum(bits), maxbits)
+    n_bits = (sum(bits), bits)
+
+    if return_all:
+        return n_bits
+    else:
+        return n_bits[0]
+
+def bechem_bits_max(bc: bechem, return_all=False) -> int:
+    """
+    Return the number of bits across all selected primitives
+    """
+
+    bits = []
+    for i, name in enumerate(bc.select):
+        arr: arrays.bitvec = bc.primitives[name]
+        bits.append(arr.maxbits)
+    n_bits = (sum(bits), bits)
 
     if return_all:
         return n_bits

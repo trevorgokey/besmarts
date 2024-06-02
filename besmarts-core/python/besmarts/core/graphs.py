@@ -168,6 +168,9 @@ class structure(subgraph):
         assert len(topology.primary) <= len(select)
         for e in topology.connect:
             _edge = edge((select[e[0]], select[e[1]]))
+            if _edge not in edges:
+                print(_edge, "not in edges", edges)
+                breakpoint()
             assert _edge in edges
 
         self.cache: Dict = {}
@@ -253,6 +256,7 @@ def graph_nodes_copy(g: graph) -> Dict[node_id, chem.bechem]:
     return nodes
 
 
+
 def graph_edges_copy(g: graph) -> Dict[edge_id, chem.bechem]:
     edges = {k: chem.bechem_copy(v) for k, v in g.edges.items()}
     return edges
@@ -304,6 +308,26 @@ def graph_copy(beg: graph) -> graph:
     # g.cache = beg.cache.copy()
     return g
 
+def graph_same(g: graph, h: graph) -> bool:
+
+    if set(g.nodes).symmetric_difference(h.nodes):
+        return False
+    if set(g.edges).symmetric_difference(h.edges):
+        return False
+
+    for n in g.nodes:
+        if n not in h.nodes:
+            return False
+        if g.nodes[n] != h.nodes[n]:
+            return False
+
+    for n in g.edges:
+        if n not in h.edges:
+            return False
+        if g.edges[n] != h.edges[n]:
+            return False
+
+    return True
 
 def graph_fill(beg: graph) -> None:
     """
@@ -1002,6 +1026,31 @@ def graph_bits(g: graph, maxbits=True) -> int:
         bits += g.nodes[atom].bits(maxbits=maxbits)
     for bond in g.edges:
         bits += g.edges[bond].bits(maxbits=maxbits)
+    return bits
+
+def graph_bits_max(g: graph) -> int:
+    """
+    Return the number of maximum bits set across all primitives
+
+    Parameters
+    ----------
+    g : graph
+        The input the graph
+
+    maxbits : bool
+        Whether to use the maximum bit limits when counting full primitives
+
+    Returns
+    -------
+    int
+        The number of bits set in the graph
+    """
+
+    bits = 0
+    for atom in g.nodes:
+        bits += g.nodes[atom].bits_max()
+    for bond in g.edges:
+        bits += g.edges[bond].bits_max()
     return bits
 
 

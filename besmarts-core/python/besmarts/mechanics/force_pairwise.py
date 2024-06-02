@@ -79,7 +79,7 @@ class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
                         f.write(f"{elem} {name} {x:12.9f} {y:12.9f} {z:12.9f}\n")
                     f.write("\n")
 
-                print("RUNNING ANTECHAMBER FOR CHARGES")
+                # print("RUNNING ANTECHAMBER FOR CHARGES")
                 subprocess.run([
                     "sqm", "-O",
                     "-i", "mdin",

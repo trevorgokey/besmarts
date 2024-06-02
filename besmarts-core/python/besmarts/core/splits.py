@@ -1561,7 +1561,7 @@ def split_subgraphs_distributed(
                     # if jj + j == clen * ci + len(work) and j == len(splits):
                     progress = int(len([x for x in completed if x < n]) / Bn * 10)
                     report_number = progress
-                    if (verbose and debug) or (report_number not in updates):
+                    if (verbose and debug) and (report_number not in updates):
                         updates.add(report_number)
                         print(
                             datetime.datetime.now(),

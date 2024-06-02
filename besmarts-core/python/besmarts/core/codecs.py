@@ -1172,8 +1172,8 @@ class primitive_codec_ring_smallest(primitive_codec):
         on: bitvec = dtype()
         off: bitvec = dtype()
 
-        on.maxbits = 99
-        off.maxbits = 99
+        on.maxbits = 7
+        off.maxbits = 7
 
         if "*" in smarts:
             on[:] = True
