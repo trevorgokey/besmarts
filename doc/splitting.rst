@@ -38,6 +38,8 @@ The following is the code to perform the numerical search.
 >>> # use the RDKit plugin
 >>> from besmarts.codecs import codec_rdkit
 >>> 
+>>> configs.remote_compute_enable = False
+>>> configs.workqueue_port = 54321
 >>> configs.processors = 1
 >>> 
 >>> prims = (primitive_key.ELEMENT, primitive_key.HYDROGEN), (
@@ -135,17 +137,6 @@ BIT [__:1]_[_!H0:2]
 2024-05-23 13:26:37.063593 Building tasks
 Started local workspace on ('127.0.0.1', 42357)
 workspace listening on local host. Remote connections prohibited.
-2024-05-23 13:26:37.608606 Searching atoms=2 data=8 bit_depth=1/1 b_j=1/28 hits=0            
-2024-05-23 13:26:37.614127 Searching atoms=2 data=8 bit_depth=1/1 b_j=3/28 hits=2            
-2024-05-23 13:26:37.619337 Searching atoms=2 data=8 bit_depth=1/1 b_j=6/28 hits=2            
-2024-05-23 13:26:37.624520 Searching atoms=2 data=8 bit_depth=1/1 b_j=9/28 hits=3            
-2024-05-23 13:26:37.629774 Searching atoms=2 data=8 bit_depth=1/1 b_j=12/28 hits=4            
-2024-05-23 13:26:37.634958 Searching atoms=2 data=8 bit_depth=1/1 b_j=14/28 hits=4            
-2024-05-23 13:26:37.640125 Searching atoms=2 data=8 bit_depth=1/1 b_j=17/28 hits=5            
-2024-05-23 13:26:37.645391 Searching atoms=2 data=8 bit_depth=1/1 b_j=20/28 hits=6            
-2024-05-23 13:26:37.650726 Searching atoms=2 data=8 bit_depth=1/1 b_j=23/28 hits=7            
-2024-05-23 13:26:37.655815 Searching atoms=2 data=8 bit_depth=1/1 b_j=26/28 hits=7            
-2024-05-23 13:26:37.660988 Searching atoms=2 data=8 bit_depth=1/1 b_j=28/28 hits=8            
 Progress: 100.00%        28/28
 Finished: 100.00%        28/28
 Removing workspace ('127.0.0.1', 42357)
@@ -201,6 +192,7 @@ the 8 valid splits before the result is returned.
 Next, some code here is provided to as an example to examine the results.
 
 .. code-block:: python
+
 >>> # custom processing of results
 >>> 
 >>> seen = {}
@@ -374,6 +366,8 @@ satisfies the partition.
 >>> 
 >>> from besmarts.core.primitives import primitive_key
 >>> 
+>>> configs.remote_compute_enable = False
+>>> configs.workqueue_port = 54321
 >>> # use the RDKit plugin
 >>> from besmarts.codecs import codec_rdkit
 >>> 
@@ -460,8 +454,10 @@ RHS_DIFF:  [__:1]_[__:2]
 BESTLHS:  [*:1]-[#8H1:2]
 
 As above, the structures are printed, except the desired partition is indicated
-with the arrows. We selected the two structures that have oxygen in the bond, now the goal is to find a SMARTS pattern that matches only these two.
-Some informational output is shown, and at the bottom we see BESTLHS is indicated a match was found.
+with the arrows. We selected the two structures that have oxygen in the bond,
+now the goal is to find a SMARTS pattern that matches only these two. Some
+informational output is shown, and at the bottom we see BESTLHS is indicated a
+match was found.
 
 Below is some custom result parsing:
 
@@ -502,7 +498,14 @@ Below is some custom result parsing:
 >>>                 print(i, "->", gcd.smarts_encode(ic_list[i]))
 Matches only the input with 0 swaps: [*:1]-[#8H1:2]
 
-And so we see that we were able to find a SMARTS pattern that indeed splits the two structures. There are two concepts of interest here. First, we may want an approximate result that satisfies the matches rather than specify an exact partition. In such a case, we can set `maxmoves` to a positive integer. If no SMARTS pattern can be found that matches the exact partition, it tries to find a SMARTS pattern that would match a partition if `maxmoves` structures are included in the original partition. For example, there are 3 indestinguishable CH methyl bonds. If we specify `matches=(2,)`, we get
+And so we see that we were able to find a SMARTS pattern that indeed splits the
+two structures. There are two concepts of interest here. First, we may want an
+approximate result that satisfies the matches rather than specify an exact
+partition. In such a case, we can set `maxmoves` to a positive integer. If no
+SMARTS pattern can be found that matches the exact partition, it tries to find
+a SMARTS pattern that would match a partition if `maxmoves` structures are
+included in the original partition. For example, there are 3 indestinguishable
+CH methyl bonds. If we specify `matches=(2,)`, we get
 
 .. code-block:: python
 
@@ -531,7 +534,8 @@ LHS_DIFF:  [#6H3:1]_[#1H0:4]
 LHS_INVE:  [#6H3:1]-[#1H0:4]
 RHS_DIFF:  [__:1]_[__:2]
 
-a.k.a. nothing. Now if we increase maxmoves to 2 (since we know there are two other identical structures):
+a.k.a. nothing. Now if we increase maxmoves to 2 (since we know there are two
+other identical structures):
 
 .. code-block:: python
 
@@ -606,6 +610,8 @@ that will generate all partitions and perform a direct search on each:
 >>> # use the RDKit plugin
 >>> from besmarts.codecs import codec_rdkit
 >>> 
+>>> configs.remote_compute_enable = False
+>>> configs.workqueue_port = 54321
 >>> configs.processors = 1
 >>> 
 >>> prims = (primitive_key.ELEMENT, primitive_key.HYDROGEN), (
