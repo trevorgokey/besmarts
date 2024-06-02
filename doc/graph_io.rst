@@ -21,7 +21,7 @@ coordinate:
 >>> gcd = graph_codec_rdkit()
 >>> smarts = '[#6:1]~[*:2]=[#8]'
 >>> g = gcd.smarts_decode(smarts)
->>> print(gcd.smarts_encode(smarts))
+>>> print(gcd.smarts_encode(g))
 [#6:1]~[*:2]=[#8:3]
 
 We have just created a graph, but specifically a subgraph because the SMARTS
@@ -44,8 +44,8 @@ decoding twice:
 .. code-block:: python
 
 >>> from besmarts.codecs import codec_native
->>> codec_native.graph_codec_native_save("g.bes", [g])
->>> g = native.graph_codec_native_load("g.bes")[0]
+>>> success = codec_native.graph_codec_native_save("g.bes", [g])
+>>> g = codec_native.graph_codec_native_load("g.bes")[0]
 >>> print(gcd.smarts_encode(g))
 [#6:1]~[*:2]=[#8:3]
 
@@ -117,6 +117,7 @@ and then only print SMARTS patterns using the element and bond order primitives:
 >>> print(gcd.smarts_encode(g))
 [#6](-[#1])(-[#1])(-[#1])-[#6](-[#1])(-[#1])-[#1]
 >>> graphs.graph_set_primitives_atom(g, atom_primitives[::-1])
+>>> print(gcd.smarts_encode(g))
 [+0A!rx0X4H3#6](-[+0A!rx0X1H0#1])(-[+0A!rx0X1H0#1])(-[+0A!rx0X1H0#1])-[+0A!rx0X4H3#6](-[+0A!rx0X1H0#1])(-[+0A!rx0X1H0#1])-[+0A!rx0X1H0#1]
 
 This will not delete the other primitives as show above. Subsequent operations,
@@ -134,16 +135,16 @@ atoms define the topology. For example, if have the SMARTS
 
 .. code-block:: python
 
-    from besmarts.codecs.codec_rdkit import graph_codec_rdkit
-    from besmarts.core import graphs
-    from besmarts.core import topology
-
-    gcd = graph_codec_rdkit()
-
-    g = "[#6:1]([#6])[#6:2]"
-    g = gcd.smarts_decode(g)
-    topo = topology.bond_topology()
-    bond = graphs.subgraph_to_structure(g, topo)
+>>> from besmarts.codecs.codec_rdkit import graph_codec_rdkit
+>>> from besmarts.core import graphs
+>>> from besmarts.core import topology
+>>> gcd = graph_codec_rdkit()
+>>> g = "[#6:1]([#6])[#6:2]"
+>>> g = gcd.smarts_decode(g)
+>>> topo = topology.bond_topology()
+>>> bond = graphs.subgraph_to_structure(g, topo)
+>>> print(gcd.smarts_encode(bond))
+[#6:1]([#6:2])[#6]
 
 Note that loading a SMARTS always produces a subgraph data type, and so the
 untagged atom in the pattern will also be part of the subgraph. This would
@@ -233,14 +234,57 @@ used to get the canonical ordering:
 
 .. code-block:: python
 
+>>> from besmarts.codecs.codec_rdkit import graph_codec_rdkit
+>>> from besmarts.core import graphs 
+>>> from besmarts.core import geometry
+>>> gcd = graph_codec_rdkit()
+>>> g = 'CC'
+>>> g = gcd.smiles_decode(g)
 >>> for indices in graphs.graph_bonds(g):
->>>     geometry.bond(indices[::-1])
+>>>     print(indices, indices == geometry.bond(indices[::-1]))
 >>> for indices in graphs.graph_angles(g):
->>>     geometry.angle(indices[::-1])
+>>>     print(indices, indices == geometry.angle(indices[::-1]))
 >>> for indices in graphs.graph_torsions(g):
->>>     geometry.torsion(indices[::-1])
+>>>     print(indices, indices == geometry.torsion(indices[::-1]))
 >>> for indices in graphs.graph_outofplanes(g):
->>>     geometry.outofplane(idx)
+>>>     idx = [indices[2], indices[1], indices[0], indices[3]]
+>>>     print(indices, indices == geometry.outofplane(idx))
+(1, 2) True
+(1, 3) True
+(1, 4) True
+(1, 5) True
+(2, 6) True
+(2, 7) True
+(2, 8) True
+(2, 1, 3) True
+(2, 1, 4) True
+(2, 1, 5) True
+(3, 1, 4) True
+(3, 1, 5) True
+(4, 1, 5) True
+(1, 2, 6) True
+(1, 2, 7) True
+(1, 2, 8) True
+(6, 2, 7) True
+(6, 2, 8) True
+(7, 2, 8) True
+(3, 1, 2, 6) True
+(3, 1, 2, 7) True
+(3, 1, 2, 8) True
+(4, 1, 2, 6) True
+(4, 1, 2, 7) True
+(4, 1, 2, 8) True
+(5, 1, 2, 6) True
+(5, 1, 2, 7) True
+(5, 1, 2, 8) True
+(2, 1, 3, 4) True
+(2, 1, 3, 5) True
+(2, 1, 4, 5) True
+(3, 1, 4, 5) True
+(1, 2, 6, 7) True
+(1, 2, 6, 8) True
+(1, 2, 7, 8) True
+(6, 2, 7, 8) True
 
 *NOTE* The central atom in out-of-planes is always index 1 (0-based).
 
@@ -286,12 +330,15 @@ Out-of-Planes:
 [#6H3X4x0!rA+0:2](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0:3])(!@;-[#1H0X1x0!rA+0:4])!@;-[#1H0X1x0!rA+0]
 [#1H0X1x0!rA+0:3]!@;-[#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0:4])(!@;-[#1H0X1x0!rA+0:5])!@;-[#6H3X4x0!rA+0](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
 
-As expected, there are only 2 unique atoms, bonds, angles, torsions, and out-of-planes for ethane.
-A few words about the returned structures. The structures contain all nodes and edges from the original
-graph, but only the primary nodes are selected. This results in a SMARTS pattern that extends the entire 
-molecule, but only the internal coordinate is tagged. This is the default behavior. Nearly all structure methods
-only operate on the selection; the unselected atoms in the graph serve other purposes and are kept for certain functionality such as mapping and searching.
-We can prune the graphs to only contain the primary nodes in the internal coordinate: 
+As expected, there are only 2 unique atoms, bonds, angles, torsions, and
+out-of-planes for ethane. A few words about the returned structures. The
+structures contain all nodes and edges from the original graph, but only the
+primary nodes are selected. This results in a SMARTS pattern that extends the
+entire molecule, but only the internal coordinate is indexed. This is the
+default behavior. Nearly all structure methods only operate on the selection;
+the unselected atoms in the graph serve other purposes and are kept for certain
+functionality such as mapping and searching. We can prune the graphs to only
+contain the primary nodes in the internal coordinate: 
 
 .. code-block:: python
    
@@ -301,7 +348,7 @@ We can prune the graphs to only contain the primary nodes in the internal coordi
 >>> g = 'CC'
 >>> g = gcd.smiles_decode(g)
 >>> print("Atoms:")
->>> for struct in mapperset(graphs.graph_to_structure_atoms(g)):
+>>> for struct in set(graphs.graph_to_structure_atoms(g)):
 >>>     print(gcd.smarts_encode(graphs.structure_up_to_depth(struct, 0)))
 >>> print("Bonds:")
 >>> for struct in set(graphs.graph_to_structure_bonds(g)):
@@ -331,9 +378,9 @@ Out-of-Planes:
 [#1H0X1x0!rA+0:3]!@;-[#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0:4])!@;-[#1H0X1x0!rA+0:5]
 
 Keep in mind that the `graphs.graph_to_structure_*` functions remove nodes and
-therefore change the graph. Also, since the `graphs.structure_up_to_depth` function
-only operates on the selection, depths greater than 0 will not produce larger graphs. Instead,
-one should extend the selection beforehand:
+therefore change the graph. Also, since the `graphs.structure_up_to_depth`
+function only operates on the selection, depths greater than 0 will not produce
+larger graphs. Instead, one should extend the selection beforehand:
 
 .. code-block:: python
 
