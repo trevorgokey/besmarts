@@ -398,6 +398,16 @@ pos = [pos]
 # print("Parameterizing...")
 # psys = mm.chemical_system_to_physical_system(csys, pos)
 
+ref = copy.deepcopy(csys)
+# perturb the bond length of b1 and let the optimizer fit
+dx = .1
+csys.models[0].topology_terms["l"].values["b1"][0] += dx
+
 kv = optimizers_scipy.optimize_forcefield_scipy(csys, pos)
-pprint(kv)
+# pprint(kv)
+
+print("Final values (in Ang:Rad:kcal)")
+for k, v in kv.items():
+    v0 = mm.chemical_system_get_value(ref, k)
+    print(f"{k} New: {v:15.8g} Ref: {v0:15.8g} Diff: {v - v0:15.8g}")
 

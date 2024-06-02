@@ -32,7 +32,7 @@ def optimize_positions_scipy(csys, psys: mm.physical_system):
         args,
         jac=jac,
         args=(keys, csys, psys),
-        options={'disp': False, 'gtol': 1e-3, 'ftol': 1e-4, 'maxiter': 2},
+        options={'disp': False, 'gtol': 1e-3, 'ftol': 1e-4, 'maxiter': 1000},
         method='L-BFGS-B',
     )
 
@@ -48,12 +48,12 @@ def ff_obj(x, keys, csys, refpsys, ref, refcsys):
     pos = copy.deepcopy(ref)
     recalc = set([x[0] for x in keys])
 
-    reuse = set(range(len(csys.models))).difference(recalc)
-    psys = mm.chemical_system_to_physical_system(csys, pos, ref=refpsys, reuse=reuse)
-    optpos = optimize_positions_scipy(csys, psys)
-
     for k, v in zip(keys, x):
         mm.chemical_system_set_value(csys, k, v)
+
+    reuse = set(range(len(csys.models))).intersection(recalc)
+    psys = mm.chemical_system_to_physical_system(csys, pos, ref=refpsys, reuse=reuse)
+    optpos = optimize_positions_scipy(csys, psys)
 
     obj = 0
     for ic, rxyz in ref[0].selections.items():
@@ -63,11 +63,11 @@ def ff_obj(x, keys, csys, refpsys, ref, refcsys):
             dx2 = dx*dx
             obj += dx2
             # print(obj, dx2)
-    for k in keys:
-        newv = mm.chemical_system_get_value(csys, k)
-        refv = mm.chemical_system_get_value(refcsys, k)
-        print(k, f"| New: {newv} Ref {refv} Diff {newv-refv}")
-    print("Total obj:", obj)
+    # for k in keys:
+    #     newv = mm.chemical_system_get_value(csys, k)
+    #     refv = mm.chemical_system_get_value(refcsys, k)
+    #     print(k, f"| New: {newv} Ref {refv} Diff {newv-refv}")
+    # print("Total obj:", obj)
     return obj
 
 def objective_gdb(csys, gdb, obj, psysref=None, reuse=None, ws=None):
@@ -335,6 +335,7 @@ def optimize_forcefield_scipy(csys, pos):
         ff_obj,
         x0,
         args=(keys, csys, psys, pos, copy.deepcopy(csys)),
-        options={'disp': False, 'gtol': .1}
+        options={'disp': True, 'gtol': .001, 'ftol': .001},
+        method='L-BFGS-B'
     )
     return {k:v for k,v in zip(keys, result.x)}
