@@ -21,7 +21,7 @@ class test_branch_split(unittest.TestCase):
         smiles[s] = [(1,)]
         branches = 1
         depth = 1
-        test(self, smiles, branches, depth)
+        runner(self, smiles, branches, depth)
 
     def test_atom_branch_two(self):
         smiles = {}
@@ -29,9 +29,9 @@ class test_branch_split(unittest.TestCase):
         smiles[s] = [(1,)]
         branches = 2
         depth = 1
-        test(self, smiles, branches, depth)
+        runner(self, smiles, branches, depth)
 
-def test(self, smiles, branches, depth):
+def runner(self, smiles, branches, depth):
 
     #### Next
     # print("Next")
