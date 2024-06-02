@@ -300,6 +300,7 @@ topology_index = [
     bond,
     angle,
     torsion,
+    outofplane,
     pair,
     triplet,
 ]

@@ -4,7 +4,14 @@ besmarts.mechanics.molecular_models
 
 from typing import Dict, List, Any
 import datetime
+import copy
+import math
 
+
+from besmarts.core import graphs
+from besmarts.core import trees
+from besmarts.core import tree_iterators
+from besmarts.core import hierarchies
 from besmarts.core import assignments
 from besmarts.core import perception
 from besmarts.core import db
@@ -78,23 +85,6 @@ class chemical_model_procedure:
         assert False
 
 
-def graph_topology_db_table_gradient(pm, pos: assignments.graph_topology_db_table):
-    # this would use the energy function in the pm and the coordinates in pos
-    # to create a new dbt
-    
-    pass
-
-def graph_topology_db_table_energy(pm, pos: assignments.graph_topology_db_table):
-    # this would use the energy function in the pm and the coordinates in pos
-    # to create a new dbt
-    aid = max(ASSN_NAMES)+1
-    aname = "BOND_ENERGY"
-    
-    ene = run_energy()
-    # tassn assignments.graph_topology_db_table(pos.topology, ene)
-
-    return tassn
-
 class physical_model_procedure:
     """
     calculates one or more physical properties of a system
@@ -154,7 +144,7 @@ class chemical_model_procedure_smarts_assignment(chemical_model_procedure):
         self.system_parameters: Dict[str, int] = {}
 
         self.topology_terms = topology_terms
-        self.smarts_hierarchies: Dict[int, hierarchies.smarts_assignment_hierarchy] = {}
+        self.smarts_hierarchies: Dict[int, hierarchies.structure_hierarchy] = {}
 
     def assign(self, cm, pm: physical_model) -> physical_model:
         """
@@ -208,6 +198,160 @@ class chemical_model_procedure_smarts_assignment(chemical_model_procedure):
             values[term_name] = self.topology_terms[term_name].values[term_lbl]
 
         return values
+
+def chemical_model_iter_smarts_hierarchies_nodes(cm):
+
+    for proc in cm.procedures:
+        if hasattr(proc, "smarts_hierarchies"):
+            proc: chemical_model_procedure_smarts_assignment
+            for hidx in proc.smarts_hierarchies.values():
+                for root in trees.tree_index_roots(hidx.index):
+                    yield from tree_iterators.tree_iter_dive(hidx.index, root)
+
+def chemical_system_iter_smarts_hierarchies_nodes(csys):
+
+    for cm in csys.models:
+        yield from chemical_model_iter_smarts_hierarchies_nodes(cm)
+
+def chemical_model_iter_smarts_hierarchies(cm: chemical_model):
+    for proc in cm.procedures:
+        if hasattr(proc, "smarts_hierarchies"):
+            proc: chemical_model_procedure_smarts_assignment
+            yield from proc.smarts_hierarchies.values()
+
+def chemical_system_iter_smarts_hierarchies(csys):
+
+    for cm in csys.models:
+        yield from chemical_model_iter_smarts_hierarchies(cm)
+
+def chemical_system_get_smarts_node(csys, S):
+   return csys.models[int(S.model)].procedures[int(S.type)].smarts_hierarchies[int(S.category)].index
+
+
+def chemical_system_get_node_hierarchy(csys, node):
+    if node is None:
+        return None
+    m = int(node.category[0])
+    cm = csys.models[m]
+    for hidx in chemical_model_iter_smarts_hierarchies(cm):
+        existing = hidx.index.nodes.get(node.index, None)
+        if existing is None:
+            continue
+        if node.name == existing.name:
+            return hidx
+
+def chemical_system_get_node_model(csys, node):
+    if node is None:
+        return None
+    m = int(node.category[0])
+    cm = csys.models[m]
+    return cm
+
+def chemical_system_smarts_hierarchy_get_node_keys(cm, cid, pid, uid, node):
+    kv = {}
+
+    l = node.name
+    for t, tv in cm.topology_terms.items():
+        lval = tv.values.get(l)
+        if lval is None:
+            continue
+        for i, v in enumerate(lval):
+            kv[(cid, t, l, i)] = v
+
+    return kv
+
+def chemical_model_smarts_hierarchy_remove_node(cm: chemical_model, cid, pid, uid, node):
+
+    proc: chemical_model_procedure = cm.procedures[pid]
+
+    h: hierarchies.structure_hierarchy = proc.smarts_hierarchies[uid]
+    h.index.node_remove(node.index)
+
+    if node.index in h.smarts:
+        h.smarts.pop(node.index)
+
+    if node.index in h.subgraphs:
+        h.subgraphs.pop(node.index)
+
+    pkey = (uid, node.name)
+
+    for tname in list(proc.topology_parameters[(uid, node.name)]):
+        if node.name in cm.topology_terms[tname].values:
+            cm.topology_terms[tname].values.pop(node.name)
+    proc.topology_parameters.pop(pkey)
+    return
+
+def chemical_model_smarts_hierarchy_copy_node(cm: chemical_model, cid, pid, uid, parent, name):
+    proc: chemical_model_procedure = cm.procedures[pid]
+
+    h: hierarchies.structure_hierarchy = proc.smarts_hierarchies[uid]
+    node = h.index.node_add_below(
+        parent.index, index=0
+    )
+    if name is None:
+        name = f"{cm.symbol}{node.index}"
+
+    node.name = str(name)
+    node.category = tuple(parent.category)
+    node.type = str(parent.type)
+    h.smarts[node.index] = str(h.smarts[parent.index])
+    assert h.subgraphs[parent.index].select
+    h.subgraphs[node.index] = graphs.subgraph_copy(h.subgraphs[parent.index])
+
+    pkey = (uid, node.name)
+    assert pkey not in proc.topology_parameters
+
+    newparms = {}
+    for k, v in proc.topology_parameters[(uid, parent.name)].items():
+        if v == parent.name:
+            newparms[k] = node.name
+        else:
+            newparms[k] = v
+    proc.topology_parameters[pkey] = newparms
+    
+    
+    for tname in list(proc.topology_parameters[(uid, parent.name)]):
+        cm.topology_terms[tname].values[node.name] = copy.deepcopy(
+            cm.topology_terms[tname].values[parent.name]
+        )
+
+    return node
+
+
+def chemical_model_smarts_hierarchy_add_node(cm, cid, pid, uid, parentid, node_ref, smarts, vals):
+
+    proc = cm.procedures[pid]
+
+    h = proc.smarts_hierarchies[uid]
+    node = h.index.node_add_below(
+        parentid
+    )
+    node.name = str(node_ref.name)
+    node.category = str(node_ref.category)
+    node.type = str(cid)
+    h.smarts[node.index] = smarts
+
+    pkey = (uid, node.name)
+    assert pkey not in proc.topology_parameters
+
+    proc.topology_parameters[pkey] = {}
+    for tname, tvals in vals.items():
+
+        # Make sure that the term is recognized
+        term = cm.topology_terms.get(tname)
+        assert term
+        # Store the values
+        term.values[node.name] = tvals.copy()
+
+        # Inform the cm/proc that this node can assign this term name
+        proc.topology_parameters[pkey][tname] = node.name
+
+    return node
+
+
+def chemical_system_smarts_hierarchy_add_node(csys, cid, pid, uid, node_ref, smarts, vals: Dict[str, List]):
+    cm = csys.models[cid]
+    return chemical_model_smarts_hierarchy_add_node(cm, cid, pid, uid, node_ref, smarts, vals)
 
 class forcefield_metadata:
     def __init__(self):
@@ -293,6 +437,60 @@ def chemical_system_set_value(csys, key, value):
         m, t, i = key
         csys.models[m].system_terms[t].values[i] = value
 
+def physical_system_set_value(psys: physical_system, key, value):
+
+    if len(key) == 4:
+        m, t, l, i = key
+        for lbls, values in zip(psys.models[m].labels, psys.models[m].values):
+            for ic, ic_lbls in lbls.items():
+                term_lbl = ic_lbls[t]
+                if term_lbl == l:
+                    # print(f"PSYS SETTING {ic}:{t}:{i} = {value}")
+                    values[ic][t][i] = value
+            
+    elif len(key) == 3:
+        # TODO lol
+        assert False
+
+    # unit_i = 0
+    # lbl = key[2]
+    # lbls = pm.get_term_labels((unit_i, lbl))
+
+    # pm = psys.models[key[0]]
+
+    # if 0:
+    #     # print(self.topology_terms)
+    #     smiles = [x.smiles for x in pm.positions]
+    #     topo = cm.topology
+    #     unit_i = 0
+
+    #     lbls = self.perception.labeler.assign(
+    #         self.smarts_hierarchies[unit_i],
+    #         self.perception.gcd,
+    #         smiles,
+    #         self.smarts_hierarchies[unit_i].topology
+    #     )
+        
+    #     assn = []
+    #     vals = []
+    #     for x in lbls.assignments:
+    #         p = {}
+    #         v = {}
+    #         for ic, lbl in x.selections.items():
+    #             if lbl is None:
+    #                 continue
+    #             names = self.get_term_labels((unit_i, lbl))
+    #             values = self.get_term_values((unit_i, lbl))
+    #             p[ic] = {term: l for (term, l), x  in zip(names.items(), values.values())}
+    #             v[ic] = {term: x for (term, l), x  in zip(names.items(), values.values())}
+    #         assn.append(p)
+    #         vals.append(v)
+
+    #     pm.labels.extend(assn)
+    #     pm.values.extend(vals)
+
+    #     return pm
+
 def chemical_system_get_value(csys, key):
     if len(key) == 4:
         m, t, l, i = key
@@ -301,22 +499,33 @@ def chemical_system_get_value(csys, key):
         m, t, i = key
         return csys.models[m].system_terms[t].values[i]
 
-def chemical_system_to_graph_topology_db(cs, pos: assignments.smiles_assignment) -> physical_model:
-    pass
-def chemical_system_to_physical_system(cs, pos: assignments.smiles_assignment, ref=None, reuse=None) -> physical_model:
+
+def physical_model_values_copy(pm):
+    values = []
+    for vals in pm.values:
+        ic_vals = dict.fromkeys(vals)
+        for ic, terms in vals.items():
+            # ic_vals[ic] = {t: [*val_array] for t, val_array in terms.items()}
+            ic_vals[ic] = {t: val_array.copy() for t, val_array in terms.items()}
+        values.append(ic_vals)
+    return values
+
+def chemical_system_to_physical_system(cs, pos: assignments.graph_assignment, ref=None, reuse=None) -> physical_model:
     ps = physical_system([])
 
     for ci, cm in enumerate(cs.models):
         if (ref is not None and reuse is not None) and ci in reuse:
-            ps.models.append(ref.models[ci])
+            values = physical_model_values_copy(ref.models[ci])
+            pm = physical_model(pos, ref.models[ci].labels, values)
+            # ps.models.append(ref.models[ci])
         else:
             pm = physical_model(pos, [], [])
-            print(f"{datetime.datetime.now()} Processing", cm.name)
+            # print(f"{datetime.datetime.now()} Processing", cm.name)
             for proc in cm.procedures:
-                print(f"{datetime.datetime.now()}     Procedure", proc.name)
+                #print(f"{datetime.datetime.now()}     Procedure", proc.name)
                 procedure: chemical_model_procedure
                 pm = proc.assign(cm, pm)
-            ps.models.append(pm)
+        ps.models.append(pm)
     return ps
 
 def smiles_assignment_function(fn, sys_params, top_params, pos):
@@ -337,3 +546,124 @@ def smiles_assignment_function(fn, sys_params, top_params, pos):
                 raise e
 
     return result
+
+def graph_complexity(g, scale=1.0, offset=0.0):
+    # C = len(g.nodes) + graphs.graph_bits_max(g) / graphs.graph_bits(g)  / len(g.nodes) / 100
+    # return scale*C + offset
+
+    C = graphs.graph_bits(g)  / len(g.nodes)
+    return C
+
+def chemical_system_smarts_complexity(csys: chemical_system, B=1.0, C=1.0):
+    """
+    get all smarts and calculate the smarts complexity
+    """
+    C0 = []
+    atoms = 0
+    parameters = 0
+    terms = 0
+    for ei, hidx in enumerate(
+        chemical_system_iter_smarts_hierarchies(csys)
+    ):
+        for root in trees.tree_index_roots(hidx.index):
+            M = len(hidx.topology.primary)
+            for node in tree_iterators.tree_iter_dive(hidx.index, root):
+
+                if node.type != 'parameter':
+                    continue
+                cm = chemical_system_get_node_model(csys, node)
+                if cm.symbol in "IT":
+                    t = 2*sum(cm.topology_terms['n'].values[node.name])
+                elif cm.symbol in "ABN":
+                    t = 2
+                elif cm.symbol in "Q":
+                    t = 1
+                else:
+                    t = 2
+
+
+                g = hidx.subgraphs.get(node.index)
+                if g is None:
+                    s = hidx.smarts.get(node.index)
+                    if s is not None and s:
+                        g = csys.perception.gcd.smarts_decode(s)
+                        if type(g) is str:
+                            # this means we could not parse the str,
+                            # e.g. recursive smarts
+                            continue
+                        hidx.subgraphs[node.index] = g
+                        C0.append(graph_complexity(g, scale=.01, offset=-M*.01))
+                        atoms += len(g.nodes)
+                        parameters += 1
+                        terms += t
+                        # C0 += (len(g.nodes) - M) / 10
+                        # print(f"Node {node.name} complexity {(len(g.nodes) - M) / 10} total={C0}")
+                elif type(g) is not str:
+                    C0.append(graph_complexity(g, scale=.01, offset=-M*.01))
+                    atoms += len(g.nodes)
+                    parameters += 1
+                    terms += t
+                    # C0 += graph_complexity(g, scale=.01, offset=-M*.01)
+                    # C0 += (len(g.nodes) - M) / 10
+                    # print(f"Node {node.name} complexity {(len(g.nodes) - M) / 10} total={C0}")
+
+    CX = sum(C0)/len(C0)*B
+    CY = atoms*C
+
+    return terms - (CX - CY) / parameters
+
+
+# def complexity(self, groups=None):
+
+#     total_bits = self.n_bits(maxbits=True)
+#     total_atoms = self.n_atoms()
+
+#     parameters = [
+#         x for x in self.node_iter_depth_first(self.root()) if x.payload[0] in "baitn"
+#     ]
+#     n_physical_param_delta = 0
+#     for n in parameters:
+#         p = self.db[n.payload]["data"]["parameter"]
+#         if n.payload[0] in "it":
+#             # weight by periodicity; this will prefer lower frequencies
+#             for per in p.periodicity:
+#                 n_physical_param_delta += per 
+#         else:
+#             # assume everything else is 2 terms per param
+#             n_physical_param_delta +=  2
+
+#     # n_physical_param_delta = sum(self.n_parameter_terms(n) for n in parameters)
+
+#     n_nodes = len(parameters)
+
+#     # bit_per_param_delta = total_atoms / total_bits
+
+#     bits_per_param = [self.n_parameter_bits(x) / self.n_parameter_atoms(x) for x in parameters if self.n_parameter_atoms(x) > 0]
+#     bits_per_param = sum(bits_per_param) / len(bits_per_param)
+
+
+#     if groups is not None:
+#         for group, sign in groups:
+#             n_physical_param_delta += sign * 2  # assume 2 for now TODO: fix!
+#             total_atoms += sign * len(group.nodes)
+#             total_bits += sign * group.bits(maxbits=True)
+#             n_nodes += sign
+
+#     bits_per_param *= self.penalty_alpha[1]
+#     atom_penalty = self.penalty_alpha[2] * total_atoms
+
+#     x = n_physical_param_delta - (bits_per_param - atom_penalty) / n_nodes
+#     return x
+
+# def chem_obj(self, P0, X0, alpha, groups=None):
+
+
+#     # penalty = self.penalty_factor * np.exp(self.penalty_alpha[0] * (
+#     #     n_physical_param_delta - (bits_per_param - atom_penalty) / n_nodes
+#     # ))
+#     x = self.complexity(groups)
+#     C0 = P0 * alpha
+#     C = C0 * np.exp(alpha * (x - X0))
+#     # print(f"CHEM OBJ: C0={C0} X0={X0} x={x} C={C}")
+#     return C
+

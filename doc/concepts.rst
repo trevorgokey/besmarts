@@ -5,7 +5,10 @@ Concepts
 .. toctree::
    :maxdepth: 8
 
-   codecs.rst
-   graphs.rst
-   besmarts.rst
-   mapping.rst
+   concepts/besmarts.rst
+   concepts/graphs.rst
+   concepts/codecs.rst
+   concepts/mapping.rst
+   concepts/assignments.rst
+   concepts/clustering.rst
+   concepts/forcefields.rst

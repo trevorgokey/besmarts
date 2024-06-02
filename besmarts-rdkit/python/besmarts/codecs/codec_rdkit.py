@@ -4,7 +4,7 @@ besmarts.besmarts_rdkit.codecs
 BESMARTS graph encoding using the RDKit perception model
 """
 
-from typing import Dict, Sequence
+from typing import Dict, Sequence, Tuple
 
 from rdkit import Chem
 
@@ -13,6 +13,7 @@ from besmarts.core.arrays import bitvec as array
 from besmarts.core.arrays import array_dtype
 from besmarts.core.chem import bechem
 from besmarts.core import graphs
+from besmarts.core import assignments
 from besmarts.core.graphs import graph
 from besmarts.core.primitives import primitive_key, primitive_codec
 from besmarts.core.codecs import graph_codec
@@ -95,6 +96,22 @@ class graph_codec_rdkit(graph_codec):
             self.bond_primitives,
             sma,
         )
+    def sdf_decode(self, sdf) -> assignments.graph_assignment:
+        """
+        """
+        sa, extras = rdkit_sdf_to_smiles_assignment(sdf)
+        g = rdkit_smiles_decode(
+            self.smiles_config,
+            self.primitive_codecs,
+            self.array,
+            self.atom_primitives,
+            self.bond_primitives,
+            sa.smiles,
+        )
+        g = graphs.subgraph_as_graph(g)
+        smiles = sa.smiles
+        # smiles = self.smiles_encode(g)
+        return assignments.graph_assignment(smiles, sa.selections, g), extras
 
     @staticmethod
     def list_implemented_atom_primitives() -> Sequence[primitive_key]:
@@ -110,7 +127,7 @@ def rdkit_smarts_decode(
 ) -> graphs.graph:
 
     if r"$" in sma:
-        print(f"Warning, recursive SMARTS {sma} detected, skipping")
+        # print(f"Warning, recursive SMARTS {sma} detected, skipping")
         return sma
     mol = Chem.MolFromSmarts(sma)
 
@@ -192,6 +209,29 @@ def rdkit_smarts_decode(
     else:
         return graphs.graph(nodes, edges)
 
+def rdkit_sdf_to_smiles_assignment(sdf) -> Tuple[assignments.smiles_assignment, Dict]:
+
+    mol = next(Chem.SDMolSupplier(sdf, sanitize=False))
+
+    indices = get_indices(mol)
+
+    for atom in mol.GetAtoms():
+        atom.SetAtomMapNum(indices[atom.GetIdx()])
+
+    smi = Chem.MolToSmiles(mol)
+
+    conf = mol.GetConformers()[0]
+
+    sel = {}
+    for atom in mol.GetAtoms():
+        idx = atom.GetIdx()
+        i = indices[idx]
+        xyz = conf.GetAtomPosition(idx)
+        sel[i,] = list(xyz)
+
+    extras = mol.GetPropsAsDict()
+
+    return assignments.smiles_assignment_float(smi, sel), extras
 
 def rdkit_smiles_decode(
     pcp, codecs, arr: array, atom_primitives, bond_primitives, smi

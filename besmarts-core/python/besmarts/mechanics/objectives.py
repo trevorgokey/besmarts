@@ -4,6 +4,8 @@ besmarts.mechanics.objectives
 """
 
 import copy
+import pprint
+from besmarts.core import arrays
 from besmarts.core import assignments
 from besmarts.mechanics import molecular_models as mm
 
@@ -378,12 +380,88 @@ def array_flatten_assignment(selections):
             keys.extend(((c, n, i) for i in range(len(data[c]))))
     return lst, keys
 
-def array_geom_energy(args, keys, csys, psys: mm.physical_system):
+def physical_system_gradient(psys: mm.physical_system, csys: mm.chemical_model):
+    """
+    csys is for the reference functions and system params
+    psys is for the positions and param values
+    """
+    gx = arrays.array_scale(physical_system_force(psys, csys), -1.0)
+    return gx
+
+def physical_system_force(psys: mm.physical_system, csys):
+    """
+    csys is for the reference functions and system params
+    psys is for the positions and param values
+    """
+    force = list([0.0]*3*len(psys.models[0].positions[0].graph.nodes))
+
+    for m, pm in enumerate(psys.models):
+
+        refpos = pm.positions[0]
+        pos = assignments.graph_assignment_float(
+                refpos.graph,
+                {k: v.copy() for k, v in refpos.selections.items()}
+        )
+
+        if csys.models[m].derivative_function:
+
+            icq = csys.models[m].internal_function(pos)
+
+            system_terms = {k: v.values for k, v in csys.models[m].system_terms.items()}
+
+            params = pm.values
+            f = mm.smiles_assignment_function(csys.models[m].force_function, system_terms, params, icq)
+
+            jac = csys.models[m].derivative_function(pos)
+
+            for ic in f:
+                confs_dq = jac.selections[ic]
+                nic = len(confs_dq)-1
+                for idx, dq in enumerate(confs_dq):
+                    fq = f[ic][idx][0]
+                    for j, i in enumerate(ic):
+                        force[nic*idx + (i-1)*3 + 0] += fq*dq[j][0]*4.184
+                        force[nic*idx + (i-1)*3 + 1] += fq*dq[j][1]*4.184
+                        force[nic*idx + (i-1)*3 + 2] += fq*dq[j][2]*4.184
+
+    return force
+
+def physical_system_energy(psys: mm.physical_system, csys):
     energy = 0
 
     for m, pm in enumerate(psys.models):
         refpos = psys.models[m].positions[0]
         pos = copy.deepcopy(refpos)
+
+        # pos = assignments.graph_assignment_float(
+        #         refpos.graph,
+        #         {k: v.copy() for k, v in refpos.selections.items()}
+        # )
+
+        # n_confs = len(list(refpos.selections.values())[0])
+
+        ic = csys.models[m].internal_function(pos)
+
+        # build system terms
+        system_terms = {k: v.values for k, v in csys.models[m].system_terms.items()}
+        params = pm.values
+
+        # build topology terms
+        ene = mm.smiles_assignment_function(csys.models[m].energy_function, system_terms, params, ic)
+        # print(csys.models[m].name, "energy:")
+        # pprint.pprint(ene)
+        energy += sum([x for y in ene.values() for z in y for x in z])
+
+    return energy
+
+def array_geom_energy(args, keys, csys, psys: mm.physical_system):
+
+    energy = 0
+
+    for m, pm in enumerate(psys.models):
+        refpos = psys.models[m].positions[0]
+        # pos = copy.deepcopy(refpos)
+        pos = refpos
         # pos = assignments.graph_assignment_float(
         #         refpos.graph,
         #         {k: v.copy() for k, v in refpos.selections.items()}
@@ -406,6 +484,56 @@ def array_geom_energy(args, keys, csys, psys: mm.physical_system):
         energy += sum([x for y in ene.values() for z in y for x in z])
 
     return energy
+
+def array_geom_energy_gradient(args, keys, csys, psys: mm.physical_system):
+    energy = 0
+    grad = list([0.0]*len(args))
+
+    for m, pm in enumerate(psys.models):
+        refpos = psys.models[m].positions[0]
+        # pos = copy.deepcopy(refpos)
+        # pos = refpos
+        pos = assignments.graph_assignment_float(
+                refpos.graph,
+                {k: copy.deepcopy(v) for k, v in refpos.selections.items()}
+        )
+        # pos = assignments.graph_assignment_float(
+        #         refpos.graph,
+        #         {k: v.copy() for k, v in refpos.selections.items()}
+        # )
+
+        n_confs = len(list(refpos.selections.values())[0])
+        i = 0
+        for (c, n, i), v in zip(keys, args):
+            pos.selections[n][c][i] = v
+
+
+        ic = csys.models[m].internal_function(pos)
+        system_terms = {k: v.values for k, v in csys.models[m].system_terms.items()}
+        params = pm.values
+
+        ene = mm.smiles_assignment_function(csys.models[m].energy_function, system_terms, params, ic)
+        energy += sum([x for y in ene.values() for z in y for x in z])
+
+        if csys.models[m].derivative_function:
+
+            f = mm.smiles_assignment_function(csys.models[m].force_function, system_terms, params, ic)
+
+            jac = csys.models[m].derivative_function(pos)
+
+            for ic in f:
+                confs_dq = jac.selections[ic]
+                nic = len(confs_dq)-1
+                for idx, dq in enumerate(confs_dq):
+                    fq = f[ic][idx][0]
+                    for j, i in enumerate(ic):
+                        grad[nic*idx + (i-1)*3 + 0] -= fq*dq[j][0]*4.184
+                        grad[nic*idx + (i-1)*3 + 1] -= fq*dq[j][1]*4.184
+                        grad[nic*idx + (i-1)*3 + 2] -= fq*dq[j][2]*4.184
+
+
+
+    return energy, grad
 
 def array_geom_gradient(args, keys, csys, psys: mm.physical_system):
     return [-x for x in array_geom_force(args, keys, csys, psys)]

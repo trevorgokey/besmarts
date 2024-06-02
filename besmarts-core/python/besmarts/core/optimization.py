@@ -23,6 +23,7 @@ class optimization_step:
         self.direct_enable = True
         self.direct_limit = 10
         self.iterative_enable = True
+        self.models = []
 
     def copy(self):
         return optimization_step_copy(self)
@@ -39,6 +40,7 @@ def optimization_step_copy(step) -> optimization_step:
     s.direct_enable = step.direct_enable
     s.direct_limit = step.direct_limit
     s.iterative_enable = step.iterative_enable
+    s.models = step.models.copy()
     return s
 
 
@@ -69,6 +71,7 @@ class optimization_strategy:
 
     MERGE = -1
     SPLIT = 1
+    MODIFY = 0
 
     def __init__(self, bounds: configs.smarts_perception_config, overlaps=None):
         self.bounds: configs.smarts_perception_config = bounds
@@ -100,6 +103,7 @@ class optimization_strategy:
 
         self.enable_merge = True
         self.enable_split = True
+        self.enable_modify = False
 
         self.steps: List[optimization_iteration] = []
         self.tree_iterator: Callable = tree_iterators.tree_iter_dive
@@ -187,6 +191,7 @@ class optimization_strategy:
             optimization_strategy_build_macro_iterations(self)
         )
 
+
 def optimization_strategy_restart(os: optimization_strategy):
     os.repeat = False
     os.cursor = -1
@@ -213,8 +218,8 @@ def optimization_strategy_repeat_step(oi):
 def optimization_iteration_is_done(oi):
     return (not oi.repeat) and oi.cursor >= len(oi.steps)
 
-
 def optimization_iteration_next(oi) -> optimization_step:
+
     if oi.repeat and oi.cursor > 0:
         oi.cursor -= 1
         oi.repeat = False
@@ -228,10 +233,11 @@ def optimization_iteration_next(oi) -> optimization_step:
 
     return step
 
-
+    
 def optimization_strategy_iteration_next(
     oi: optimization_strategy, clusters: List[trees.tree_node]
 ) -> optimization_iteration:
+
     if oi.repeat and oi.cursor > 0:
         oi.cursor -= 1
         oi.repeat = False
@@ -253,6 +259,8 @@ def optimization_strategy_iteration_next(
 
         for s in macro.steps:
             for p in clusters:
+                if s.models and p.category[0] not in s.models:
+                    continue
                 s = optimization_step_copy(s)
                 s.cluster = p
                 # s.operation = oi.SPLIT
@@ -264,7 +272,6 @@ def optimization_strategy_iteration_next(
         oi.cursor += 1
 
     return macro
-
 
 def optimization_strategy_build_macro_iterations(strat: optimization_strategy):
     macro_iters = []
@@ -320,8 +327,8 @@ def optimization_strategy_build_macro_iterations(strat: optimization_strategy):
                             0,
                             strat.bounds.splitter.split_general,
                             strat.bounds.splitter.split_specific,
-                            strat.bounds.splitter.unique_compliments,
-                            strat.bounds.splitter.unique_compliments_prefer_min,
+                            strat.bounds.splitter.unique_complements,
+                            strat.bounds.splitter.unique_complements_prefer_min,
                         )
                         extender = configs.smarts_extender_config(
                             branches, branches, strat.bounds.extender.include_hydrogen
@@ -356,8 +363,8 @@ def optimization_strategy_build_macro_iterations(strat: optimization_strategy):
                             0,
                             strat.bounds.splitter.split_general,
                             strat.bounds.splitter.split_specific,
-                            strat.bounds.splitter.unique_compliments,
-                            strat.bounds.splitter.unique_compliments_prefer_min,
+                            strat.bounds.splitter.unique_complements,
+                            strat.bounds.splitter.unique_complements_prefer_min,
                         )
                         extender = configs.smarts_extender_config(0, 0, True)
                         config = configs.smarts_perception_config(

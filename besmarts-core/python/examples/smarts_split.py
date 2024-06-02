@@ -60,8 +60,8 @@ splitter = configs.smarts_splitter_config(
     max_splits=0,
     split_general=True,
     split_specific=True,
-    unique_compliments=False,
-    unique_compliments_prefer_min=True,
+    unique_complements=False,
+    unique_complements_prefer_min=True,
 )
 
 # for this to work, we need to extend our graphs to at least the depth of S0

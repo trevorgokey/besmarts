@@ -7,6 +7,7 @@ import os
 processors = os.cpu_count()
 remote_compute_enable = True
 workqueue_port = 55555
+compute_verbosity = 0
 
 class smiles_perception_config:
     def __init__(
@@ -89,8 +90,8 @@ class smarts_splitter_config:
         "max_splits",
         "split_general",
         "split_specific",
-        "unique_compliments",
-        "unique_compliments_prefer_min",
+        "unique_complements",
+        "unique_complements_prefer_min",
     )
 
     def __init__(
@@ -106,8 +107,8 @@ class smarts_splitter_config:
         max_splits=None,
         split_general=True,
         split_specific=True,
-        unique_compliments=True,
-        unique_compliments_prefer_min=True,
+        unique_complements=True,
+        unique_complements_prefer_min=True,
     ):
         self.bit_search_min: int = int(bit_search_min)
         self.bit_search_limit: None | int = bit_search_limit
@@ -120,9 +121,9 @@ class smarts_splitter_config:
         self.max_splits = max_splits
         self.split_general = split_general
         self.split_specific = split_specific
-        self.unique_compliments: bool = bool(unique_compliments)
-        self.unique_compliments_prefer_min: bool = bool(
-            unique_compliments_prefer_min
+        self.unique_complements: bool = bool(unique_complements)
+        self.unique_complements_prefer_min: bool = bool(
+            unique_complements_prefer_min
         )
 
     def copy(self):
