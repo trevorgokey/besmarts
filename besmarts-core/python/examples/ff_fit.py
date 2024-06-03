@@ -1,7 +1,3 @@
-
-"""
-"""
-
 from typing import Dict, List, Tuple
 from besmarts.mechanics import fits
 from besmarts.mechanics import smirnoff_xml
@@ -19,9 +15,13 @@ from besmarts.assign import hierarchy_assign_rdkit
 from besmarts.codecs import codec_rdkit
 from besmarts.core import compute
 from besmarts.core import configs
-# configs.processors = 1
+
+configs.processors = 4
+configs.remote_compute_enable = False
+configs.workqueue_port = 54321
+
 xyz_positions = """11
-Energy =  -802.9904298568 (+0.195 kcal/mol)
+
   C -1.44819400 -0.84940800  0.16848900
   C -1.59401300  0.50318700 -0.01678100
   C -0.27397600  1.02622600 -0.13503500
@@ -57,7 +57,7 @@ def load_xyz(flist, indices=None) -> assignments.graph_db_row:
         if N is None:
             N = int(lines[0].split()[0])
         if indices is None:
-            indices = list(range(N))
+            indices = [*range(1,N+1)]
         assert N == int(lines[0].split()[0])
         for chunk in arrays.batched(lines, N+2):
             if chunk and chunk[0]:
@@ -65,16 +65,17 @@ def load_xyz(flist, indices=None) -> assignments.graph_db_row:
                 for i, line in enumerate(chunk, -2):
                     if i >= 0:
                         sym, x, y, z = line.split()[:4]
-                        sel[indices[i]] = list(map(float, (x, y, z)))
+                        sel[indices[i],] = list(map(float, (x, y, z)))
 
                 gdc = assignments.graph_db_column()
                 gdc.selections.update(sel)
                 gdr.columns[s] = gdc
                 s += 1
     return gdr
+
 def make():
     smi = "[C:1]1([H:9])=[C:2]([H:10])[C:3]([H:11])=[C:4]([C:5](=[O:6])[Cl:7])[O:8]1"
-    s = xyz_positions 
+    s = xyz_positions
     g = xyz_grad
     d  = {
         smi: [
@@ -85,6 +86,7 @@ def make():
         ],
     }
     return d
+
 def new_gdb(f: Dict[str, List[str]]) -> assignments.graph_db:
     gcd = codec_rdkit.graph_codec_rdkit()
     gdb = assignments.graph_db()
@@ -93,7 +95,7 @@ def new_gdb(f: Dict[str, List[str]]) -> assignments.graph_db:
     for smi, fn_dict in f.items():
 
         g = gcd.smiles_decode(smi)
-        gid = assignments.graph_db_add_graph(gdb, g)
+        gid = assignments.graph_db_add_graph(gdb, smi, g)
 
         gdb.graphs[gid] = g
         gdb.smiles[gid] = smi
@@ -108,8 +110,9 @@ def new_gdb(f: Dict[str, List[str]]) -> assignments.graph_db:
             gdg = assignments.graph_db_graph()
             gdt.graphs[gid] = gdg
             fn = rdata[tid]
-            indices=dict(sorted([(j, x) for j, x in enumerate(g.nodes)], key=lambda x: x[1]))
-            gdr = load_xyz([fn], indices=list(indices))
+            # indices=dict(sorted([(j, x) for j, x in enumerate(g.nodes, 1)], key=lambda x: x[1]))
+            indices = None
+            gdr = load_xyz([fn], indices=indices)
             gdg.rows[0] = gdr
             gde.tables[tid] = gdt
             tid = assignments.GRADIENTS
@@ -118,8 +121,8 @@ def new_gdb(f: Dict[str, List[str]]) -> assignments.graph_db:
                 gdg = assignments.graph_db_graph()
                 gdt.graphs[gid] = gdg
                 fn = rdata[tid]
-                indices=dict(sorted([(j, x) for j, x in enumerate(g.nodes)], key=lambda x: x[1]))
-                gdr = load_xyz([fn], indices=list(indices))
+                # indices=dict(sorted([(j, x) for j, x in enumerate(g.nodes)], key=lambda x: x[1]))
+                gdr = load_xyz([fn], indices=indices)
                 gdg.rows[0] = gdr
                 gde.tables[tid] = gdt
                 gx = [x for y in gdr[0].selections.values() for x in y]
@@ -128,12 +131,13 @@ def new_gdb(f: Dict[str, List[str]]) -> assignments.graph_db:
             if tid in rdata:
                 gdt = assignments.graph_db_table(topology.null)
                 fn = rdata[tid]
-                ene = [*map(float, 
+                ene = [*map(float,
                     [x for x in open(fn).read().split('\n') if x]
                 )]
                 gdt.values.extend(ene)
                 gde.tables[tid] = gdt
     return gdb
+
 def run(d, ff_fn):
     # build the dataset and input ff
     gcd = codec_rdkit.graph_codec_rdkit()
@@ -142,37 +146,43 @@ def run(d, ff_fn):
     csys = smirnoff_models.smirnoff_load(ff_fn, pcp)
     gdb = new_gdb(d)
     psys = fits.gdb_to_physical_systems(gdb, csys)
-    models = [0,1]
-    fit_models = [0,1]
+    models = {0: ["b4"]}
     strat = fits.forcefield_optimization_strategy_default(csys, models=models)
     co = fits.chemical_objective
-    final = None # default would be a full fit
-    initial = final # have a default, full fit
-    onestep = None # do a forcefield fit with one step 
+
+    fit_models = [0]
     final = fits.objective_tier()
     final.objectives = {
         0: fits.objective_config_position(
                 fits.graph_db_address(
                     eid=[0],
                 ),
-                scale=10
+                scale=1
         ),
         1: fits.objective_config_gradient(
                 fits.graph_db_address(
                     eid=[0],
                 ),
-                scale=1e-5
+                scale=1
         ),
     }
-    final.key_filter = lambda x: x[0] in fit_models and x[1] == 'l'
+    # final.key_filter = lambda x: x[0] in fit_models and x[1] == 'l'
+    final.fit_models = fit_models
+    final.fit_symbols = ["l"]
+
     onestep = fits.objective_tier()
     onestep.objectives = final.objectives
     onestep.step_limit = 2
-    onestep.key_filter = lambda x: x[0] in fit_models and x[1] == 'l'
-    initial = final
+    onestep.accept = 3
+    # onestep.key_filter = lambda x: x[0] in fit_models and x[1] == 'l'
+    onestep.fit_models = fit_models
+    onestep.fit_symbols = ["l"]
     tiers = [onestep] # have a default
+
+    initial = final
+
     kv0 = mm.chemical_system_iter_keys(csys)
-    newcsys, P, C = fits.ff_optimize(
+    newcsys, (P0, P), (C0, C) = fits.ff_optimize(
         csys,
         gdb,
         psys,
@@ -182,7 +192,24 @@ def run(d, ff_fn):
         tiers,
         final
     )
-    fits.print_chemical_system(newcsys)
-    print(f"X {P+C:15.8g} P {P:15.8g} C {C:15.8g}")
-if __name__ == "__main__":
-    run(make(), "openff-2.1.0.offxml")
+
+    print("Modified parameters:")
+    kv = mm.chemical_system_iter_keys(newcsys)
+    for k, v in kv.items():
+        v0 = kv0.get(k)
+        if v0 is not None:
+            dv = v-v0
+            if abs(dv) > 1e-7:
+                print(f"{str(k):20s} | New: {v:12.6g} Ref {v0:12.6g} Diff {dv:12.6g}")
+        else:
+            print(f"{str(k):20s} + New: {v:12.6g}")
+    print("Initial objectives:")
+    X0 = P0 + C0
+    X = P + C
+    print(f"Total= {X0:15.8g} Physical {P0:15.8g} Chemical {C0:15.8g}")
+    print("Final objectives:")
+    print(f"Total= {X:15.8g} Physical {P:15.8g} Chemical {C:15.8g}")
+    print("Differences:")
+    print(f"Total= {100*(X-X0)/X0:14.2f}% Physical {100*(P-P0)/P0:14.2f}% Chemical {100*(C-C0)/C0:14.2f}%")
+
+run(make(), "openff-2.1.0.offxml")
