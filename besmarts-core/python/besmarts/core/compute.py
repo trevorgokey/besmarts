@@ -891,6 +891,8 @@ class workqueue_manager(managers.SyncManager):
 
 class workqueue:
     def __init__(self, addr, port):
+        if configs.remote_compute_enable == False and addr in ["", "0.0.0.0"]:
+            addr = "127.0.0.1"
         self.mgr = workqueue_manager(address=(addr, port), authkey=b"0")
         self.mgr._Client = Client
 
