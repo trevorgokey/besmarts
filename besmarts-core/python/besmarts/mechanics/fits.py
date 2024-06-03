@@ -176,6 +176,9 @@ class compute_config_gradient(compute_config):
     """
 
     def run(self) -> List[Dict[assignments.tid_t, assignments.graph_db_entry]]:
+        """
+        compute_config_gradient::run
+        """
         # print("Starting calculation", self)
         csys = self.csys
         gdb = self.GDB
@@ -198,10 +201,7 @@ class compute_config_gradient(compute_config):
                 # pos0 = assignments.graph_db_entry_to_graph_assignment(gdb, assignments.POSITIONS, gid)
 
                     pos0 = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
-                    for k, v in self.keys.items():
-                        # dprint(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.10g} to {v:.10g} d={v-mm.chemical_system_get_value(csys, k):.10g}", on=verbose)
-                        # mm.chemical_system_set_value(csys, k, v)
-                        mm.physical_system_set_value(psys, k, v)
+                    # psys = mm.chemical_system_to_physical_system(csys, [pos0], ref=self.psys, reuse=self.reuse)
                     system.append(pos0)
 
 
@@ -214,6 +214,10 @@ class compute_config_gradient(compute_config):
                 # such as (gid, sid, rid)
 
                 psys = mm.chemical_system_to_physical_system(csys, system, ref=self.psys, reuse=self.reuse)
+                for k, v in self.keys.items():
+                    # dprint(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.10g} to {v:.10g} d={v-mm.chemical_system_get_value(csys, k):.10g}", on=verbose)
+                    # mm.chemical_system_set_value(csys, k, v)
+                    mm.physical_system_set_value(psys, k, v)
 
                 # this must put everything in the psys into a single system
                 # this must mean that we flatten
@@ -411,7 +415,7 @@ class objective_config_gradient(objective_config):
         dx = arrays.array_scale(dx, 1.0/(2*h))
         DX = 2 * arrays.array_inner_product(X0, dx)
 
-        return dx
+        return DX
 
     def compute_diff(self, GDB: assignments.graph_db, D: List[Dict[int, assignments.graph_db_table]]):
         """
@@ -575,6 +579,7 @@ def gdb_to_physical_systems(gdb, csys, ref=None, reuse=None):
             print("Exception:")
             print(e)
             failures += 1
+            raise e
     if len(gdb.entries) > 100:
         print()
     if failures:
@@ -716,12 +721,27 @@ def forcefield_optimization_strategy_default(csys, models=None):
     determines how to step the optimization forward, choosing which hyperparameter
     to try next
     """
+    if models is None:
+        models = {}
+    elif type(models) is not dict:
+        models = {i: None for i in models}
 
     bounds = {}
+    strat = forcefield_optimization_strategy(bounds)
     for m, cm in enumerate(csys.models):
-        if models is not None and m not in models:
+        if m not in models:
             continue
+
+
         for h, hidx in enumerate(mm.chemical_model_iter_smarts_hierarchies(cm)):
+
+            nodes = [n.name for n in hidx.index.nodes.values() if n.type == "parameter"]
+            strat.reference_list.extend(nodes)
+
+            assert type(models[m]) is not str
+            if models[m] is not None:
+                strat.target_list.extend(models[m])
+
             splitter = configs.smarts_splitter_config(
                 1, 1, 0, 0, 0, 0, True, True, 0, True, True, True, True
             )
@@ -730,8 +750,9 @@ def forcefield_optimization_strategy_default(csys, models=None):
             )
             bounds[m] = configs.smarts_perception_config(splitter, extender)
             break
-    
-    return forcefield_optimization_strategy(bounds)
+
+    strat.bounds.update(bounds)
+    return strat
 
 
 class forcefield_optimization_strategy(optimization.optimization_strategy):
@@ -794,6 +815,8 @@ class forcefield_optimization_strategy(optimization.optimization_strategy):
         self.prune_empty = True
 
 
+        self.reference_list = []
+
         # Do not merge these
         self.merge_protect_list = []
 
@@ -807,6 +830,7 @@ class forcefield_optimization_strategy(optimization.optimization_strategy):
         self.filter_above: float = 0.0
 
         self.keep_below: float = 0.0
+
     def macro_iteration(
         self, clusters: List[trees.tree_node]
     ) -> optimization.optimization_iteration:
@@ -1157,7 +1181,7 @@ def ff_optimize(
 
     repeat = set()
     visited = set()
-    iteration = 1
+    iteration = 0
     N_str = "{:" + str(len(str(n_ics))) + "d}"
     success = False
 
@@ -1197,8 +1221,8 @@ def ff_optimize(
 
 
     fitkeys = objective_tier_get_keys(initial_objective, csys)
-    fitkeys = [k for k in fitkeys if k[1] in "skeler"]
     fitting_models = set((k[0] for k in fitkeys))
+    fitkeys = [k for k in fitkeys if k[1] in "skeler" and k[2] in assigned_nodes or k[0] not in fitting_models]
     reuse0=[k for k,_ in enumerate(csys0.models) if k not in fitting_models]
     kv, P00, P0, gp0 = objective_tier_run(
         initial_objective,
@@ -1217,8 +1241,9 @@ def ff_optimize(
     CP0 = P0
     CX0 = mm.chemical_system_smarts_complexity(csys)
 
-    C0 = chemical_objective(csys, P0=CP0, C0=CX0)
-    C = C0
+    C00 = chemical_objective(csys, P0=CP0, C0=CX0)
+    C0 = C00
+    C = C00
     print(f"{datetime.datetime.now()} C0={C0}")
     X0 = P0 + C0
     P = P0
@@ -1305,6 +1330,7 @@ def ff_optimize(
         print(f"Step tracker for current macro step {strategy.cursor+1}")
         for n, v in step_tracker.items():
             print(n, v + 1)
+        print()
 
         # has all nodes
         macro: optimization.optimization_iteration = strategy.macro_iteration(
@@ -1316,26 +1342,36 @@ def ff_optimize(
         n_added = 0
         n_macro = len(strategy.steps)
 
+        mdls = set([m for mstep in strategy.steps[strategy.cursor-1].steps for m in mstep.models])
+        mds = " ".join([f"{i}:{csys.models[i].name}" for i in mdls])
         t = datetime.datetime.now()
-        for micro in macro.steps:
-            config = micro.pcp
-
-            spg = "Y" if config.splitter.split_general else "N"
-            sps = "Y" if config.splitter.split_specific else "N"
-            print(
-                f"\n*******************\n {t}"
-                f" iteration={iteration:4d}"
-                f" macro={strategy.cursor:3d}/{n_macro}"
-                f" X={X0:9.5g}"
-                # f" params=({len(cst.mappings)}|{N})"
-                f" G={spg}"
-                f" S={sps}"
-                f" bits={config.splitter.bit_search_min}->{config.splitter.bit_search_limit}"
-                f" depth={config.splitter.branch_depth_min}->{config.splitter.branch_depth_limit}"
-                f" branch={config.splitter.branch_min}->{config.splitter.branch_limit}"
-            )
-            print(f"*******************")
-            print()
+        print("*******************")
+        print(
+            f" iteration={iteration:4d}"
+            f" macro={strategy.cursor:3d}/{n_macro}"
+            f" micro={len(macro.steps)}"
+            f" X={X0:9.5g} P={P0:9.5g} C={C0:9.5g}"
+            f" models={mds}"
+        )
+        print("*******************")
+        # for mi, micro in enumerate(macro.steps, 1):
+        #     config = micro.pcp
+        #     spg = "Y" if config.splitter.split_general else "N"
+        #     sps = "Y" if config.splitter.split_specific else "N"
+        #     mds = " ".join([f"{i}:{csys.models[i].name}" for i in micro.models])
+        #     print(
+        #         # f"\n*******************\n {t}"
+        #         f"   micro={mi}/{len(macro.steps)}"
+        #         f"   name={micro.cluster.name}
+        #         f"   G={spg}"
+        #         f"   S={sps}"
+        #         f"   bits={config.splitter.bit_search_min}->{config.splitter.bit_search_limit}"
+        #         f"   depth={config.splitter.branch_depth_min}->{config.splitter.branch_depth_limit}"
+        #         f"   branch={config.splitter.branch_min}->{config.splitter.branch_limit}"
+        #         f"   forces={mds}"
+        #     )
+        # print(f"*******************")
+        print()
         # print("Tree:")
         # for ei, e in enumerate(
         #     mm.chemical_system_iter_smarts_hierarchies_nodes(csys)
@@ -1440,7 +1476,7 @@ def ff_optimize(
 
             t = datetime.datetime.now()
             print(
-                f" =="
+                f"\n =="
                 f" iteration={iteration:4d}"
                 f" macro={strategy.cursor:3d}/{n_macro}"
                 f" micro={macro.cursor:3d}/{n_micro}"
@@ -1453,8 +1489,8 @@ def ff_optimize(
                 f" bits={config.splitter.bit_search_min}->{config.splitter.bit_search_limit}"
                 f" depth={config.splitter.branch_depth_min}->{config.splitter.branch_depth_limit}"
                 f" branch={config.splitter.branch_min}->{config.splitter.branch_limit}"
+                f"\n"
             )
-            print()
 
             if step.operation == strategy.SPLIT:
                 new_pq = []
@@ -1906,10 +1942,11 @@ def ff_optimize(
                 cout_line = (
                     f"{F} Cnd. {cnd_i:4d}/{len(work)}"
                     f" N= {match_len:6d}"
-                    f" dP= {dP:10.5f}"
-                    f" dC= {dC:10.5f}"
+                    f" dP= {dP:14.5f}"
+                    f" dC= {dC:14.5f}"
                     # f" X0= {X0:10.5f}"
-                    f" d(P+C)= {dP+dC:10.5f}"
+                    f" d(P+C)= {dP+dC:14.5f}"
+                    f" d%= {100*(dP+dC)/(P0+C0):10.3f}%"
                     f" {S.name:6s}  " 
                     f" {Sj_sma[cnd_i-1]}"
                 )
@@ -2139,15 +2176,16 @@ def ff_optimize(
                 cout_line = (
                     f"Cnd. {cnd_i:4d}/{len(work)}"
                     f" N= {match_len:6d} K= {K}"
-                    f" dP= {dP:10.5f}"
-                    f" dC= {dC:10.5f}"
-                    f" d(P+C)= {dP+dC:10.5f}"
+                    f" dP= {dP:14.5f}"
+                    f" dC= {dC:14.5f}"
+                    f" d(P+C)= {dP+dC:14.5f}"
+                    f" d%= {100*(dP+dC)/(P0+C0):10.3f}%"
                     f" {S.name:6s} {reused_line}" 
                     f" {Sj_sma[cnd_i-1]}"
                 )
                 max_line = max(len(cout_line), max_line)
                 # print(datetime.datetime.now())
-                print(cout_line, end=" " * (max_line - len(cout_line)))
+                print(cout_line, end=" " * (max_line - len(cout_line)) + '\n')
                 sys.stdout.flush()
 
                 if match_len == 0:
@@ -2377,7 +2415,7 @@ def ff_optimize(
                 # for k, v in kv0.items():
                 #     print(f"{str(k):20s} | v0 {v:12.6g}")
                 print_chemical_system(csys, show_parameters=assigned_nodes.union([x.name for x in nodes.values()]))
-                kv, P00, P, gp = objective_tier_run(
+                kv, _, P, gp = objective_tier_run(
                     initial_objective,
                     gdb,
                     csys,
@@ -2607,7 +2645,7 @@ def ff_optimize(
 
     print_chemical_system(csys, show_parameters=assigned_nodes)
 
-    return csys, P, C
+    return csys, (P00, P), (C00, C)
 
 def calc_tier_distributed(S, Sj, operation, edits, oid, verbose=False, wq=None, shm=None):
 
@@ -2739,9 +2777,18 @@ def print_chemical_system(csys, show_parameters=None):
                     sma = hidx.smarts.get(e.index, "")
                     if sma is None:
                         sma = ""
+                    
+                    cm: mm.chemical_model = mm.chemical_system_get_node_model(csys, e)
+                    params = []
+                    for term_sym, term in cm.topology_terms.items():
+                        param_vals = term.values.get(e.name)
+                        if param_vals is not None:
+                            params.append(f"{term_sym}: {param_vals}")
+                    sma = hidx.smarts.get(e.index)
+                    if sma is None:
+                        sma = ""
                     print(
-                        f"** {s:2d} {ei:3d} {w}{e.name:4s}",
-                        hidx.smarts.get(e.index, ""),
+                        f"{s:2d} {ei:3d} {w}{e.name:4s}", sma, ' '.join(params)
                     )
 
 

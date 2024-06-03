@@ -137,6 +137,7 @@ class optimization_strategy:
         # prevent zero-matching SMARTS from being added.
         self.prune_empty = True
 
+        self.reference_list = []
 
         # Do not merge these
         self.merge_protect_list = []
@@ -260,6 +261,8 @@ def optimization_strategy_iteration_next(
         for s in macro.steps:
             for p in clusters:
                 if s.models and p.category[0] not in s.models:
+                    continue
+                if p.name in oi.reference_list and p.name not in oi.target_list:
                     continue
                 s = optimization_step_copy(s)
                 s.cluster = p
