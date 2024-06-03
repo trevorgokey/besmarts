@@ -1,19 +1,21 @@
-Force field fitting
+Force Field Fitting
 ===================
 
 The most interesting application, and largely the application that inspired
-this package, was force field fitting with automatic chemical perception. What
+this package, is force field fitting with automatic chemical perception. What
 this means is that we want the code to fit the force field parameters, but also
 find the best parameters that give the best fit as well.
 
 This example tries to split the parameter b4 from OpenFF 2.1.0 using a single
-molecule. The physical objectives to fit to are the geometry and forces from
-a DFT calculation using B3LYP-D3BJ/DZVP in Psi4. This example will first fit
-the physical parameters before splitting, and then try to find new bond parameters
-that are able to further improve the fit (only targeting b4). The physical
-parameter fits will only adjust the bonds, and so angles, torsions, non-bonded,
-etc. are all unchanged throughout the run. Furthermore, only the equilibrium
-lengths of the bonds will be modified.
+molecule. The SMILES is "C1=CC=C(C(=O)Cl)O1" although we need a fully
+hydrogenated, indexed SMILES in order for the code to work (to match the xyz
+coordinates produced by a DFT optimization). The physical objectives to fit to
+are the geometry and forces from a DFT calculation using B3LYP-D3BJ/DZVP in
+Psi4. This example will first fit the physical parameters before splitting, and
+then try to find new bond parameters that are able to further improve the fit
+(only targeting b4). The physical parameter fits will only adjust the bonds,
+and so angles, torsions, non-bonded, etc. are all unchanged throughout the run.
+Furthermore, only the equilibrium lengths of the bonds will be modified.
 
 .. code-block:: python
 
@@ -41,17 +43,17 @@ lengths of the bonds will be modified.
 >>> 
 >>> xyz_positions = """11
 >>> 
->>>   C -1.44819400 -0.84940800  0.16848900
->>>   C -1.59401300  0.50318700 -0.01678100
->>>   C -0.27397600  1.02622600 -0.13503500
->>>   C  0.58064400 -0.04716400 -0.01303100
->>>   C  2.03461200 -0.06860900 -0.05925200
->>>   O  2.72809700  0.90108700 -0.21909900
->>>  Cl  2.76214600 -1.70734100  0.14655600
->>>   O -0.13897300 -1.20044600  0.17351800
->>>   H -2.15226800 -1.65836100  0.30609000
->>>   H -2.52743000  1.04809900 -0.06180000
->>>   H  0.02935200  2.05273200 -0.28965800
+>>>   C -1.448194 -0.849408  0.168489
+>>>   C -1.594013  0.503187 -0.016781
+>>>   C -0.273976  1.026226 -0.135035
+>>>   C  0.580644 -0.047164 -0.013031
+>>>   C  2.034612 -0.068609 -0.059252
+>>>   O  2.728097  0.901087 -0.219099
+>>>  Cl  2.762146 -1.707341  0.146556
+>>>   O -0.138973 -1.200446  0.173518
+>>>   H -2.152268 -1.658361  0.306090
+>>>   H -2.527430  1.048099 -0.061800
+>>>   H  0.029352  2.052732 -0.289658
 >>> """
 >>> xyz_grad = """11
 >>> 
@@ -1391,17 +1393,17 @@ which dropped the objective further. In particular, it specialized the somewhat
 generic `[#6X3:1]-[#6X3:2]` b4 bond with `[#6H0X3:1]-[#6X3:2]`. The new bond
 increased the bond length to 1.474 A, while the original b4 parameter was
 originally at 1.466 A but dropped to 1.296 A in the final result. One thing to
-examine is the objective change after the initial fit, but before any
-parameters bond were added. From the output, we see that the total objective
-after the first fit is 203451.60610, reduced by 80% of the objective produced
-by OpenFF 2.1.0; this means that the improvement due to adding the B91 was
-65587, or 67% from the fit objective (and 93% of OpenFF 2.1.0). Most of the
-improvement was from fitting the force. It is important to note that the
-geometry was not ruined either; the initial geometry objective was 0.1174278
-A^2 in 2.1.0. The objective is the Cartesian residual sum of squares (RSS) in
-Angstroms, and so this objective indicates a relatively good geometry. Fitting
-lead to a geometry objective of 0.006199739, and after adding the new bond
-parameter the geometry objective increased to 0.01468777, although both are
+examine is the objective change after the initial fit, but before any bond
+parameters were added. From the output, we see that the total objective after
+the first fit is 203451.60610, or reduced by 80% of the objective produced by
+OpenFF 2.1.0. The improvement due to adding the B91 was 65587, or 67% from the
+fit objective (and 93% of OpenFF 2.1.0). Most of the improvement was from
+fitting the force. It is important to note that the geometry was not ruined
+either; the initial geometry objective was 0.1174278 A^2 in 2.1.0. The
+objective is the Cartesian residual sum of squares (RSS) in Angstroms, and so
+this objective indicates a relatively good MM-minimized geometry. Fitting lead
+to a geometry objective of 0.006199739 A^2, and after adding the new bond
+parameter the geometry objective increased to 0.01468777 A^2, of which both are
 smaller than the original objective.
 
 
