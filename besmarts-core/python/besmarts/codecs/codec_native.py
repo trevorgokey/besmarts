@@ -38,8 +38,10 @@ def primitive_load(line, primitive_codecs):
 
 def graph_load(lines, dtype=arrays.bitvec):
 
-    if type(lines[0]) is str:
+    if type(lines[0]) is str and type(lines) is str:
         lines = [l.split() for l in lines.split('\n') if l]
+    elif type(lines[0]) is str and type(lines) is list:
+        lines = [l.split() for l in lines if l]
 
     atom_codecs = [key for key in primitives.primitive_key_set]
     bond_codecs = [key for key in primitives.primitive_key_set]
