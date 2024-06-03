@@ -198,7 +198,7 @@ def objective_gradient_gdb(args, keys, csys, gdb, obj, history=None, psysref=Non
             results[i] = task.run()
         # results = {i: task.run() for i, task in tasks.items()}
     # print("Tasks done. Calculating objective")
-    logs.dprint(f"{logs.timestamp()} Calculating {len(tasks)} objectives", on=verbose)
+    logs.dprint(f"{logs.timestamp()} Calculating {len(tasks)} tasks", on=verbose)
     X = 0
     grad = list([0.0] * len(keys))
     for i, x in obj.items():
@@ -219,7 +219,8 @@ def objective_gradient_gdb(args, keys, csys, gdb, obj, history=None, psysref=Non
             dxa = results[(n, (i,-j))]
             # print("DXA", dxa[0][0].graphs[0].rows[0].columns[0].selections)
             # print("DXB", dxb[0][0].graphs[0].rows[0].columns[0].selections)
-            dxdp = x.scale*x.compute_gradient_2pt(dx, dxa, dxb, h[j-1])
+            dxdp = x.compute_gradient_2pt(dx, dxa, dxb, h[j-1])
+            dxdp *= x.scale
             # print("dxdp", dxdp)
             grad[j-1] += dxdp
             gradx[j-1] += dxdp
@@ -228,12 +229,12 @@ def objective_gradient_gdb(args, keys, csys, gdb, obj, history=None, psysref=Non
         
         gnormx = arrays.array_inner_product(gradx, gradx)**.5
         if verbose:
-            print(f"  {i:04d} | X2= {x2:10.5g} |g|= {gnormx:10.5g}")
+            print(f"  {i:04d} | X2= {x2:12.7g} |g|= {gnormx:12.7g}")
 
         
     gnorm = arrays.array_inner_product(grad, grad)**.5
     if verbose:
-        print(f">>> X2= {X:10.5g} |g|={gnorm:10.5g}")
+        print(f">>> X2= {X:12.7g} |g|={gnorm:12.7g}")
     logs.dprint(f"{logs.timestamp()} Done. {len(tasks)} tasks complete", on=verbose)
     history.append(X)
     return X, grad
@@ -266,7 +267,7 @@ def fit_grad_gdb(args, keys, csys, gdb, obj, history=None, psysref=None, reuse=N
             # if abs(dv) < 1e-6:
             #     dv = 0.0
             # mm.chemical_system_set_value(csys, k, v0)
-            print(f"Setting {k} from {v0:.10g} to {v:.10g} d={v-v0:.10g}")
+            print(f"Setting {str(k):20s} from {v0:15.7g} to {v:15.7g} d={v-v0:15.7g}")
 
     # reuse = list(reuse)
     X, g = objective_gradient_gdb(args, keys, csys, gdb, obj, history=history, psysref=psysref, reuse=reuse, ws=ws, verbose=verbose)
@@ -299,11 +300,11 @@ def optimize_forcefield_gdb_scipy(x0, args, bounds=None, step_limit=None):
     # y0 = None
     # y0, g0 = objective_gradient_gdb(x0, keys, csys, gdb, obj, history=history, psysref=psysref, reuse=reuse, ws=ws, verbose=verbose)
 
-    opts = {'disp': verbose, 'maxls': 100, 'iprint': 1000 if verbose else 0, 'ftol': 1e-4, 'gtol': 1e-3}
+    opts = {'disp': verbose, 'maxls': 100, 'iprint': 1000 if verbose else 0, 'ftol': 1e-3, 'gtol': 1e-2}
     if step_limit:
         opts['maxiter'] = int(step_limit)
     if verbose:
-        print(datetime.datetime.now(), "Calculating fit")
+        print(datetime.datetime.now(), "Starting physical parameter optimization")
     result = scipy.optimize.minimize(
         fit_grad_gdb,
         x0,
