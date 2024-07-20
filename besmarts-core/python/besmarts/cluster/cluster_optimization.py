@@ -129,14 +129,14 @@ def cluster_means(
     objective: clusters.clustering_objective = None,
     optimization: optimization.optimization_strategy = None,
     initial_conditions: clusters.smarts_clustering = None,
-):
+) -> clusters.smarts_clustering:
 
     if objective is None:
         objective = cluster_objective.clustering_objective_mean_separation()
 
     if optimization is None:
         splitter = configs.smarts_splitter_config(
-            1, 3, 0, 3, 0, 1, True, True, 100, True, True, True, True
+            1, 3, 0, 3, 0, 1, True, True, 0, True, True, True, True
         )
         extender = configs.smarts_extender_config(
             0, 1, True
