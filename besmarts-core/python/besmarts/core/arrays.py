@@ -352,6 +352,9 @@ def batched(iterable, n: int):
 def argmax(iterable):
     return max(enumerate(iterable), key=lambda x: x[1])[0]
 
+def argmin(iterable):
+    return min(enumerate(iterable), key=lambda x: x[1])[0]
+
 def find_unsigned_typecode_min(N: int):
     code = None
     for c in "QLIHB":
@@ -381,14 +384,23 @@ def flatten_list(l, times=1):
 def array_scale(a, s):
     return type(a)((i*s for i in a))
 
+def array_sum(a):
+    return sum(a)
+
+def array_mean(a):
+    return sum(a)/len(N)
+
 def array_add(a, b):
-    return type(a)((i+j for i,j in zip(a,b)))
+    return type(a)(((i+j for i,j in zip(a,b))))
 
 def array_difference(a, b):
-    return type(a)((i-j for i,j in zip(a,b)))
+    return type(a)(((i-j for i,j in zip(a,b))))
 
 def array_multiply(a, b):
-    return type(a)((i*j for i,j in zip(a,b)))
+    return type(a)(((i*j for i,j in zip(a,b))))
+
+def array_divide(a, b):
+    return type(a)(((i/j for i,j in zip(a,b))))
 
 def array_inner_product(a, b):
     return sum((i*j for i,j in zip(a,b)))
@@ -419,6 +431,9 @@ def array_magnitude(a) -> float:
 
 def array_distance(a,b) -> float:
     return sum([x*x for x in array_difference(b,a)])**.5
+
+def array_round(a, b) -> List[float]:
+    return [round(x, b) for x in a]
 
 def measure_distance(xyz1, xyz2):
 
