@@ -24,6 +24,8 @@ class optimization_step:
         self.direct_limit = 10
         self.iterative_enable = True
         self.models = []
+        self.modify_outofplane_frequency_limit = 12
+        self.modify_torsion_frequency_limit = 12
 
     def copy(self):
         return optimization_step_copy(self)
@@ -40,6 +42,8 @@ def optimization_step_copy(step) -> optimization_step:
     s.direct_enable = step.direct_enable
     s.direct_limit = step.direct_limit
     s.iterative_enable = step.iterative_enable
+    s.modify_outofplane_frequency_limit = step.modify_outofplane_frequency_limit
+    s.modify_torsion_frequency_limit = step.modify_torsion_frequency_limit
     s.models = step.models.copy()
     return s
 
@@ -105,7 +109,7 @@ class optimization_strategy:
         self.enable_split = True
         self.enable_modify = False
 
-        self.steps: List[optimization_iteration] = []
+        self.steps: List[optimization_iteration] = None
         self.tree_iterator: Callable = tree_iterators.tree_iter_dive
 
         self.step_tracker = {}
@@ -170,7 +174,7 @@ class optimization_strategy:
         -------
         optimization_step
         """
-        if not self.steps:
+        if self.steps is None:
             self.build_steps()
         return optimization_strategy_iteration_next(self, clusters)
 
@@ -188,6 +192,8 @@ class optimization_strategy:
         return optimization_strategy_repeat_step(self)
 
     def build_steps(self):
+        if self.steps is None:
+            self.steps = []
         self.steps.extend(
             optimization_strategy_build_macro_iterations(self)
         )
@@ -196,13 +202,13 @@ class optimization_strategy:
 def optimization_strategy_restart(os: optimization_strategy):
     os.repeat = False
     os.cursor = -1
-    os.steps.clear()
-    os.build_steps()
+    if not os.steps:
+        os.build_steps()
     return os
 
 
 def optimization_strategy_is_done(os) -> bool:
-    if not os.steps:
+    if os.steps is None:
         os.build_steps()
 
     return (not os.repeat) and os.cursor >= len(os.steps)
@@ -225,7 +231,7 @@ def optimization_iteration_next(oi) -> optimization_step:
         oi.cursor -= 1
         oi.repeat = False
 
-    if oi.is_done():
+    if not oi.steps or oi.is_done():
         step = optimization_step()
         step.index = -1
     else:
@@ -245,15 +251,17 @@ def optimization_strategy_iteration_next(
 
     macro = None
 
-    if not oi.steps:
+    if oi.steps is None:
+        oi.steps = []
         oi.steps.extend(oi.build_steps())
 
-    if oi.is_done():
+    if not oi.steps or oi.is_done():
         step = optimization_step()
         step.index = -1
         macro = optimization_iteration([step])
 
     else:
+        oi.cursor = max(0, oi.cursor)
         macro = oi.steps[oi.cursor]
         micros = []
         n = 0
