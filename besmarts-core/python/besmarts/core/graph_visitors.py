@@ -621,10 +621,27 @@ def structure_iter_bits(
 ) -> Generator[graphs.structure, None, None]:
     bes = graphs.structure_remove_unselected(bes)
 
+    # this magic spell iterates from the center outward rather than left->right
+    # 1, -> 1,
+    # 1,2 -> 1,2
+    # 1,2,3 -> 2,1,3
+    # 1,2,3,4 -> 2,3,1,4
+    # also nice because 2 is the center of an outofplane
+
+    N = len(bes.topology.primary)
+    lhs = list(bes.topology.primary[:N//2][::-1])
+    rhs = list(bes.topology.primary[N//2:])
+    if len(lhs) == len(rhs):
+        primary = []
+    else:
+        primary = [rhs.pop(0)]
+    h = lhs,rhs
+    primary.extend((h[i%2][i//2] for i in range(N+1) if i//2 < len(h[i%2])))
+
     seq = enter_graph(
         index_visitor(),
         bes,
-        primary=[bes.select[i] for i in bes.topology.primary],
+        primary=[bes.select[i] for i in primary],
         tag=None,
     )
 
