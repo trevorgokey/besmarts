@@ -14,7 +14,7 @@ setuptools.setup(
     url='https://github.com/trevorgokey/besmarts',
     long_description=long_description,
     long_description_content_type="text/markdown",
-    packages=setuptools.find_namespace_packages(exclude='besmarts.misc'),
+    packages=['besmarts'],
     install_requires=requirements,
     classifiers=[
         'Programming Language :: Python :: 3.6',
@@ -31,5 +31,6 @@ setuptools.setup(
     extras_require={
         "rdkit": ['besmarts-rdkit'],
         "scipy": ['besmarts-scipy'],
+        "openmm": ['besmarts-openmm'],
     }
 )
