@@ -19,6 +19,7 @@ from besmarts.core import chem
 from besmarts.core import topology
 from besmarts.core import geometry
 from besmarts.core import configs
+from besmarts.core import primitives
 
 from besmarts.core.primitives import primitive_key
 
@@ -1262,7 +1263,14 @@ def graph_topology(g, topo):
 
     return []
 
-
+def graph_symbols(g: graph):
+    s = {}
+    for n in sorted(g.nodes):
+        node = g.nodes[n]
+        assert "element" in node.primitives
+        e = node.primitives['element'].on()[0]
+        s[n] = primitives.element_tr[str(e)]
+    return s
 
 def subgraph_connection(g: subgraph, a: int) -> Sequence[node_id]:
     """
@@ -2489,7 +2497,7 @@ def graph_shortest_path(g: graph, a: node_id, b: node_id, adj=None) -> Sequence[
     if b in path:
         path = tuple([a] + path[b])
     else:
-        path = None
+        path = tuple()
     # g.cache["shortest_path"][(a, b)] = path
     if debug:
         print("returned", path)
