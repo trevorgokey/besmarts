@@ -220,14 +220,16 @@ def rdkit_sdf_to_smiles_assignment(sdf) -> Tuple[assignments.smiles_assignment, 
 
     smi = Chem.MolToSmiles(mol)
 
-    conf = mol.GetConformers()[0]
 
     sel = {}
     for atom in mol.GetAtoms():
         idx = atom.GetIdx()
-        i = indices[idx]
-        xyz = conf.GetAtomPosition(idx)
-        sel[i,] = list(xyz)
+        i = indices[idx],
+        if i not in sel:
+            sel[i] = []
+        for conf in mol.GetConformers():
+            xyz = conf.GetAtomPosition(idx)
+            sel[i].append(list(xyz))
 
     extras = mol.GetPropsAsDict()
 
