@@ -6,6 +6,7 @@ import sys
 import os
 
 from besmarts.core import compute
+from besmarts.core import configs
 
 if __name__ == "__main__":
     ip = '127.0.0.1'
@@ -18,6 +19,7 @@ if __name__ == "__main__":
         pt = int(sys.argv[2])
     if len(sys.argv) > 3:
         processes=int(sys.argv[3])
+        configs.processors = processes
     if len(sys.argv) > 4:
         queue_size=int(sys.argv[4])
 
