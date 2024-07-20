@@ -10,7 +10,7 @@ from besmarts.core.clusters import clustering_objective
 
 
 class clustering_objective_mean_separation(clustering_objective):
-    def __init__(self, split_separation=1.0, merge_separation=1.0):
+    def __init__(self, split_separation=0.1, merge_separation=0.1):
         self.split_separation = split_separation
         self.merge_separation = merge_separation
 
