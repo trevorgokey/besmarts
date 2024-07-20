@@ -244,7 +244,7 @@ def chemical_model_torsion_periodic_smirnoff(
     cm = chemical_model_dihedral_periodic_smirnoff(d, pcp)
     cm.topology = topology.torsion
     cm.name = "Torsions"
-    cm.symbol = "I"
+    cm.symbol = "T"
     cm.internal_function = assignments.graph_assignment_geometry_torsions
     cm.derivative_function = assignments.graph_assignment_jacobian_torsions
     smirnoff_dihedral_load(cm, pcp, d)
@@ -293,7 +293,7 @@ def chemical_model_electrostatics_smirnoff(d: Dict, pcp) -> mm.chemical_model:
         cm.topology_terms
     )
     pid = len(cm.procedures)
-    proc.name = "Electrostatics combine"
+    proc.name = "Electrostatics combining"
     cm.procedures.append(proc)
 
     proc = mm.chemical_model_procedure_smarts_assignment(
@@ -317,6 +317,7 @@ def chemical_model_electrostatics_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     proc.smarts_hierarchies[0].smarts[i.index] = "[*:1].[*:2]"
     proc.topology_parameters[(0, i.name)] = {"s": i.name}
     cm.topology_terms["s"].values[i.name] = [1.0]
+    proc.default_parameter = "s1"
 
     # 12 scaling is skipped as it is not a valid pair
     # i = proc.smarts_hierarchies[0].index.node_add_below(None)
@@ -434,6 +435,7 @@ def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     proc.smarts_hierarchies[0].smarts[i.index] = "[*:1].[*:2]"
     proc.topology_parameters[(0, i.name)] = {"s": i.name}
     cm.topology_terms["s"].values[i.name] = [1.0]
+    proc.default_parameter = "s1"
 
     # 12 scaling is skipped as it is not a valid pair
     # i = proc.smarts_hierarchies[0].index.node_add_below(None)
