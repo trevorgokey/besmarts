@@ -46,7 +46,7 @@ class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
         self.topology_terms = topology_terms
         self.procedure_parameters = {}
 
-    def assign(self, cm: mm.chemical_model, pm: mm.physical_model) -> mm.physical_model:
+    def assign(self, cm: mm.chemical_model, pm: mm.physical_model, overrides=None) -> mm.physical_model:
         """
         """
         symbol = "qq"
@@ -64,7 +64,7 @@ class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
                 
                 with open(os.path.join(tmpfolder, "mdin"), "w") as f:
                     f.write(f"\n&qmmm\n")
-                    f.write(f"qm_theory='AM1', maxcyc=0, grms_tol=0.0005, scfconv=1.d-10, ndiis_attempts=700, qmcharge={q:d},\n")
+                    f.write(f"qm_theory='AM1', maxcyc=1000, grms_tol=0.0005, scfconv=1.d-10, ndiis_attempts=700, qmcharge={q:d},\n")
 
                     if "sqm" in self.procedure_parameters:
                         sqm_opts = procedure_parameters['sqm']
@@ -147,7 +147,7 @@ class chemical_model_procedure_combine_coulomb(mm.chemical_model_procedure):
         self.name = ""
         assert "qq" in top_parm
 
-    def assign(self, cm, pm):
+    def assign(self, cm, pm, overrides=None):
         params = pm.values
         pos = pm.positions
 
@@ -156,6 +156,12 @@ class chemical_model_procedure_combine_coulomb(mm.chemical_model_procedure):
             graphs.graph_pairs(pos[0].graph)
         ).selections
 
+        bonds = assignments.smiles_assignment_geometry_distances(
+            pos[0],
+            graphs.graph_bonds(pos[0].graph)
+        ).selections
+
+        pairs.update(bonds)
 
         for param in params:
             mixed = {}
@@ -180,7 +186,7 @@ class chemical_model_procedure_combine_lj_lorentz_berthelot(mm.chemical_model_pr
         assert "ee" in top_parm
         assert "rr" in top_parm
 
-    def assign(self, cm, pm):
+    def assign(self, cm, pm, overrides=None):
         params = pm.values
         pos = pm.positions
 
@@ -188,6 +194,13 @@ class chemical_model_procedure_combine_lj_lorentz_berthelot(mm.chemical_model_pr
             pos[0],
             graphs.graph_pairs(pos[0].graph)
         ).selections
+
+        bonds = assignments.smiles_assignment_geometry_distances(
+            pos[0],
+            graphs.graph_bonds(pos[0].graph)
+        ).selections
+
+        pairs.update(bonds)
 
         for param in params:
             mixed = {}
@@ -222,7 +235,12 @@ def chemical_model_coulomb(perception):
     cm.derivative_function = assignments.graph_assignment_jacobian_pairs
     cm.system_terms = {
         "c": mm.system_term("cutoff", "c", "float", "A", [10.0], ""),
-        "eps": mm.system_term("dielectric", "eps", "float", "kcal/mol*A/e/e", [332.0636], ""),
+        "eps": mm.system_term("dielectric", "eps", "float", "kcal/mol*A/e/e", [332.06371329919216], ""),
+        # originally using 332.063711 
+        #OpenMM ONE_4PI_EPS0 gives me 138.93545764438198 (in kJ and nm presumably)
+        # ONE_4PI_EPS0 is in openmm/platforms/reference/include/SimTKOpenMMRealType.h
+        #converting to kcal and ang gives me 332.06371329919216 and this makes me match
+        #every digit down to 1e-16
     }
 
     cm.topology_terms = {
