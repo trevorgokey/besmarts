@@ -8,6 +8,8 @@ from besmarts.core import topology
 from besmarts.core import assignments
 from besmarts.core import hierarchies
 from besmarts.core import trees
+from besmarts.core import arrays
+from besmarts.core import tree_iterators
 from besmarts.core import perception
 import pprint
 from besmarts.mechanics import molecular_models as mm
@@ -61,6 +63,7 @@ def chemical_model_bond_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
 
     uid = u.index
     for param in d["parameters"]:
+        param = param["Bond"]
         node = proc.smarts_hierarchies[u.index].index.node_add_below(
             root.index
         )
@@ -131,7 +134,7 @@ def chemical_model_angle_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
 
     uid = u.index
     for param in d["parameters"]:
-
+        param = param["Angle"]
         node = proc.smarts_hierarchies[u.index].index.node_add_below(
             root.index
         )
@@ -247,6 +250,10 @@ def chemical_model_torsion_periodic_smirnoff(
     cm.symbol = "T"
     cm.internal_function = assignments.graph_assignment_geometry_torsions
     cm.derivative_function = assignments.graph_assignment_jacobian_torsions
+
+    for i in range(len(d["parameters"])):
+        d["parameters"][i] = d["parameters"][i]["Proper"]
+
     smirnoff_dihedral_load(cm, pcp, d)
 
     return cm
@@ -262,6 +269,10 @@ def chemical_model_outofplane_periodic_smirnoff(
     cm.topology = topology.outofplane
     cm.internal_function = assignments.graph_assignment_geometry_outofplanes
     cm.derivative_function = assignments.graph_assignment_jacobian_outofplanes
+
+    for i in range(len(d["parameters"])):
+        d["parameters"][i] = d["parameters"][i]["Improper"]
+
     smirnoff_dihedral_load(cm, pcp, d)
 
     return cm
@@ -347,6 +358,227 @@ def chemical_model_electrostatics_smirnoff(d: Dict, pcp) -> mm.chemical_model:
 
     return cm
 
+def chemical_model_to_xml_dict(csys):
+
+    name_to_model = {
+        "Bonds": "Bonds",
+        "Angles": "Angles",
+        "Torsions": "ProperTorsion",
+        "OutOfPlanes": "ImproperTorsion",
+        "vdW": "vdW",
+        "LibraryCharges": "LibraryCharge",
+        "Constraints": "Constraint",
+        "ChargeIncrementModel": "ChargeIncrement"
+    }
+    model_to_parameter = {
+        "Bonds": "Bond",
+        "Angles": "Angle",
+        "ProperTorsions": "ProperTorsion",
+        "ImproperTorsions": "ImproperTorsion",
+        "vdW": "Atom",
+        "LibraryCharges": "LibraryCharge",
+        "Constraints": "Constraint",
+        "ChargeIncrementModel": "ChargeIncrement"
+    }
+    model_keys = {
+        "Bonds": ["smirks", "id", "k", "length"],
+        "Angles": ["smirks", "id", "k", "angle"],
+        "ProperTorsions": ["smirks", "id", "periodicity", "k", "phase"],
+        "ImproperTorsions": ["smirks", "id", "periodicity", "k", "phase"],
+        "vdW": ["smirks", "id", "epsilon", "sigma"],
+        "LibraryCharges": ["smirks", "id", "charge"],
+        "Constraints": ["smirks", "id", "c"],
+        "ChargeIncrementModel": ["smirks", "id", "charge"]
+    }
+    model_multi_parameter = {
+        "Bonds": False,
+        "Angles": False,
+        "ProperTorsions": True,
+        "ImproperTorsions": True,
+        "vdW": False,
+        "LibraryCharges": True,
+        "Constraints": True,
+        "ChargeIncrementModel": True
+    }
+
+    root_attrib = {
+        "version":"0.3", "aromaticity_model":"MDL"
+    }
+    xml = {
+        "SMIRNOFF": {
+            "options": {"version":"0.3", "aromaticity_model":"MDL"},
+            "parameters": [],
+        },
+        "Bonds": {
+            "options": dict(
+                version="0.4",
+                potential="harmonic",
+                fractional_bondorder_method="AM1-Wiberg",
+                fractional_bondorder_interpolation="linear"
+            ),
+            "parameters": []
+        },
+        "Angles": {
+            "options": dict(
+                version="0.3",
+                potential="harmonic"
+            ),
+            "parameters": []
+        },
+        "ProperTorsions": {
+            "options":  dict(
+                version="0.4",
+                potential="k*(1+cos(periodicity*theta-phase))",
+                default_idivf="auto",
+                fractional_bondorder_method="AM1-Wiberg",
+                fractional_bondorder_interpolation="linear"
+            ),
+            "parameters": []
+        },
+        "ImproperTorsions": {
+            "options": dict(
+                version="0.3",
+                potential="k*(1+cos(periodicity*theta-phase))",
+                default_idivf="auto",
+                fractional_bondorder_method="AM1-Wiberg",
+                fractional_bondorder_interpolation="linear"
+            ),
+            "parameters": []
+        },
+        "vdW": {
+            "options": dict(
+                version="0.3",
+                potential="Lennard-Jones-12-6",
+                combining_rules="Lorentz-Berthelot",
+                scale12="0.0",
+                scale13="0.0",
+                scale14="0.5",
+                scale15="1.0",
+                cutoff="9.0 * angstrom",
+                switch_width="1.0 * angstrom",
+                method="cutoff"
+            ),
+            "parameters": []
+        },
+        "Electrostatics": {
+            "options": dict(
+                version="0.3",
+                scale12="0.0",
+                scale13="0.0",
+                scale14="0.8333333333",
+                scale15="1.0",
+                cutoff="9.0 * angstrom",
+                switch_width="0.0 * angstrom",
+                method="PME"
+            ),
+            "parameters": []
+        },
+    }
+    units = {
+        "bond_l": " * angstrom",
+        "bond_k": " * angstrom**-2 * mole**-1 * kilocalorie",
+        "angle_l": " degree",
+        "angle_k": " * radian**-2 * mole**-1 * kilocalorie",
+        "dihedral_k": " * kilocalorie * mole**-1",
+        "dihedral_p": " * degree",
+        "vdw_e": " * kilocalorie * mole**-1",
+        "vdw_r": " * angstrom",
+    }
+
+    uid = 0
+    cm = [x for x in csys.models if x.name == "Bonds"][0]
+    hier = cm.procedures[0].smarts_hierarchies[uid]
+    tree = hier.index
+
+    for root in trees.tree_index_roots(tree):
+        for node in tree_iterators.tree_iter_dive(tree, root):
+            if root.index == node.index:
+                continue
+            pvals = {
+                "smirks": hier.smarts[node.index],
+                "id": node.name,
+                "k": str(round(cm.topology_terms["k"].values[node.name][0], 12)) + units["bond_k"],
+                "length": str(round(cm.topology_terms["l"].values[node.name][0], 12)) + units["bond_l"]
+            }
+            xml["Bonds"]["parameters"].append({"Bond": pvals})
+
+    cm = [x for x in csys.models if x.name == "Angles"][0]
+    hier = cm.procedures[0].smarts_hierarchies[uid]
+    tree = hier.index
+    for root in trees.tree_index_roots(tree):
+        for node in tree_iterators.tree_iter_dive(tree, root):
+            if root.index == node.index:
+                continue
+            pvals = {
+                "smirks": hier.smarts[node.index],
+                "id": node.name,
+                "k": str(round(cm.topology_terms["k"].values[node.name][0], 12)) + units["angle_k"],
+                "angle": str(round(cm.topology_terms["l"].values[node.name][0]*180/math.pi, 12)) + units["angle_l"]
+            }
+            xml["Angles"]["parameters"].append({"Angle": pvals})
+
+    cm = [x for x in csys.models if x.name == "Torsions"][0]
+    hier = cm.procedures[0].smarts_hierarchies[uid]
+    tree = hier.index
+
+    for root in trees.tree_index_roots(tree):
+        for node in tree_iterators.tree_iter_dive(tree, root):
+            if root.index == node.index:
+                continue
+            nl = cm.topology_terms["n"].values[node.name]
+            pl = arrays.array_round(cm.topology_terms["p"].values[node.name], 12)
+            kl = arrays.array_round(cm.topology_terms["k"].values[node.name], 12)
+
+            pvals = {
+                "smirks": hier.smarts[node.index],
+                "id": node.name
+            }
+            for i, (n, p, k) in enumerate(zip(nl, pl, kl), 1):
+                i = str(i)
+                pvals["periodicity"+i] = str(int(n))
+                pvals["phase"+i] = str(p*180/math.pi) + units["dihedral_p"]
+                pvals["k"+i] = str(k) + units["dihedral_k"]
+
+            xml["ProperTorsions"]["parameters"].append({"Proper": pvals})
+
+    cm = [x for x in csys.models if x.name == "OutOfPlanes"][0]
+    hier = cm.procedures[0].smarts_hierarchies[uid]
+    tree = hier.index
+    for root in trees.tree_index_roots(tree):
+        for node in tree_iterators.tree_iter_dive(tree, root):
+            if root.index == node.index:
+                continue
+            nl = cm.topology_terms["n"].values[node.name]
+            pl = arrays.array_round(cm.topology_terms["p"].values[node.name], 12)
+            kl = arrays.array_round(cm.topology_terms["k"].values[node.name], 12)
+
+            pvals = {
+                "smirks": hier.smarts[node.index],
+                "id": node.name
+            }
+            for i, (n, p, k) in enumerate(zip(nl, pl, kl), 1):
+                i = str(i)
+                pvals["periodicity"+i] = str(int(n))
+                pvals["phase"+i] = str(p*180/math.pi) + units["dihedral_p"]
+                pvals["k"+i] = str(k) + units["dihedral_k"]
+            xml["ImproperTorsions"]["parameters"].append({"Improper": pvals})
+
+    cm = [x for x in csys.models if x.name == "vdW"][0]
+    hier = cm.procedures[0].smarts_hierarchies[uid]
+    tree = hier.index
+    for root in trees.tree_index_roots(tree):
+        for node in tree_iterators.tree_iter_dive(tree, root):
+            if root.index == node.index:
+                continue
+        pvals = {
+            "smirks": hier.smarts[node.index],
+            "id": node.name,
+            "epsilon": str(round(cm.topology_terms["e"].values[node.name][0], 12)) + units["vdw_e"],
+            "rmin_half": str(round(cm.topology_terms["e"].values[node.name][0] / 2 ** (5 / 6), 12)) + units["vdw_r"]
+        }
+        xml["vdW"]["parameters"].append({"Atom": pvals})
+
+    return xml
 
 def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     cm = force_pairwise.chemical_model_lennard_jones(pcp)
@@ -379,6 +611,7 @@ def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
 
     uid = u.index
     for param in d["parameters"]:
+        param = param["Atom"]
         node = proc.smarts_hierarchies[u.index].index.node_add_below(
             root.index
         )
@@ -465,6 +698,7 @@ def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
 
     return cm
 
+
 def smirnoff_load(
     fname, pcp: perception.perception_model
 ) -> mm.chemical_system:
@@ -499,3 +733,8 @@ def smirnoff_load(
             node.category = tuple([m, node.category[1], node.category[2]])
 
     return csys
+
+
+def smirnoff_write_version_0p3(csys, fname):
+    sxml = chemical_model_to_xml_dict(csys)
+    smirnoff_xml.smirnoff_xml_write(sxml, fname)

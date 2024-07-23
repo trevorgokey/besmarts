@@ -4,33 +4,36 @@ besmarts.mechanics.smirnoff_xml
 """
 
 from typing import List, Dict
-from xml.etree import ElementTree, Element
+from besmarts.core import trees
+from besmarts.core import tree_iterators
+from xml.etree.ElementTree import ElementTree, Element, iterparse, indent
 
 def smirnoff_xml_read(fname: str) -> Dict:
 
     xml = {}
 
-    has_parameters = [
-        "Bonds",
-        "Angles",
-        "ProperTorsions",
-        "ImproperTorsions",
-        "vdW",
-        "LibraryCharges",
-        "Constraints"
-        "ChargeIncrementModel"
-    ]
+    has_parameters = {
+        "Bonds": "Bond",
+        "Angles": "Angle",
+        "ProperTorsions": "Proper",
+        "ImproperTorsions": "Improper",
+        "vdW": "Atom",
+        "LibraryCharges": "LibraryCharge",
+        "Constraints": "Constraint",
+        "ChargeIncrementModel": "ChargeIncrement"
+    }
 
     active = ""
 
-    for event, element in ElementTree.iterparse(fname, ["start", "end"]):
+    for event, element in iterparse(fname, ["start", "end"]):
         # print(element.tag, event, active, element.attrib)
 
         if active and event == "start":
             if element.tag in has_parameters:
                 xml[active]["options"] = dict(element.attrib)
             else:
-                xml[active]["parameters"].append(dict(element.attrib))
+                p = {has_parameters[active]: dict(element.attrib)}
+                xml[active]["parameters"].append(p)
         elif element.tag in has_parameters:
             if event == "start":
                 active = element.tag
@@ -46,69 +49,23 @@ def smirnoff_xml_read(fname: str) -> Dict:
 
     return xml
 
-def smirnoff_xml_write_version_0p3(xml: Dict, fname: str):
+def smirnoff_xml_write(xml: Dict, fname: str):
     """
-    xml = {
-        Bonds: tag: {
-            options: {k:v}, # store in attribs
-            parameters: [ # these are subelements
-                Bond: tag: {k:v} # terms are attribs
-            ]
-    }
-
     """
-    model_to_parameter = {
-        "Bonds": "Bond",
-        "Angles": "Angle",
-        "ProperTorsions": "ProperTorsion",
-        "ImproperTorsions": "ImproperTorsion",
-        "vdW": "Atom",
-        "LibraryCharges": "LibraryCharge",
-        "Constraints": "Constraint",
-        "ChargeIncrementModel": "ChargeIncrement"
-    }
-    model_keys = {
-        "Bonds": ["smirks", "id", "k", "length"],
-        "Angles": ["smirks", "id", "k", "angle"],
-        "ProperTorsions": ["smirks", "id", "periodicity", "k", "phase"],
-        "ImproperTorsions": ["smirks", "id", "periodicity", "k", "phase"],
-        "vdW": ["smirks", "id", "epsilon", "sigma"],
-        "LibraryCharges": ["smirks", "id", "charge"],
-        "Constraints": ["smirks", "id", "c"],
-        "ChargeIncrementModel": ["smirks", "id", "charge"]
-    }
-    model_multi_parameter = {
-        "Bonds": False,
-        "Angles": False,
-        "ProperTorsions": True,
-        "ImproperTorsions": True,
-        "vdW": False,
-        "LibraryCharges": True,
-        "Constraints": True,
-        "ChargeIncrementModel": True
-    }
 
-    root_attrib = {
-        "version"="0.3" "aromaticity_model":"MDL"
-    }
-
-    root = Element("SMIRNOFF", attrib=root_attrib)
+    root_tag = "SMIRNOFF"
+    root_attrib = xml.pop(root_tag)["options"]
+    root = Element(root_tag, attrib=root_attrib)
     tree = ElementTree(root)
 
-    for toptag, topvals in xml.items():
-        node = Element(toptag)
-        if toptag in has_parameters:
-            param_root = Element(model_to_parameter[toptag])
-            node.attrib = topvals.get("options", {})
-            for ptag, pvals in topvals["parameters"]:
-                for x in ["smirks", "id"]:
-                    assert x in pvals
-                param = Element(ptag, attrib=pvals)
-                param_root.append(param)
-        else:
-            node.text = topvals.pop("parameters", "")
-            attrib = topvals.pop("options", {})
-            root.append(node, attrib=attrib)
+    for name, p in xml.items():
+        proot = Element(name, attrib=p["options"])
+        root.append(proot)
+        for param in p["parameters"]:
+            for pname, terms in param.items():
+                node = Element(pname, attrib=terms)
+                proot.append(node)
 
-    tree.write(fname)
+    indent(tree, space="  ", level=0)
+    tree.write(fname, method="xml")
     return tree
