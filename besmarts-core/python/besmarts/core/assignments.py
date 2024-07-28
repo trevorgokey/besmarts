@@ -778,7 +778,7 @@ def graph_assignment_jacobian2_outofplanes(
 
 def smiles_assignment_geometry_outofplanes(
     pos: smiles_assignment_float,
-    indices
+    indices=None
 ) -> smiles_assignment:
     x = smiles_assignment_geometry_torsions(pos, indices)
     return outofplane_assignment_float(x.selections)
@@ -833,7 +833,7 @@ def graph_assignment_jacobian2_torsions(
 
 def smiles_assignment_geometry_torsions(
     pos: smiles_assignment_float,
-    indices,
+    indices=None,
 ) -> smiles_assignment_float:
 
     if indices is None:
@@ -850,8 +850,8 @@ def smiles_assignment_geometry_torsions(
 
 def smiles_assignment_geometry_torsions_nonlinear(
     pos: smiles_assignment_float,
-    indices,
-    angle_degrees = 145.0
+    indices=None,
+    angle_degrees=145.0
 ) -> smiles_assignment_float:
 
     deg = 180/math.pi
@@ -1089,7 +1089,7 @@ def graph_db_add_single_molecule_state(
     tid = POSITIONS
     gde.tables[tid] = gdt
 
-    if gradients:
+    if gradients is not None:
         gdt = graph_db_table(topology.atom)
         gdg = graph_db_graph()
         gdt.graphs[gid] = gdg
@@ -1101,13 +1101,10 @@ def graph_db_add_single_molecule_state(
         gde.tables[tid] = gdt
         gdt.values.extend([x for y in gradients.selections.values() for x in y])
 
-    if hessian:
+    if hessian is not None:
         gdt = graph_db_table(topology.null)
         gdg = graph_db_graph()
         gdt.graphs[gid] = gdg
-
-        # rid = 0
-        # gdg.rows[rid] = graph_assignment_to_graph_db_row(gradients)
 
         tid = HESSIANS
         gde.tables[tid] = gdt
@@ -1193,19 +1190,25 @@ def graph_db_set_gradient(gdb, eid, gradient: List[float]):
         gde.tables[tid].values.clear()
         gde.tables[tid].values.extend(gradient)
 
-def graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid, cid=None) -> graph_assignment:
+def graph_db_graph_to_graph_assignment(gdb, eid, tid, gid=None, rid=None, cid=None) -> graph_assignment:
 
-
-    g = gdb.graphs[gid]
     sel = {}
 
-    gdt =  gdb.entries[eid].tables[tid]
-    pid = topology.index_of(gdt.topology)
-    gdg = gdt.graphs[gid]
-    gic = gdb.selections[pid][gid]
-    # gic_r = {v: k for k, v in gdb.selections[pid][gid].items()}
+    gdt = gdb.entries[eid].tables[tid]
+    gdg = None
+    if gid is None:
+        for gid, gdg in gdt.graphs.items():
+            break
+    else:
+        gdg = gdt.graphs[gid]
+        # gic_r = {v: k for k, v in gdb.selections[pid][gid].items()}
+    g = gdb.graphs[gid]
 
-    gdr = gdg.rows[rid]
+    if rid is None:
+        for rid, gdr in gdg.rows.items():
+            break
+    else:
+        gdr = gdg.rows[rid]
     gdc = gdr.columns
 
     if cid is not None:
