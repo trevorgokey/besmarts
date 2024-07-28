@@ -91,6 +91,8 @@ def get_objective(cst, assn, objfn, edits, splitting=True):
         m = hidx.index.above.get(n.index, None)
         if m is not None:
             m = hidx.index.nodes[m]
+            if m.type != "parameter":
+                continue
             n_match = new_match[n.name]
             m_match = new_match[m.name]
             # if not (n_match and m_match):
@@ -99,7 +101,7 @@ def get_objective(cst, assn, objfn, edits, splitting=True):
             #     continue
             n_group = tuple(((assn[i] for i in n_match)))
             m_group = tuple(((assn[i] for i in m_match)))
-            # print(f"Objective for Sj: {sma}")
+            # print(f"Objective for Sj: {n.name} {m.name} ->")
             obj = objfn(n_group, m_group, overlap=edits)
             if False and splitting:
                 if obj >= 0.0:
@@ -107,6 +109,7 @@ def get_objective(cst, assn, objfn, edits, splitting=True):
                 # print(f"Object increased to {obj} for {n.name} parent {m.name}")
                 # continue
             X += obj
+    # print("Total objective:", X)
     return keep, X
 
 
@@ -246,6 +249,7 @@ def perform_operations(
         group_number,
         Sj_sma,
         strategy,
+        prefix="p"
     ):
 
     topo = hidx.topology
@@ -259,14 +263,15 @@ def perform_operations(
         added = False
 
         if step.operation == strategy.SPLIT:
-            param_name = "p" + str(group_number)
+            param_name = prefix + str(group_number)
 
             # print(datetime.datetime.now(), '*** 2')
             hent = hidx.index.node_add(
                 S.index,
-                trees.tree_node(None, "parameter", "", param_name),
+                trees.tree_node(None, tuple((0,0,0)), "parameter", param_name),
                 index=0,
             )
+
             # print(datetime.datetime.now(), '*** 3')
             Sj = graphs.subgraph_relabel_nodes(
                 Sj, {n: i for i, n in enumerate(Sj.select, 1)}
@@ -471,11 +476,9 @@ def smarts_clustering_optimize(
     """
 
     group_number = max(
-        [
-            int(x.name[1:])
-            for x in hidx.index.nodes.values()
-            if x.name[0] == group_prefix_str
-        ]
+        [0] + [*map(int, [x for x in 
+            ["".join(a for a in x.name[1:] if a.isdigit())
+            for x in hidx.index.nodes.values()] if x])]
     )
 
     group_number += 1
@@ -541,12 +544,12 @@ def smarts_clustering_optimize(
         assignments,
         clustering_build_assignment_mappings(hidx, assignments),
     )
+    cst.group_prefix_str = group_prefix_str
     print(f"{datetime.datetime.now()} Checking consistency...")
     check_lbls_data_selections_equal(cst.group, sag)
     _, X0 = get_objective(
         cst, assn, objective.split, strategy.overlaps[0], splitting=True
     )
-
 
     if not strategy.steps:
         print("Optimization strategy is building steps...")
@@ -587,8 +590,7 @@ def smarts_clustering_optimize(
         nodes = [
             x
             for x in strategy.tree_iterator(cst.hierarchy.index, roots)
-            if strategy.cursor == -1
-            or strategy.cursor >= step_tracker.get(x.name, 0)
+            if x.type == "parameter" and cst.hierarchy.subgraphs.get(x.index) is not None and (strategy.cursor >= step_tracker.get(x.name, -1))
         ]
 
         print(f"Targets for this macro step {strategy.cursor+1}:")
@@ -660,6 +662,10 @@ def smarts_clustering_optimize(
             n_micro = len(macro.steps)
             config: configs.smarts_perception_config = step.pcp
             S = step.cluster
+
+            if type(cst.hierarchy.subgraphs[S.index]) is str:
+                continue
+
             S0 = graphs.subgraph_to_structure(
                 cst.hierarchy.subgraphs[S.index], topo
             )
@@ -938,6 +944,7 @@ def smarts_clustering_optimize(
         cur_cst = smarts_clustering(
             cst.hierarchy.copy(), cur_assignments, cur_mappings
         )
+        cur_cst.group_prefix_str = group_prefix_str
         print(f"{datetime.datetime.now()} Rebuilding mappings")
         groups = clustering_build_ordinal_mappings(cur_cst, sag)
         check_lbls_data_selections_equal(cst.group, sag)
@@ -1095,7 +1102,7 @@ def smarts_clustering_optimize(
                     find_successful_candidates_distributed,
                     iterable,
                     chunksize,
-                    1.0,
+                    0.0,
                     len(iterable),
                 )
                 ws.close()
@@ -1228,7 +1235,8 @@ def smarts_clustering_optimize(
                 keys,
                 group_number,
                 Sj_sma,
-                strategy
+                strategy,
+                prefix=cur_cst.group_prefix_str
             )
 
             print(f"There are {len(nodes)} nodes returned")
@@ -1659,59 +1667,74 @@ def clustering_update_assignments(
 
 
 def clustering_initial_conditions(
-    gcd, sag: assignments.smiles_assignment_group
+    gcd, sag: assignments.smiles_assignment_group, hidx=None, labeler=None, prefix="p"
 ):
     topo = sag.topology
+    group_prefix_str = prefix
 
-    hidx = hierarchies.structure_hierarchy(trees.tree_index(), {}, {}, topo)
+    if hidx is None:
+        hidx = hierarchies.structure_hierarchy(trees.tree_index(), {}, {}, topo)
 
-    hidx.index.node_add(None, trees.tree_node(0, "parameter", "", "p0"))
+        hidx.index.node_add(None, trees.tree_node(0, "parameter", "", "p0"))
 
-    if topo == topology.atom:
-        S0 = gcd.smarts_decode("[*:1]")
-    elif topo == topology.bond:
-        S0 = gcd.smarts_decode("[*:1]~[*:2]")
-    elif topo == topology.angle:
-        S0 = gcd.smarts_decode("[*:1]~[*:2]~[*:3]")
-    elif topo == topology.torsion:
-        S0 = gcd.smarts_decode("[*:1]~[*:2]~[*:3]~[*:4]")
-    elif topo == topology.outofplane:
-        S0 = gcd.smarts_decode("[*:1]~[*:2](~[*:3])~[*:4]")
+        if topo == topology.atom:
+            S0 = gcd.smarts_decode("[*:1]")
+        elif topo == topology.bond:
+            S0 = gcd.smarts_decode("[*:1]~[*:2]")
+        elif topo == topology.angle:
+            S0 = gcd.smarts_decode("[*:1]~[*:2]~[*:3]")
+        elif topo == topology.torsion:
+            S0 = gcd.smarts_decode("[*:1]~[*:2]~[*:3]~[*:4]")
+        elif topo == topology.outofplane:
+            S0 = gcd.smarts_decode("[*:1]~[*:2](~[*:3])~[*:4]")
 
-    # graph = gcd.smiles_decode(sag.assignments[0].smiles)
-    # select = next(iter(sag.assignments[0].selections.keys()))
 
-    # S0 = graphs.graph_to_structure(graph, select, topo)
-    # S0 = graphs.structure_remove_unselected(S0)
-    # S0 = graphs.structure_relabel_nodes(
-    #     S0, {n: i for i, n in enumerate(S0.select, 1)}
-    # )
+        hidx.subgraphs[0] = graphs.structure_to_subgraph(S0)
+        if gcd:
+            hidx.smarts[0] = gcd.smarts_encode(S0)
+        group_name = group_prefix_str + "0"
 
-    # graphs.subgraph_fill(S0)
+        assn = []
+        for sag_i in sag.assignments:
+            sels = {}
+            for idx in sag_i.selections:
+                sels[idx] = group_name
+            assn.append(
+                cluster_assignment.smiles_assignment_str(sag_i.smiles, sels)
+            )
 
-    hidx.subgraphs[0] = graphs.structure_to_subgraph(S0)
-    if gcd:
-        hidx.smarts[0] = gcd.smarts_encode(S0)
-    # match: Dict[str: List[int]] = {"p0": list(assn)}
+        groups: assignments.assignment_mapping = {
+            group_name: list(
+                x for y in sag.assignments for x in list(y.selections.values())
+            )
+        }
+    else:
+        assn = []
+        new_assignments = labeler.assign(hidx, gcd, [x.smiles for x in sag.assignments], topo)
+        all_lbls = set()
+        for sag_i, lbls in zip(sag.assignments, new_assignments.assignments):
+            sels = {}
+            for idx in sag_i.selections:
+                sels[idx] = lbls.selections[idx]
+                all_lbls.add(sels[idx])
 
-    group_prefix_str = "p"
-    group_name = group_prefix_str + "0"
+            assn.append(
+                cluster_assignment.smiles_assignment_str(sag_i.smiles, sels)
+            )
+        groups = {lbl: [] for lbl in all_lbls}
+        for sag_i, lbls in zip(sag.assignments, new_assignments.assignments):
+            for idx, vals in sag_i.selections.items():
+                groups[lbls.selections[idx]].append(vals)
 
-    assn = []
-    for sag_i in sag.assignments:
-        sels = {}
-        for idx in sag_i.selections:
-            sels[idx] = group_name
-        assn.append(
-            cluster_assignment.smiles_assignment_str(sag_i.smiles, sels)
-        )
+        if gcd:
+            for idx, smarts in hidx.smarts.items():
+                if smarts:
+                    hidx.subgraphs[idx] = gcd.smarts_decode(smarts)
+                else:
+                    hidx.subgraphs[idx] = None
+
+
     new_assn_group = assignments.smiles_assignment_group(assn, sag.topology)
-
-    groups: assignments.assignment_mapping = {
-        group_name: list(
-            x for y in sag.assignments for x in list(y.selections.values())
-        )
-    }
 
     initial_conditions = smarts_clustering(hidx, new_assn_group, groups)
     initial_conditions.group_prefix_str = group_prefix_str
