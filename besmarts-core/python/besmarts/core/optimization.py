@@ -157,6 +157,18 @@ class optimization_strategy:
 
         self.keep_below: float = 0.0
 
+        # self.reset_config = {
+        #     "bond_l": True,
+        #     "bond_k": True,
+        #     "angle_l": True,
+        #     "angle_k": True,
+        #     "torsion_k": True,
+        #     "outofplane_k": False,
+        #     "kwds": dict(guess_periodicity=True, alpha=-.5, max_n=3, max_k=10)
+        # }
+        # psys = fits.reset(reset_config, csys, gdb, psystems=None, verbose=True, guess_periodicity=True, alpha=-.5, max_n=3, max_k=10)
+
+
     def macro_iteration(
         self, clusters: List[trees.tree_node]
     ) -> optimization_iteration:
@@ -270,7 +282,9 @@ def optimization_strategy_iteration_next(
             for p in clusters:
                 if s.models and p.category[0] not in s.models:
                     continue
-                if p.name in oi.reference_list and p.name not in oi.target_list:
+                if s.operation != oi.MERGE and p.name in oi.reference_list and p.name not in oi.target_list:
+                    continue
+                if s.operation == oi.MERGE and p.name in oi.reference_list and p.name in oi.merge_protect_list:
                     continue
                 s = optimization_step_copy(s)
                 s.cluster = p
@@ -293,16 +307,19 @@ def optimization_strategy_build_macro_iterations(strat: optimization_strategy):
         for branch_d in range(
             bounds.branch_depth_min, bounds.branch_depth_limit + 1
         ):
-            for branches in range(bounds.branch_limit, bounds.branch_limit + 1):
+            branch_range = [*range(bounds.branch_limit, bounds.branch_limit + 1)]
+            if 0 not in branch_range:
+                branch_range.insert(0, 0)
+            for branches in branch_range:
                 bits = bounds.bit_search_min - 1
                 while bits < bounds.bit_search_limit:
                     bits += 1
-                    # if branch_d == 0 and branches > 0:
-                    #     continue
-                    # if branch_d > 0 and branches == 0:
-                    #     continue
-                    # if branches > bits:
-                    #     continue
+                    if branch_d == 0 and branches > 0:
+                        continue
+                    if branch_d > 0 and branches == 0:
+                        continue
+                    if branches > bits:
+                        continue
                     # if branches < branch_d:
                     #     continue
 

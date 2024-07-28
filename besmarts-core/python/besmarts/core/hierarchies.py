@@ -70,7 +70,14 @@ def smarts_hierarchy_copy(smahi: smarts_hierarchy) -> smarts_hierarchy:
 def structure_hierarchy_copy(th: structure_hierarchy) -> structure_hierarchy:
     index = th.index.copy()
     smarts = th.smarts.copy()
-    subgraphs = {k: graphs.subgraph_copy(v) for k, v in th.subgraphs.items()}
+    subgraphs = {}
+    for k, v in th.subgraphs.items():
+        if v is None:
+            continue
+        elif type(v) is str:
+            subgraphs[k] = v
+        else:
+            subgraphs[k] = graphs.subgraph_copy(v)
     topology = th.topology
 
     return structure_hierarchy(index, smarts, subgraphs, topology)
