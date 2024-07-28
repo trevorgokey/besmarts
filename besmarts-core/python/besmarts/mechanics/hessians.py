@@ -97,7 +97,7 @@ def b2matrix(pos, bonds=True, angles=True, torsions=True, outofplanes=True, pair
 
     return ics, B2
     
-def bmatrix(pos, bonds=True, angles=True, torsions=True, outofplanes=True, pairs=True, remove1_3=False):
+def bmatrix(pos, bonds=True, angles=True, torsions=True, outofplanes=True, pairs=True, remove1_3=False, linear_torsions=145.0):
 
 
     def print_ic(ic, i=0):
@@ -115,6 +115,9 @@ def bmatrix(pos, bonds=True, angles=True, torsions=True, outofplanes=True, pairs
 
     if torsions:
         torsions = assignments.graph_assignment_jacobian_torsions(pos)
+        if linear_torsions is not None:
+            t = assignments.smiles_assignment_geometry_torsions_nonlinear(pos, angle_degrees=linear_torsions)
+            torsions.selections = {k: torsions.selections[k] for k in t.selections}
 
     if outofplanes:
         outofplanes = assignments.graph_assignment_jacobian_outofplanes(pos)
@@ -499,17 +502,8 @@ def project_onto_ics_from_data(psys, fc_map):
     return assignments.graph_assignment(pos.smiles, ic_msm_fcs, pos.graph)
 
         
-
 def hessian_project_onto_ics(csys, psys: mm.physical_model, hess_qm, verbose=False, B=None, shm=None) -> dict:
 
-    # hess_qm in kcal/A/A
-
-    # step 1
-    # get the qm hessian
-    # given as arg
-
-    # step 2
-    # project hessian onto ICs and return the diag
     pos = copy.deepcopy(psys.models[0].positions[0])
     g = pos.graph
 
