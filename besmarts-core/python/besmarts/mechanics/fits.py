@@ -1464,7 +1464,9 @@ class forcefield_optimization_strategy(optimization.optimization_strategy):
         # After splitting and modifying periodicities, reset to a more 
         self.enable_dihedral_periodicity_reset = True
         self.dihedral_periodicity_reset_max_n = 6
-        self.dihedral_periodicity_reset_alpha = -0.25
+        self.dihedral_periodicity_reset_alpha = -.5
+        self.dihedral_periodicity_reset_min_k = 1e-3
+        self.dihedral_periodicity_reset_max_k = 5.0
 
         self.reference_list = []
 
@@ -1793,13 +1795,25 @@ def ff_optimize(
         "angle_l": strategy.enable_reset_angle_lengths,
         "angle_k": strategy.enable_reset_angle_stiffness,
         "torsion_k": strategy.enable_reset_torsion_stiffness,
-        "outofplane_k": strategy.enable_reset_outofplane_stiffness
+        "outofplane_k": strategy.enable_reset_outofplane_stiffness,
+        "dihedral_p": strategy.enable_dihedral_periodicity_reset,
+        "dihedral_max_n": strategy.dihedral_periodicity_reset_max_n,
+        "dihedral_alpha": strategy.dihedral_periodicity_reset_alpha,
+        "dihedral_min_k": strategy.dihedral_periodicity_reset_min_k,
+        "dihedral_max_k": strategy.dihedral_periodicity_reset_max_k
     }
     wq = compute.workqueue_local('0.0.0.0', configs.workqueue_port)
 
     # print(datetime.datetime.now(), "Resetting bonds and angles to reference values")
     ws = compute.workqueue_new_workspace(wq)
-    psystems = reset(reset_config, csys0, gdb, psystems, verbose=True, ws=ws)
+    psystems = reset(
+        reset_config,
+        csys0,
+        gdb,
+        psystems,
+        verbose=True,
+        ws=ws
+    )
     ws.close()
 
     csys = copy.deepcopy(csys0)
@@ -1829,8 +1843,6 @@ def ff_optimize(
     print("Initial parameter assignments of dataset:")
     print_chemical_system(csys, show_parameters=[x[1] for x in assigned_nodes])
 
-
-    # we can't split scales (yet) or cutoffs
     assigned_nodes = [x for x in assigned_nodes if x[0] in strategy.bounds and x[1] not in "sc"] 
     assigned_nodes = set([x[1] for x in assigned_nodes])
 
@@ -1895,7 +1907,13 @@ def ff_optimize(
                     psys.models[m].values.pop()
                     psys.models[m].labels.pop()
                 for proc in procs[1:]:
-                    psys.models[m] = proc.assign(csys.models[m], psys.models[m], overrides={k[1:]: v for k, v in kv.items() if k[0] == m})
+                    psys.models[m] = proc.assign(
+                        csys.models[m],
+                        psys.models[m],
+                        overrides={
+                            k[1:]: v for k, v in kv.items() if k[0] == m
+                        }
+                    )
 
     step_tracker = strategy.step_tracker
 
@@ -1919,7 +1937,7 @@ def ff_optimize(
             # and x.type == "parameter"
         ]
         # remove any that are not in the models
-        
+
         print(f"Targets for this macro step {strategy.cursor+1}:")
         for nidx, n in enumerate(nodes, 1):
             print(nidx, n.category, n.name)
@@ -1968,14 +1986,17 @@ def ff_optimize(
             gid = list(gde.tables[tid].graphs)[0]
             rid = 0
             pos = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
-            psys[eid] = mm.chemical_system_to_physical_system(csys, [pos], ref=psystems[eid], reuse=reuse)
+            psys[eid] = mm.chemical_system_to_physical_system(
+                csys,
+                [pos],
+                ref=psystems[eid],
+                reuse=reuse
+            )
         psystems = psys
-
 
         print(f"{datetime.datetime.now()} Saving checkpoint to chk.cst.p")
         pickle.dump([gdb, csys, strategy, psystems], open("chk.cst.p", "wb"))
 
-        
         step = None
 
         while not optimization.optimization_iteration_is_done(macro):
@@ -1993,7 +2014,6 @@ def ff_optimize(
             hidx = mm.chemical_system_get_node_hierarchy(csys, S)
             topo = hidx.topology
 
-
             if S.type == 'parameter' and S.index not in hidx.subgraphs:
                 hidx.subgraphs[S.index] = gcd.smarts_decode(hidx.smarts[S.index])
             if type(hidx.subgraphs[S.index]) is str:
@@ -2009,25 +2029,21 @@ def ff_optimize(
 
             S0_depth = graphs.structure_max_depth(S0)
             d = max(S0_depth, config.splitter.branch_depth_limit)
-            # print("Depth is", d)
             cfg.depth_max = d
             cfg.depth_min = S0_depth
 
             t = datetime.datetime.now()
-            # need to get the graphs that match S0
+
             print(
                 f"{t} Collecting SMARTS for {S.name} and setting to depth={S0_depth}"
             )
 
-            # find only unique graphs!
-
-            # now I need to reparameterize and find all matching subgraphs/indices
             selected_ics = []
             selected_graphs = set()
             for eid, ps in psystems.items():
-                gids = list(gdb.entries[eid].tables[assignments.POSITIONS].graphs)
-                for gid, lbls in zip(gids, ps.models[int(S.category[0])].labels):
-                    # gid = gids[gidx]
+                gids = [*gdb.entries[eid].tables[assignments.POSITIONS].graphs]
+                glbls = ps.models[int(S.category[0])].labels
+                for gid, lbls in zip(gids, glbls):
                     for ic, term_lbls in lbls.items():
                         if S.name in term_lbls.values():
                             selected_ics.append((gid, ic))
@@ -2035,9 +2051,8 @@ def ff_optimize(
             # aa = cst.mappings[S.name]
             # selected_graphs = set((x[0] for x in aa))
             aa = selected_ics
-            G = {k:v for k,v in G0.items() if k in selected_graphs}
+            G = {k: v for k, v in G0.items() if k in selected_graphs}
             del selected_graphs
-
 
             assn_s = aa
             # assn_s = {i: assn[i] for i in cst.mappings[S.name]}
@@ -2926,7 +2941,6 @@ def ff_optimize(
                     ) for i in psystems
                 }
 
-            
             else:
 
 
@@ -3353,7 +3367,7 @@ def perform_operations(
             topo = hidx.topology
             # param_name = "p" + str(group_number)
             node = mm.chemical_model_smarts_hierarchy_copy_node(cm, cid, pid, uid, S, None)
-
+            node.type = "parameter"
             # print(datetime.datetime.now(), '*** 2')
             assert Sj.select
             Sj = graphs.subgraph_relabel_nodes(
@@ -3439,7 +3453,125 @@ def chemical_system_get_hessian(csys, psystems, m, fn, names=None) -> dict:
             kv[(m, 'l', lbl, None)].extend(x)
     return kv
 
-def chemical_system_cluster(csys, gdb, sep, topo):
+def chemical_system_cluster_data(csys, m, sag, objective, strategy=None):
+    if strategy is None:
+        splitter = configs.smarts_splitter_config(
+            1, 2, 0, 0, 0, 0, True, True, 0, False, True, True, True
+        )
+        extender = configs.smarts_extender_config(
+            0, 0, True
+        )
+        cfg = configs.smarts_perception_config(splitter, extender)
+        optimization = cluster_optimization.optimization_strategy_default(cfg)
+        optimization.overlaps=[100]
+    else:
+        optimization = strategy
+
+    gcd = csys.perception.gcd
+    labeler = csys.perception.labeler
+
+    hidx = csys.models[m].procedures[0].smarts_hierarchies[0].copy()
+
+    optimization.target_list = [n.name for n in hidx.index.nodes.values()]
+    optimization.reference_list = [n.name for n in hidx.index.nodes.values()]
+    optimization.merge_protect_list = [n.name for n in hidx.index.nodes.values()]
+    initial_conditions = clusters.clustering_initial_conditions(gcd, sag, hidx=hidx, labeler=labeler, prefix=csys.models[m].symbol)
+
+    if objective.is_discrete():
+        cst = cluster_optimization.cluster_classifications(
+            gcd, labeler, sag, objective, optimization=optimization, initial_conditions=initial_conditions
+        )
+    else:
+        cst = cluster_optimization.cluster_means(
+            gcd, labeler, sag, objective, optimization=optimization, initial_conditions=initial_conditions
+        )
+
+    cm = csys.models[m]
+    proc = cm.procedures[0]
+
+    newhidx = cst.hierarchy
+    cst.hierarchy = None
+
+    uid = 0
+    refhidx = proc.smarts_hierarchies[uid]
+
+    roots = trees.tree_index_roots(refhidx.index)
+    assert len(roots) == 1
+    root = roots[0]
+    assert root.type == "hierarchy"
+
+    for idx in [n.index for n in refhidx.index.nodes.values() if n.index != root.index]:
+        if idx in refhidx.smarts:
+            refhidx.smarts.pop(idx)
+        name = refhidx.index.nodes[idx].name
+        for (ui, namei) in list(proc.topology_parameters):
+            if namei == name:
+                proc.topology_parameters.pop((ui, namei))
+        for sym, terms in cm.topology_terms.items():
+            if name in terms.values:
+                terms.values.pop(name)
+
+        trees.tree_index_node_remove(refhidx.index, idx)
+
+    nodes = []
+    for newroot in trees.tree_index_roots(newhidx.index):
+        if newroot.type == "parameter":
+            nodes.append(newroot)
+        for n in tree_iterators.tree_iter_breadth_first(newhidx.index, newroot):
+            if n.type == "parameter":
+                nodes.append(n)
+
+    node_map = {}
+    for cstnode in nodes:
+        above = None
+        if newhidx.index.above[cstnode.index] is None:
+            above = root.index
+        elif newhidx.index.above[cstnode.index] in node_map:
+            above = node_map[newhidx.index.above[cstnode.index]]
+        else:
+            above = root.index
+        # cstnode.name = cm.symbol + cstnode.name
+        cstnode.type = "parameter"
+        cstnode.category = (m, 0, 0)
+
+        old_index = cstnode.index
+        new_node = trees.tree_index_node_add(refhidx.index, above, cstnode)
+
+        node_map[old_index] = cstnode.index
+
+        pkey = (0, new_node.name)
+
+        if m == 0:
+            terms = {"k": new_node.name, "l": new_node.name}
+            proc.topology_parameters[pkey] = terms
+            kval = 10.0
+            lval = 1.3
+            cm.topology_terms["k"].values[new_node.name] = [kval]
+            cm.topology_terms["l"].values[new_node.name] = [lval]
+        elif m == 1:
+            terms = {"k": new_node.name, "l": new_node.name}
+            proc.topology_parameters[pkey] = terms
+            kval = 50.0
+            lval = 109*3.14/180
+            cm.topology_terms["k"].values[new_node.name] = [kval]
+            cm.topology_terms["l"].values[new_node.name] = [lval]
+        elif m == 2:
+            terms = {"n": new_node.name, "p": new_node.name, "k": new_node.name}
+            proc.topology_parameters[pkey] = terms
+            cm.topology_terms["n"].values[new_node.name] = [1,2,3]
+            cm.topology_terms["p"].values[new_node.name] = [0,0,0]
+            cm.topology_terms["k"].values[new_node.name] = [0,0,0]
+
+        sma = newhidx.smarts[old_index]
+        refhidx.smarts[new_node.index] = sma
+        if old_index in newhidx.subgraphs:
+            refhidx.subgraphs[new_node.index] = newhidx.subgraphs[old_index]
+
+    refhidx.topology = cm.topology
+
+    return csys
+
+def chemical_system_cluster_force_constants(csys, gdb, sep, topo):
     sag = []
     
     measure = None
@@ -3475,10 +3607,141 @@ def chemical_system_cluster(csys, gdb, sep, topo):
             measurements[ic] = [y for x in rv for y in x]
         sag.append(assignments.smiles_assignment_float(smiles, measurements))
     sag = assignments.smiles_assignment_group(sag, topo)
+    objective = cluster_objective.clustering_objective_mean_separation(sep, sep)
+
+    gcd = csys.perception.gcd
+    labeler = csys.perception.labeler
+
+    splitter = configs.smarts_splitter_config(
+        1, 2, 0, 0, 0, 0, True, True, 0, False, True, True, True
+    )
+    extender = configs.smarts_extender_config(
+        0, 0, True
+    )
+    cfg = configs.smarts_perception_config(splitter, extender)
+    optimization = cluster_optimization.optimization_strategy_default(cfg)
+    
+    cst = cluster_optimization.cluster_means(
+        gcd, labeler, sag, objective, optimization=optimization, initial_conditions=None
+    )
+
+    cst.hierarchy
+
+    cm = csys.models[m]
+    proc = cm.procedures[0]
+
+    newhidx = cst.hierarchy
+    cst.hierarchy = None
+
+    uid = 0
+    refhidx = proc.smarts_hierarchies[uid]
+
+    roots = trees.tree_index_roots(refhidx.index)
+    assert len(roots) == 1
+    root = roots[0]
+    assert root.type == "hierarchy"
+    
+
+    for idx in [n.index for n in refhidx.index.nodes.values() if n.index != root.index]:
+        if idx in refhidx.smarts:
+            refhidx.smarts.pop(idx)
+        name = refhidx.index.nodes[idx].name
+        for (ui, namei) in list(proc.topology_parameters):
+            if namei == name:
+                proc.topology_parameters.pop((ui, namei))
+        for sym, terms in cm.topology_terms.items():
+            if name in terms.values:
+                terms.values.pop(name)
+
+        trees.tree_index_node_remove(refhidx.index, idx)
+
+
+    nodes = []
+    for newroot in trees.tree_index_roots(newhidx.index):
+        nodes.append(newroot)
+        for n in tree_iterators.tree_iter_breadth_first(newhidx.index, newroot):
+            nodes.append(n)
+
+    node_map = {}
+    for cstnode in nodes:
+        above = None
+        if newhidx.index.above[cstnode.index] is None:
+            above = root.index
+        else:
+            above = node_map[newhidx.index.above[cstnode.index]]
+        cstnode.name = cm.symbol + cstnode.name
+        cstnode.type = "parameter"
+        cstnode.category = (m, 0, 0)
+
+        old_index = cstnode.index
+        new_node = trees.tree_index_node_add(refhidx.index, above, cstnode)
+
+        node_map[old_index] = cstnode.index
+
+        pkey = (0, new_node.name)
+        terms = {"k": new_node.name, "l": new_node.name}
+        proc.topology_parameters[pkey] = terms
+
+        if m == 0:
+            kval = 10.0
+            lval = 1.3
+        else:
+            kval = 50.0
+            lval = 109*3.14/180
+        cm.topology_terms["k"].values[new_node.name] = [kval]
+        cm.topology_terms["l"].values[new_node.name] = [lval]
+
+        sma = newhidx.smarts[old_index]
+        refhidx.smarts[new_node.index] = sma
+        refhidx.subgraphs[new_node.index] = newhidx.subgraphs[old_index]
+
+    refhidx.topology = cm.topology
+
+    return csys
+
+
+def chemical_system_cluster_geom(csys, gdb, sep, topo):
+    sag = []
+    
+    measure = None
+    m = 0
+    if topo == topology.bond:
+        measure = assignments.graph_assignment_geometry_bonds
+        m = 0
+    elif topo == topology.angle:
+        measure = assignments.graph_assignment_geometry_angles
+        m = 1
+    assert measure
+
+    for gid in gdb.graphs:
+        measurements = {}
+        g = gdb.graphs[gid]
+        atoms = {atom: [] for atom in graphs.graph_atoms(g)}
+        smiles = gdb.smiles[gid]
+        for eid, gde in gdb.entries.items():
+            gdt = gde.tables[assignments.POSITIONS]
+            gdg = gdt.graphs.get(gid)
+
+            if gdg is None:
+                continue
+
+            for rid, row in gdg.rows.items():
+                for cid, col in row.columns.items():
+                    for ic, xyz in col.selections.items():
+                        atoms[ic].append(xyz)
+
+        pos = assignments.graph_assignment(smiles, atoms, g)
+        r = measure(pos)
+        for ic, rv in r.selections.items():
+            measurements[ic] = [y for x in rv for y in x]
+        sag.append(assignments.smiles_assignment_float(smiles, measurements))
+    sag = assignments.smiles_assignment_group(sag, topo)
+    objective = cluster_objective.clustering_objective_mean_separation(sep, sep)
+    
+
     
     gcd = csys.perception.gcd
     labeler = csys.perception.labeler
-    objective = cluster_objective.clustering_objective_mean_separation(sep, sep)
 
     splitter = configs.smarts_splitter_config(
         1, 2, 0, 0, 0, 0, True, True, 0, False, True, True, True
@@ -3569,12 +3832,210 @@ def chemical_system_cluster(csys, gdb, sep, topo):
     return csys
 
 def chemical_system_cluster_angles(csys: mm.chemical_system, gdb, sep=0.01):
-    return chemical_system_cluster(csys, gdb, sep, topology.angle)
+    return chemical_system_cluster_geom(csys, gdb, sep, topology.angle)
 
 def chemical_system_cluster_bonds(csys: mm.chemical_system, gdb, sep=0.001):
-    return chemical_system_cluster(csys, gdb, sep, topology.bond)
+    return chemical_system_cluster_geom(csys, gdb, sep, topology.bond)
 
-def reset(reset_config, csys, gdb, psystems, verbose=False, ws=None, max_n=6, alpha=-.25, guess_periodicity=False):
+def smiles_assignment_force_constants(gdb, alpha=-.25, guess_periodicity=True, max_n=3, min_dihedral_k=100, max_dihedral_k=100):
+
+    sag_map = {
+        "bond_k": [],
+        "bond_l": [],
+        "angle_k": [],
+        "angle_l": [],
+        "torsion_n": [],
+        "torsion_p": [],
+        "torsion_k": [],
+    }
+
+    eid_hess = [eid for eid, e in gdb.entries.items() if assignments.HESSIANS in e.tables]
+
+    for i, eid in enumerate(eid_hess, 1):
+        # psys = psystems[eid]
+        hessian = gdb.entries[eid].tables[assignments.HESSIANS].values
+
+        # labeled_ic = [x for model in psystems[eid].models for x in model.labels[0]]
+        # B = {ic:x for ic, x in zip(icb, B) if ic in labeled_ic}
+        # B = list(B.keys()), list(B.values())
+
+        pos = assignments.graph_db_graph_to_graph_assignment(gdb, eid, assignments.POSITIONS)
+        g = pos.graph
+
+        icb, B = hessians.bmatrix(pos, torsions=True, outofplanes=False, pairs=False ,remove1_3=True, linear_torsions=145.0)
+
+        # xyz = np.vstack([x[0] for x in pos.selections.values()], dtype=float)
+        # xyz = xyz.round(12)
+        # sym = graphs.graph_symbols(pos.graph)
+        # mass = np.array([[vibration.mass_table[sym[n]]]*3 for n in sym])
+
+        # sym = list(sym.values())
+
+        # hess_qm_freq, hess_qm_modes = vibration.hessian_modes(hess_qm, sym, xyz, mass, 0, remove=0, stdtr=True, verbose=False)
+        # omega = np.round(hess_qm_freq, 12)
+        # omega_qm = omega
+        hess_qm_ic = hessians.project_ics(B, hessian)
+        hess_qm_ic = [hess_qm_ic[i][i] for i in range(len(hess_qm_ic))]
+
+        ic_qm_fcs = dict(zip(icb, hess_qm_ic))
+
+        sel = {}
+        for ic in graphs.graph_bonds(pos.graph):
+            if ic in ic_qm_fcs:
+                sel[ic] = [ic_qm_fcs[ic]]
+
+        ga = assignments.graph_assignment(pos.smiles, sel, pos.graph)
+        sag_map["bond_k"].append(ga)
+        bond_l = assignments.graph_assignment_geometry_bonds(pos)
+        bond_l.selections = {ic: [x for y in v for x in y] for ic, v in bond_l.selections.items()}
+        ga = assignments.graph_assignment(pos.smiles, bond_l.selections, pos.graph)
+        sag_map["bond_l"].append(ga)
+
+        sel = {}
+        for ic in graphs.graph_angles(pos.graph):
+            if ic in ic_qm_fcs:
+                sel[ic] = [ic_qm_fcs[ic]]
+        ga = assignments.graph_assignment(pos.smiles, sel, pos.graph)
+        sag_map["angle_k"].append(ga)
+
+        angle_l = assignments.graph_assignment_geometry_angles(pos)
+        angle_l.selections = {ic: [x for y in v for x in y] for ic, v in angle_l.selections.items()}
+        ga = assignments.graph_assignment(pos.smiles, angle_l.selections, pos.graph)
+        sag_map["angle_l"].append(ga)
+
+        dih_angles = assignments.smiles_assignment_geometry_torsions_nonlinear(pos)
+
+        sel_n = {}
+        sel_k = {}
+        sel_p = {}
+        for angle_ic, angle_val in dih_angles.selections.items():
+            bond = geometry.bond(angle_ic[1:3])
+            all_dihed = [v for ic, v in dih_angles.selections.items() if geometry.bond(ic[1:3]) == bond]
+            angles = [x for y in all_dihed for z in y for x in z]
+            vals = [ic_qm_fcs[angle_ic]]
+            csys_n0 = [1, 2, 3]
+            csys_p0 = [0, 0, 0]
+            csys_k0 = [0.0, 0.0, 0.0]
+            npk0 = csys_n0, csys_p0, csys_k0
+
+            if guess_periodicity:
+                csys_n = []
+                csys_p = []
+                for i in [*range(1, max_n+1)]:
+                    if all(math.cos(i*t) < alpha for t in angles) or all(math.cos(i*t)  >  -alpha for t in angles):
+                        csys_n.append(i)
+                        csys_p.append(0)
+                        break
+                        # print(f"Consider {i}")
+            else:
+                csys_n = [n for n in csys_n0]
+                csys_p = [n for n in csys_p0]
+
+            # csys_n = [*range(1,121)]
+            # csys_p = [*[0]*120]
+            new_k_lst = []
+            # new_k = sum(vals)/len(vals)
+            deriv = [math.cos, math.sin, math.cos, math.sin]
+            sign = [1, -1, -1, 1]
+            hq = sum(vals) / len(vals)
+
+            if not csys_n:
+                print(f"Could not find any appropriate periodicities for ic={angle_ic} max_n={max_n} alpha={alpha}")
+                csys_n = [n for n in range(1, max_n+1)]
+                csys_p = [0 for n in range(1, max_n+1)]
+                print("Angles:")
+                print(angles)
+                print("cosines:")
+                for i in range(1, max_n+1):
+                    print(i, [*(math.cos(i*t) for t in angles)])
+                print(angles)
+
+            changed = True
+            while changed:
+                A = []
+                b = []
+                changed = False
+
+                if angles:
+                    for i in range(len(csys_n)):
+                        row = []
+                        if i == 0:
+                            b.append(hq)
+                        else:
+                            b.append(0)
+                        for n, p in zip(csys_n, csys_p):
+                            x = [sign[(i+2)%4] * n**(i+2)*deriv[(i+2) % 4](n*t - p) for t in angles]
+                            x = sum(x) / len(x)
+                            row.append(x)
+                        A.append(row)
+                    new_k_lst = np.linalg.solve(A, b)
+                    # print("Calculated", new_k_lst)
+                else:
+                    new_k_lst = [0 for _ in csys_n]
+                # at this point we have our new_n and new_p; project onto npk0
+
+                if guess_periodicity:
+                    # new_k_lst = project_torsions(npk0, (csys_n, csys_p), angles)
+                    new_k = []
+                    new_p = []
+                    new_n = []
+                    changed = False
+                    max_k = max_dihedral_k
+                    min_k = 1e-4
+                    for n,p,k in zip(csys_n, csys_p, new_k_lst):
+                        if abs(k) > min_k and abs(k) < max_k:
+                            new_n.append(n)
+                            new_p.append(p)
+                            new_k.append(k)
+                            # print("Added n=", n, p, k)
+
+                    if not new_n:
+                        print("Warning, all fitted values were out of range")
+                        i = arrays.argmin([abs(x) for x in new_k_lst])
+                        new_n.append(csys_n[i])
+                        k = new_k_lst[i]
+                        if k < -max_k:
+                            k = -max_k
+                        elif k > max_k:
+                            k = max_k
+                        if k < 0:
+                            new_p.append(math.pi)
+                            new_k.append(-k)
+                        else:
+                            new_p.append(0)
+                            new_k.append(k)
+                    if set(new_n).symmetric_difference(csys_n):
+                        changed = True
+                    # if changed:
+                    csys_n = new_n
+                    csys_p = new_p
+                    new_k_lst = new_k
+                else:
+                    new_k = []
+                    for k in new_k_lst:
+                        if k < -max_k:
+                            k = -max_k
+                        elif k > max_k:
+                            k = max_k
+                        new_k.append(k)
+                    new_k_lst = new_k
+
+            sel_n[angle_ic] = new_n
+            sel_p[angle_ic] = new_p
+            sel_k[angle_ic] = new_k
+
+        ga = assignments.graph_assignment(pos.smiles, sel_k, pos.graph)
+        sag_map["torsion_k"].append(ga)
+
+        ga = assignments.graph_assignment(pos.smiles, sel_n, pos.graph)
+        sag_map["torsion_n"].append(ga)
+
+        ga = assignments.graph_assignment(pos.smiles, sel_p, pos.graph)
+        sag_map["torsion_p"].append(ga)
+
+    return sag_map
+
+def reset(reset_config, csys, gdb, psystems=None, verbose=False, ws=None):
 
     assert type(reset_config) is dict
 
@@ -3584,7 +4045,16 @@ def reset(reset_config, csys, gdb, psystems, verbose=False, ws=None, max_n=6, al
     reset_angle_l = reset_config.get("angle_l", False)
     reset_torsion_k = reset_config.get("torsion_k", False)
     reset_outofplane_k = reset_config.get("outofplane_k", False)
+
+    guess_periodicity = reset_config.get("dihedral_p", False)
+    max_n = reset_config.get("dihedral_max_n", 3)
+    alpha = reset_config.get("dihedral_alpha", -.25)
+    max_k = reset_config.get("dihedral_max_k", 5.0)
+    min_k = reset_config.get("dihedral_max_k", 1e-3)
+
     # print(datetime.datetime.now(), f"Resetting bonds and angles: bk={reset_bond_k} bl={reset_bond_l} ak={reset_angle_k} al={reset_angle_l} tk={reset_torsion_k} ok={reset_outofplane_k}")
+    if psystems is None:
+        psystems = gdb_to_physical_systems(gdb, csys)
     if not any([reset_bond_k, reset_bond_l, reset_angle_k, reset_angle_l, reset_torsion_k]):
         return psystems
     eid_hess = [eid for eid, e in gdb.entries.items() if assignments.HESSIANS in e.tables]
@@ -3816,8 +4286,8 @@ def reset(reset_config, csys, gdb, psystems, verbose=False, ws=None, max_n=6, al
                             new_p = []
                             new_n = []
                             changed = False
-                            max_k = 5
-                            min_k = 1e-3
+                            # max_k = 5
+                            # min_k = 1e-3
                             for n,p,k in zip(csys_n, csys_p, new_k_lst):
                                 if abs(k) > min_k and abs(k) < max_k:
                                     new_n.append(n)
@@ -3843,7 +4313,14 @@ def reset(reset_config, csys, gdb, psystems, verbose=False, ws=None, max_n=6, al
                             csys_p = new_p
                             new_k_lst = new_k
                         else:
-                            break
+                            new_k = []
+                            for k in new_k_lst:
+                                if k < -max_k:
+                                    k = -max_k
+                                elif k > max_k:
+                                    k = max_k
+                                new_k.append(k)
+                            new_k_lst = new_k
 
 
                     if verbose:
