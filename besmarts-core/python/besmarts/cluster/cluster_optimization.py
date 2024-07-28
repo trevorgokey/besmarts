@@ -109,7 +109,7 @@ def cluster_classifications(
     correct = 0
     params = set()
     for albl, blbls in groups.items():
-        x = set(blbls)
+        x = set(tuple(blbls))
         print(albl, x)
         if len(x) > 1:
             problems.append((albl, list(x)))
