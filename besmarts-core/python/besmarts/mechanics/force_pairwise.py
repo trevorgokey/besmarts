@@ -64,7 +64,7 @@ class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
                 
                 with open(os.path.join(tmpfolder, "mdin"), "w") as f:
                     f.write(f"\n&qmmm\n")
-                    f.write(f"qm_theory='AM1', maxcyc=1000, grms_tol=0.0005, scfconv=1.d-10, ndiis_attempts=700, qmcharge={q:d},\n")
+                    f.write(f"qm_theory='AM1', maxcyc=0, grms_tol=0.0005, scfconv=1.d-10, ndiis_attempts=700, qmcharge={q:d},\n")
 
                     if "sqm" in self.procedure_parameters:
                         sqm_opts = procedure_parameters['sqm']
