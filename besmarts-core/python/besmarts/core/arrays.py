@@ -355,6 +355,9 @@ def argmax(iterable):
 def argmin(iterable):
     return min(enumerate(iterable), key=lambda x: x[1])[0]
 
+def argsort(iterable):
+    return [x[0] for x in sorted(enumerate(iterable), key=lambda x: x[1])]
+
 def find_unsigned_typecode_min(N: int):
     code = None
     for c in "QLIHB":
@@ -383,6 +386,9 @@ def flatten_list(l, times=1):
 
 def array_scale(a, s):
     return type(a)((i*s for i in a))
+
+def array_translate(a, s):
+    return type(a)((i+s for i in a))
 
 def array_sum(a):
     return sum(a)
