@@ -113,7 +113,7 @@ class graph_codec_rdkit(graph_codec):
         # smiles = self.smiles_encode(g)
         return assignments.graph_assignment(smiles, sa.selections, g), extras
 
-    def mol_decode(self, mol) -> assignments.graph_assignment:
+    def rdmol_decode(self, mol) -> assignments.graph_assignment:
         return rdkit_mol_decode(
             self.primitive_codecs,
             self.array,
