@@ -15,7 +15,11 @@ from besmarts.core import topology
 
 hierarchy_id = int
 
+
 class smarts_hierarchy:
+    """
+    A hierarchy that has a mapping of nodes to SMARTS
+    """
     __slots__ = "index", "smarts"
 
     def __init__(self, index, smarts):
@@ -66,6 +70,7 @@ def smarts_hierarchy_copy(smahi: smarts_hierarchy) -> smarts_hierarchy:
     smarts = smahi.smarts.copy()
 
     return smarts_hierarchy(index, smarts)
+
 
 def structure_hierarchy_copy(th: structure_hierarchy) -> structure_hierarchy:
     index = th.index.copy()

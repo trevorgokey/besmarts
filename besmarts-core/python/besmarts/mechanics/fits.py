@@ -13,7 +13,7 @@ import sys
 import math
 import itertools
 import numpy as np
-from typing import List, Dict, Tuple, Callable
+from typing import List, Dict, Callable
 from besmarts.core import configs
 from besmarts.core import arrays
 from besmarts.core import assignments
@@ -41,15 +41,19 @@ from besmarts.mechanics import hessians
 from besmarts.mechanics import vibration
 from besmarts.mechanics import molecular_models as mm
 
+eid_t = int
 
 class compute_config:
 
     """
-    Default is single point energy
+    Configuration for computing some property of an entry in a graph_db. The
+    addr is the address of the entry in the graph_db. Keys are from a chemical
+    system, and are used to temporarility update the parameters. This is
+    generally used to computer numerical gradients and hessians.
     """
 
     def __init__(self, addr):
-        self.addr = addr 
+        self.addr = addr
         self.keys = []
 
     def run(self) -> List[Dict[assignments.tid_t, assignments.graph_db_table]]:
@@ -58,33 +62,21 @@ class compute_config:
         GDB = self.GDB
         tbl_idx = assignments.ENERGY
         tid = assignments.POSITIONS
-        
 
         all_results = []
         for keyset in self.keys:
             results: List[Dict[assignments.tid_t, assignments.graph_db_table]] = []
 
-            # for k, v in self.keys.items():
-                # print(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.6g} to {v:.6g} d={v-mm.chemical_system_get_value(csys, k):.6g}")
-                # mm.chemical_system_set_value(csys, k, v)
-                # mm.physical_system_set_value(self.psys, k, v)
-
             for eid, gdb in GDB.entries.items():
                 tbl = assignments.graph_db_table(topology.null)
                 for gid in gdb.graphs:
-                    # pos0 = assignments.graph_db_entry_to_graph_assignment(gdb, tbl_idx, gid)
                     rid = 0
                     pos0 = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
-
-                    # this means fold all graphs into a single graph
-                    # pos0 = assignments.graph_db_entry_to_graph_assignment(gdb, eid, tid)
 
                     psys = mm.chemical_system_to_physical_system(csys, [pos0], ref=self.psys, reuse=self.reuse)
                     reapply = set()
                     for k, v in keyset.items():
                         # print(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.10g} to {v:.10g} d={v-mm.chemical_system_get_value(csys, k):.10g}")
-                        # mm.chemical_system_set_value(csys, k, v)
-                        # mm.chemical_system_set_value(csys, k, v)
                         mm.physical_system_set_value(psys, k, v)
                         reapply.add(k[0])
                     for m in reapply:
@@ -97,9 +89,7 @@ class compute_config:
                                 psys.models[m] = proc.assign(csys.models[m], psys.models[m], overrides={k[1:]: v for k, v in keyset.items() if k[0] == m})
                     ene = objectives.physical_system_energy(psys, csys)
                     
-                    # ene_ga = assignments.graph_assignment("", {(0,): [[energy]]}, gdb.graphs[gid])
-                    # gdg = assignments.graph_assignment_to_graph_db_graph(ene_ga, topology.null)
-                    tbl[gid] = gdg
+                    tbl[gid] = ene
                 r = {tbl_idx: tbl}
                 # print("Done calculating", self)
                 # print("Result is\n", r)
@@ -114,15 +104,15 @@ class compute_config_energy(compute_config):
     """
 
     def run(self) -> List[Dict[assignments.tid_t, assignments.graph_db_entry]]:
+        """
+        Compute the energy of the entries and store them in graph_db tables.
+        """
+
         # print("Starting calculation", self)
         csys = self.csys
         gdb = self.GDB
         tbl_idx = assignments.ENERGY
         tid = assignments.POSITIONS
-
-        # for k, v in self.keys.items():
-            # print(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.6g} to {v:.6g} d={v-mm.chemical_system_get_value(csys, k):.6g}")
-            # mm.chemical_system_set_value(csys, k, v)
 
         all_results = []
         for keyset in self.keys:
@@ -139,19 +129,10 @@ class compute_config_energy(compute_config):
                         system.append(pos0)
 
 
-                    # create a ga but the indices are (gid, rid, sid)
-                    # just keep an index? 
-                    # system = graphs.graph_assignment_system(system)
-
-                    # psys now has positions in each model indexed by graph
-                    # this means I will need to make indices for graphs and confs
-                    # such as (gid, sid, rid)
-
                     psys = mm.chemical_system_to_physical_system(csys, system, ref=self.psys, reuse=self.reuse)
                     reapply = set()
                     for k, v in keyset.items():
                         # print(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.10g} to {v:.10g} d={v-mm.chemical_system_get_value(csys, k):.10g}")
-                        # mm.chemical_system_set_value(csys, k, v)
                         mm.physical_system_set_value(psys, k, v)
                         reapply.add(k[0])
                     for m in reapply:
@@ -163,23 +144,12 @@ class compute_config_energy(compute_config):
                             for proc in procs[1:]:
                                 psys.models[m] = proc.assign(csys.models[m], psys.models[m], overrides={k[1:]: v for k, v in keyset.items() if k[0] == m})
 
-                    # this must put everything in the psys into a single system
-                    # this must mean that we flatten
-                    # pos = optimizers_scipy.optimize_positions_scipy(csys, psys)
-                    # psys = mm.chemical_system_to_physical_system(csys, [pos])
                     ene = objectives.physical_system_energy(psys, csys)
 
                     tbl.values.append(ene)
                     # print("Calculated energy is", ene)
                     # ene = objectives.physical_system_energy(psys, csys)
-                    # ene_ga = assignments.graph_assignment(
-                    #     "",
-                    #     {(0,): [[ene]]},
-                    #     graphs.subgraph_as_graph(gdb.graphs[gid])
-                    # )
-                    # # struct = assignments.graph_assignment_to_graph_db_struct(ene_ga, topology.null)
-                    # gdg = assignments.graph_assignment_to_graph_db_graph(ene_ga, topology.null)
-                    # tbl.graphs[gid] = gdg
+
                 r = {tbl_idx: tbl}
                 # print("Result is\n", r)
                 results.append(r)
@@ -187,13 +157,15 @@ class compute_config_energy(compute_config):
         # print("Done calculating", self)
         return all_results
 
-class compute_config_gradient(compute_config):
 
+class compute_config_gradient(compute_config):
     """
+    Configuration for computing the MM gradient
     """
 
     def run(self) -> List[Dict[assignments.tid_t, assignments.graph_db_entry]]:
         """
+        Compute the gradient of the entries and store them in graph_db tables.
         compute_config_gradient::run
         """
         # print("Starting calculation", self)
@@ -201,12 +173,6 @@ class compute_config_gradient(compute_config):
         gdb = self.GDB
         tbl_idx = assignments.GRADIENTS
         tid = assignments.POSITIONS
-
-        verbose=True
-
-        # for k, v in self.keys.items():
-            # print(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.6g} to {v:.6g} d={v-mm.chemical_system_get_value(csys, k):.6g}")
-            # mm.chemical_system_set_value(csys, k, v)
 
         all_results = []
         for keyset in self.keys:
@@ -217,26 +183,14 @@ class compute_config_gradient(compute_config):
                 for rid in rids:
                     system = []
                     for gid in gde.tables[tid].graphs:
-                    # pos0 = assignments.graph_db_entry_to_graph_assignment(gdb, assignments.POSITIONS, gid)
 
                         pos0 = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
-                        # psys = mm.chemical_system_to_physical_system(csys, [pos0], ref=self.psys, reuse=self.reuse)
                         system.append(pos0)
-
-
-                    # create a ga but the indices are (gid, rid, sid)
-                    # just keep an index? 
-                    # system = graphs.graph_assignment_system(system)
-
-                    # psys now has positions in each model indexed by graph
-                    # this means I will need to make indices for graphs and confs
-                    # such as (gid, sid, rid)
 
                     psys = mm.chemical_system_to_physical_system(csys, system, ref=self.psys, reuse=self.reuse)
                     reapply = set()
                     for k, v in keyset.items():
                         # dprint(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.10g} to {v:.10g} d={v-mm.chemical_system_get_value(csys, k):.10g}", on=verbose)
-                        # mm.chemical_system_set_value(csys, k, v)
                         mm.physical_system_set_value(psys, k, v)
                         reapply.add(k[0])
                     for m in reapply:
@@ -248,32 +202,17 @@ class compute_config_gradient(compute_config):
                             for proc in procs[1:]:
                                 psys.models[m] = proc.assign(csys.models[m], psys.models[m], overrides={k[1:]: v for k, v in keyset.items() if k[0] == m})
 
-                    # this must put everything in the psys into a single system
-                    # this must mean that we flatten
-                    # pos = optimizers_scipy.optimize_positions_scipy(csys, psys)
-                    # psys = mm.chemical_system_to_physical_system(csys, [pos])
-
-                    #gx = objectives.physical_system_gradient(psys, csys)
                     gx = optimizers_openmm.physical_system_gradient_openmm(csys, psys)
                     gx = arrays.array_round(gx, 12)
                     tbl.values.extend(gx)
-                    # if not keyset:
-                        # ene = objectives.physical_system_energy(psys, csys)
-                        # print(f"Calculated energy for EID {eid} is ", ene)
-                    # ene_ga = assignments.graph_assignment(
-                    #     "",
-                    #     {(0,): [[ene]]},
-                    #     graphs.subgraph_as_graph(gdb.graphs[gid])
-                    # )
-                    # # struct = assignments.graph_assignment_to_graph_db_struct(ene_ga, topology.null)
-                    # gdg = assignments.graph_assignment_to_graph_db_graph(ene_ga, topology.null)
-                    # tbl.graphs[gid] = gdg
+
                 r = {tbl_idx: tbl}
                 # print("Result is\n", r)
                 results.append(r)
             all_results.append(results)
         # print("Done calculating", self)
         return all_results
+
 
 class compute_config_hessian(compute_config):
 
@@ -282,24 +221,14 @@ class compute_config_hessian(compute_config):
 
     def run(self) -> List[Dict[assignments.tid_t, assignments.graph_db_entry]]:
         """
+        Compute the hessian of the entries and store them in graph_db tables.
         compute_config_hessian::run
-
-        This should compute the gradient and hessian
-        Also calculate the B2 matrix if necessary
-        Do not transform, since the point is to just calculate what is needed
-        Measurements are done in the objective
         """
         # print("Starting calculation", self)
         csys = self.csys
         gdb = self.GDB
         tbl_idx = assignments.HESSIANS
         tid = assignments.POSITIONS
-
-        verbose=True
-
-        # for k, v in self.keys.items():
-            # print(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.6g} to {v:.6g} d={v-mm.chemical_system_get_value(csys, k):.6g}")
-            # mm.chemical_system_set_value(csys, k, v)
 
         all_results = []
         for ki, keyset in enumerate(self.keys, 1):
@@ -312,26 +241,14 @@ class compute_config_hessian(compute_config):
                 for rid in rids:
                     system = []
                     for gid in gde.tables[tid].graphs:
-                    # pos0 = assignments.graph_db_entry_to_graph_assignment(gdb, assignments.POSITIONS, gid)
 
                         pos0 = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
-                        # psys = mm.chemical_system_to_physical_system(csys, [pos0], ref=self.psys, reuse=self.reuse)
                         system.append(pos0)
-
-
-                    # create a ga but the indices are (gid, rid, sid)
-                    # just keep an index? 
-                    # system = graphs.graph_assignment_system(system)
-
-                    # psys now has positions in each model indexed by graph
-                    # this means I will need to make indices for graphs and confs
-                    # such as (gid, sid, rid)
 
                     psys = mm.chemical_system_to_physical_system(csys, system, ref=self.psys, reuse=self.reuse)
                     reapply = set()
                     for k, v in keyset.items():
                         # dprint(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.10g} to {v:.10g} d={v-mm.chemical_system_get_value(csys, k):.10g}", on=verbose)
-                        # mm.chemical_system_set_value(csys, k, v)
                         mm.physical_system_set_value(psys, k, v)
                         reapply.add(k[0])
                     for m in reapply:
@@ -344,30 +261,19 @@ class compute_config_hessian(compute_config):
                                 psys.models[m] = proc.assign(csys.models[m], psys.models[m], overrides={k[1:]: v for k, v in keyset.items() if k[0] == m})
 
                     pos = psys.models[0].positions[0]
-                    # this must put everything in the psys into a single system
-                    # this must mean that we flatten
-                    # pos = optimizers_scipy.optimize_positions_scipy(csys, psys)
-                    # psys = mm.chemical_system_to_physical_system(csys, [pos])
+
                     hess_qm = gdb.entries[eid].tables[assignments.HESSIANS].values
 
-                    # posmm = optimizers_scipy.optimize_positions_scipy(csys, psys, tol=1e-10) 
-                    # posmm = optimizers_openmm.optimize_positions_openmm(csys, psys) 
-
-                    # xyz = np.vstack([x[0] for x in posmm.selections.values()], dtype=float)
-                    # xyz = xyz.round(12)
                     args, keys = objectives.array_flatten_assignment(pos.selections)
-                    # hess_mm = objectives.array_geom_hessian(args, keys, csys, psys, h=1e-7)
 
                     hess_mm = optimizers_openmm.physical_system_hessian_openmm(csys, psys, h=1e-4)
 
-                    # hess_mm = objectives.physical_system_hessian(psys, csys)
                     hx = []
                     for row in hess_mm:
                         hx.append(arrays.array_scale(row, 1/4.184))
                     tbl_hess.values.extend(hx)
 
                     grad_mm = optimizers_openmm.physical_system_gradient_openmm(csys, psys)
-                    # grad_mm = objectives.array_geom_gradient(args, keys, csys, psys)
                     gx = arrays.array_scale(grad_mm, 1/4.184)
                     tbl_grad.values.extend(gx)
 
@@ -380,7 +286,6 @@ class compute_config_hessian(compute_config):
             all_results.append(results)
         return all_results
 
-    
 
 class compute_config_position(compute_config):
 
@@ -389,6 +294,8 @@ class compute_config_position(compute_config):
 
     def run(self) -> List[Dict[assignments.tid_t, assignments.graph_db_table]]:
         """
+        Compute the positions that minimize the energy of the entries and store
+        them in graph_db tables.
         compute_config_position::run
         """
         csys = self.csys
@@ -396,13 +303,6 @@ class compute_config_position(compute_config):
         tbl_idx = assignments.POSITIONS
         tid = assignments.POSITIONS
 
-        # for k, v in self.keys.items():
-            # print(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.10g} to {v:.10g} d={v-mm.chemical_system_get_value(csys, k):.10g}")
-            # mm.chemical_system_set_value(csys, k, v)
-            # mm.physical_system_set_value(psys, k, v)
-        # if not self.keys:
-        #     print(f"-> Obj Setting no values")
-        # need to make this work for multi conformations
         all_results = []
         for keyset in self.keys:
             results: List[Dict[assignments.tid_t, assignments.graph_db_table]] = []
@@ -411,29 +311,16 @@ class compute_config_position(compute_config):
                 for gid in gdb.graphs:
                     for rid in gde[tid][gid].rows:
                         pos0 = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
-                        # print(f"MinPos Reuse={self.reuse}")
-                        # print(f"MinPos pre torsions:")
-                        # print(self.psys.models[2].labels)
-                        # print(f"MinPos pre torsion values:")
-                        # print(self.psys.models[2].values)
                         psys = mm.chemical_system_to_physical_system(csys, [pos0], ref=self.psys, reuse=self.reuse)
-                        # print(f"MinPos Reuse={self.reuse}")
-                        # print(f"MinPos torsions:")
-                        # print(psys.models[2].labels)
-                        # print(f"MinPos torsion values:")
-                        # print(psys.models[2].values)
                         
                         reapply = set()
                         for k, v in keyset.items():
-                            # mm.physical_system_get_value(psys, k, v)
                             # print(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.10g} to {v:.10g} d={v-mm.chemical_system_get_value(csys, k):.10g}")
-                            # mm.chemical_system_set_value(csys, k, v)
                             mm.physical_system_set_value(psys, k, v)
                             reapply.add(k[0])
                         for m in reapply:
                             procs = csys.models[m].procedures
                             if len(procs) > 1:
-                                # print(f"MinPos Reapply {m}")
                                 for _ in range(1, len(psys.models[m].values)):
                                     psys.models[m].values.pop()
                                     psys.models[m].labels.pop()
@@ -445,8 +332,6 @@ class compute_config_position(compute_config):
                         pos = optimizers_openmm.optimize_positions_openmm(csys, psys, step_limit=self.step_limit, tol=self.tol)
                         # print(f"Optimized xyz for EID {eid}:")
                         # print("\n".join(print_xyz(pos)))
-                        # pos = copy.deepcopy(pos0)
-                        # struct = assignments.graph_assignment_to_graph_db_struct(pos, topology.atom)
                         gdg = assignments.graph_assignment_to_graph_db_graph(pos, topology.atom)
                         tbl.graphs[gid] = gdg
                 r = {tbl_idx: tbl}
@@ -462,6 +347,7 @@ class compute_config_penalty(compute_config):
 
     def run(self, keys) -> dict:
         """
+        Compute the penalty function of set of parameters.
         compute_config_penalty::run
         """
         # csys = self.csys
@@ -476,6 +362,13 @@ class compute_config_penalty(compute_config):
 
 class objective_config:
 
+    """
+    Configuration of an objective function for force field fitting. The
+    objective has two parts. The first part is how the properties are calculated
+    and is configured with a compute_config. The next is how the objective is
+    computed from the properties and is configured here.
+    """
+
     def __init__(self, addr, include=True, scale=1, coordinate_system="C"):
         self.addr = addr
         self.scale = scale
@@ -487,6 +380,10 @@ class objective_config:
         self.batch_size = None
 
     def get_task(self, GDB, csys, keys=None, psys=None, reuse=None) -> compute_config:
+        """
+        Build and return a compute_config that will compute the needed
+        properties.
+        """
         cc = compute_config(self.addr)
 
         cc.GDB = {i: GDB[i] for i in self.addr.eid}
@@ -500,15 +397,10 @@ class objective_config:
         return cc
 
     def compute_gradient_2pt(self, ref, X0, E, D: List[Dict[int, assignments.graph_db_table]], h):
-        
         """
-        D is the results for some objective idx
-        so it is a list of tables (with their own tid)
-                                   
-        which now means that each is a table with structs which have indices
-        this is the parameter deriv, which should be 2(X-X0)dX/dp
-        and this is in particular dX/dpj
+        Compute the parameter gradients of this objective.
         """
+
         dxa = []
         dxb = []
         for etbls, dtbls  in zip(E, D):
@@ -546,11 +438,9 @@ class objective_config:
 
     def compute_diff(self, GDB: assignments.graph_db, D: List[Dict[int, assignments.graph_db_table]], verbose=False):
         """
-        D is the results for some objective idx
-        so it is a list of tables (with their own tid)
-                                   
-        which now means that each is a table with structs which have indices
+        Compute the difference of the computed properties versus a reference
         """
+
         obj = []
         out = []
         for (eid, gde), tbls  in zip(GDB.entries.items(), D):
@@ -586,36 +476,18 @@ class objective_config:
             out.append(f"Total Position SSE: {arrays.array_inner_product(obj, obj):10.5f} A^2 RMSE: {rmse:10.5f} A")
         return returns.success(arrays.array_round(obj, 12), out=out, err=[])
 
-    def compute_total(self, GDB: assignments.graph_db, D: List[Dict[int, assignments.graph_db_table]]):
-        """
-        D is the results for some objective idx
-        so it is a list of tables (with their own tid)
-                                   
-        which now means that each is a table with structs which have indices
-        """
-        obj = 0
-        for gde, tbls  in zip(GDB.entries.values(), D):
-            for tid, tbl in tbls.items():
-                tbl0 = gde.tables[tid]
-                for gid, gdg in tbl.graphs.items():
-                    gdg0 = tbl0.graphs[gid]
-                    for rid, gdr in gdg.rows.items():
-                        gdr0 = gdg0.rows[rid]
-                        for cid, gdc in gdr.columns.items():
-                            gdc0 = gdr0.columns[cid]
-                            for v, v0 in zip(gdc.selections.values(), gdc0.selections.values()):
-                                # vstr = "["+",".join([f"{vi:10.5f}" for vi in v]) + "]"
-                                # v0str = "["+",".join([f"{vi:10.5f}" for vi in v0]) + "]"
-                                x = arrays.array_difference(v, v0)
-                                sse = arrays.array_inner_product(x, x)
-                                obj += sse
-                                # print(f"{rid:3d} Position SSE: {sse:10.5f} {vstr} {vstr}")
-        # print(f"Total Position SSE: {obj:10.5f} A^2")
-        return obj
 
 class objective_config_gradient(objective_config):
 
-    def get_task(self, GDB: assignments.graph_db, csys, keys=None, psys=None, reuse=None) -> compute_config:
+    def get_task(
+        self,
+        GDB: assignments.graph_db,
+        csys,
+        keys=None,
+        psys=None,
+        reuse=None
+    ) -> compute_config_gradient:
+
         cc = compute_config_gradient(self.addr)
         cc.GDB = assignments.graph_db_get(GDB, self.addr)
 
@@ -715,51 +587,17 @@ class objective_config_gradient(objective_config):
             out.append(f" Total Gradient SSE: {arrays.array_inner_product(X,X):10.5f} (kJ/mol/A)^2 RMSE: {rmse:10.5f} kJ/mol/A")
         return returns.success(arrays.array_round(X, 12), out=out, err=[])
 
-    def compute_total(self, GDB: assignments.graph_db, D: List[Dict[int, assignments.graph_db_table]]):
-        """
-        D is the results for some objective idx
-        so it is a list of tables (with their own tid)
-                                   
-        which now means that each is a table with structs which have indices
-        """
-        obj = 0
-        g = [0, 0, 0]
-        g0 = [0, 0, 0]
-        for gde, tbls  in zip(GDB.entries.values(), D):
-            for tid, tbl in tbls.items():
-                tbl0 = gde.tables[tid]
-            
-                for i in range(0,len(tbl.values),3):
-                    v = tbl.values[i:i+3]
-                    v0 = tbl0.values[i:i+3]
-                    estr = "["+",".join([f"{vi:10.5f}" for vi in v]) + "]"
-                    e0str = "["+",".join([f"{vi:10.5f}" for vi in v0]) + "]"
-                    x = arrays.array_difference(v, v0)
-                    g[0] += v[0]
-                    g[1] += v[1]
-                    g[2] += v[2]
-                    g0[0] += v0[0]
-                    g0[1] += v0[1]
-                    g0[2] += v0[2]
-
-                    sse = arrays.array_inner_product(x, x)
-                    # print(f"Gradient SSE: {sse:10.5f} kJ/mol/A {estr} {e0str}")
-                    obj += sse
-        estr = "["+",".join([f"{vi:10.5f}" for vi in g]) + "]"
-        e0str = "["+",".join([f"{vi:10.5f}" for vi in g0]) + "]"
-        x = arrays.array_difference(g, g0)
-        sse = arrays.array_inner_product(x, x)
-        # print(f"G summed SSE: {sse:10.5f} kJ/mol/A {estr} {e0str}")
-                
-        # print(f"Total gradient SSE: {obj:10.5f} kJ/mol/A")
-        return obj
-
-
 
 class objective_config_hessian(objective_config):
 
-
-    def get_task(self, GDB: assignments.graph_db, csys, keys=None, psys=None, reuse=None) -> compute_config:
+    def get_task(
+        self,
+        GDB: assignments.graph_db,
+        csys,
+        keys=None,
+        psys=None,
+        reuse=None
+    ) -> compute_config_hessian:
         cc = compute_config_hessian(self.addr)
         cc.GDB = assignments.graph_db_get(GDB, self.addr)
 
@@ -987,9 +825,6 @@ class objective_config_position(objective_config):
 class objective_config_penalty(objective_config):
 
     def __init__(self, keys=None, scale=1, polynomial={2: 1.0}):
-        """
-
-        """
         if keys is None:
             keys = {}
 
@@ -999,7 +834,7 @@ class objective_config_penalty(objective_config):
         assert all([type(n) is int for n in polynomial])
         self.polynomial = polynomial
         self.include = True
-        
+
     def get_task(self) -> compute_config:
 
         # keys is the reference
@@ -1021,7 +856,6 @@ class objective_config_penalty(objective_config):
         return cc
 
     def compute_gradient(self, result):
-        
         """
 
         """
@@ -1041,7 +875,6 @@ class objective_config_penalty(objective_config):
         return round(DX, 12)
 
     def compute_hessian(self, result):
-        
         """
 
         """
@@ -1072,15 +905,16 @@ class objective_config_penalty(objective_config):
 
         return returns.success(round(DX, 12), out=[], err=[])
 
-    def compute_total(self, result):
-        """
-        """
-        obj = 0
-        return obj
-        
-
 
 class objective_tier:
+    """
+    A configuration for how to compute a total objective over a list of
+    objectives. A tier is meant to be calculated for 1 or more force fields,
+    which is what happens during parameter searching. Tiers have a fitting
+    aspect that is configured here. For example, an objective might only
+    perform 1 or 2 fitting steps for each force field, and the top N force
+    fields would be accepted (and passed to the next tier.
+    """
     def __init__(self):
         self.objectives: Dict[int, objective_config] = {}
         h = 1e-6
@@ -1143,8 +977,12 @@ class objective_tier:
 def objective_tier_get_keys(ot, csys):
     keys = *filter(ot.key_filter, mm.chemical_system_iter_keys(csys)),
     return keys
-    
+
 def gdb_to_physical_systems(gdb, csys, ref=None, reuse=None):
+    """
+    Build a physical system for each entry in the graph_db
+    """
+
     psysref = {}
     failures = 0
     if len(gdb.entries) > 100:
@@ -1171,10 +1009,28 @@ def gdb_to_physical_systems(gdb, csys, ref=None, reuse=None):
         print(f"There were {failures} failures that will be skipped")
     return psysref
 
+
 def objective_tier_run(
     ot, gdb: assignments.graph_db, csys: mm.chemical_system, keys,
     oid=None, psysref=None, reuse=None, wq=None, verbose=False
 ):
+    """
+    Run the given objective and return the resulting parameters, and the
+    initial and final objective and gradients.
+
+    Parameters
+    ----------
+    ot: The objective_tier object
+    gdb: The complete graph_db
+    csys: The initial chemical system
+    keys: The keys in the chemical_system that are going to be fit
+    oid: The objective IDs to use in the computation
+    psysref: The reference physical systems to use when applied parameters
+        should be reused (charges etc)
+    reuse: Models that be reused during parameterization
+    wq: The wq to use for distributing computing
+    verbose: Whether to make a lot of noise
+    """
 
     # need this to avoid race conditions
     csys = copy.deepcopy(csys)
@@ -1196,31 +1052,9 @@ def objective_tier_run(
     objectives = ot.objectives
     if oid:
         objectives = {i: objectives[i] for i in oid}
-    
-    # build the keys to fit
-    # kv = mm.chemical_system_iter_keys(csys)
-    # print("## All parameter terms")
-    # for k,v in kv.items():
-    #     print(k, v)
-    # model_ids = list(range(len(csys.models)))
-    # fit_ids = [0,1,2,3,4,5]
-    # kv = {k:v for k, v in kv.items() if k[0] in fit_ids and k[1] in "s"}
-    # keys = [k for k in keys if ot.key_filter(k)]
-    # assigned = [(i, k, v) for psys in psysref.values() for i,m in enumerate(psys.models) for a in m.labels[0].values() for k, v in a.items()]
-    # keys = [k for k in keys if tuple(k[:3]) in assigned or k[1] in "s"]
-    # reuse = []
-    # # reuse = [i for i, m in enumerate(csys.models) if m.name in ["vdW", "Electrostatics"]]
-    # # reuse = [i for i, m in enumerate(csys.models) if m.name in ["Electrostatics"]]
-    # # reuse.extend([i for i in model_ids if i not in fit_ids])
+
     x0 = [mm.chemical_system_get_value(csys, k) for k in keys]
 
-    # keys = list(kv.keys())
-    # x0 = list(kv.values())
-    # del kv
-    # print("## Fitting parameter terms")
-    # for k, v0 in zip(keys, x0):
-    #     print(k, v0)
-    
     # we need history to identify work for each iteration
     # otherwise we might accidentally use work from step n-1 that gets sent in
     # when we are already at step n
@@ -1231,9 +1065,6 @@ def objective_tier_run(
     for penalty in ot.penalties:
         penalty.reference.clear()
         penalty.reference.update(kv)
-
-
-    # y0 = optimizers_scipy.fit_gdb(x0, *args) 
 
     bounds = []
     for k in keys:
@@ -1276,15 +1107,35 @@ def objective_tier_run(
 
     x0 = [(x-p[0])/p[1] for x, p in zip(x0, priors)]
 
-    args = (keys, csys, gdb, objectives, priors, ot.penalties, history, psysref, reuse, ws, verbose)
+    args = (
+        keys,
+        csys,
+        gdb,
+        objectives,
+        priors,
+        ot.penalties,
+        history,
+        psysref,
+        reuse,
+        ws,
+        verbose
+    )
 
-    ret = optimizers_scipy.optimize_forcefield_gdb_scipy(x0, args, bounds=bounds, step_limit=ot.step_limit, maxls=ot.maxls, anneal=ot.anneal)
+    ret = optimizers_scipy.optimize_forcefield_gdb_scipy(
+        x0,
+        args,
+        bounds=bounds,
+        step_limit=ot.step_limit,
+        maxls=ot.maxls,
+        anneal=ot.anneal
+    )
 
     result, y0, y1, gx = ret.value
 
     ret.out.append(f">>> Initial Objective {y0:10.5g}")
     ret.out.append(f">>> Final Objective   {y1:10.5g}")
     ret.out.append(f">>> Percent change    {(y1-y0)/y0*100:10.5g}%")
+
     if verbose:
         for i in [-3, -2, -1]:
             print(ret.out[i])
@@ -1293,10 +1144,10 @@ def objective_tier_run(
         ws.close()
         ws = None
 
-
     kv = {k: v*p[1] + p[0] for k,v,p in zip(keys, result, priors)}
 
     return returns.success((kv, y0, y1, gx), out=ret.out, err=[])
+
 
 def objective_run_distributed(obj, shm=None):
     if shm and "csys" in shm.__dict__:
@@ -1304,47 +1155,14 @@ def objective_run_distributed(obj, shm=None):
     return obj.run()
 
 
-# we pass the dataset because we need to grab the compute settings
-# a deduplicator should combine 0,2 and 1,3 since it has the same everything
-# except aid
-#objectives = {
-#    0 :objective_config(
-#        graph_db_address(
-#            xid=[0],
-#            aid=[assignments.POSITIONS]
-#        ),
-#        min=False
-#    ),
-#    1: objective_config(
-#        graph_db_address(
-#            xid=[0],
-#            aid=[assignments.POSITIONS]
-#        ),
-#        min=True
-#    ),
-#    2: objective_config(
-#        graph_db_address(
-#            xid=[0],
-#            aid=[assignments.GRADIENTS]
-#        ),
-#        min=False
-#    ),
-#    3: objective_config(
-#        graph_db_address(
-#            xid=[0],
-#            aid=[assignments.GRADIENTS]
-#        ),
-#        min=True
-#    )
-#}
-#
-#D: list[graph_topology_db] = [graph_topology_db()]
-
 def forcefield_optimization_strategy_default(csys, models=None):
     """
-    determines how to step the optimization forward, choosing which hyperparameter
-    to try next
+    Configure a force field optimiation strategy with default settings. The
+    strategy determines how to step the optimization forward, choosing which
+    hyperparameter to try next in the search, such as bit depth and which
+    model to focus on.
     """
+
     if models is None:
         models = {}
     elif type(models) is not dict:
@@ -1357,9 +1175,15 @@ def forcefield_optimization_strategy_default(csys, models=None):
             continue
 
 
-        for h, hidx in enumerate(mm.chemical_model_iter_smarts_hierarchies(cm)):
+        hiers = mm.chemical_model_iter_smarts_hierarchies(cm)
 
-            nodes = [n.name for n in hidx.index.nodes.values() if n.type == "parameter"]
+        for h, hidx in enumerate(hiers):
+
+            nodes = [
+                n.name for n in hidx.index.nodes.values()
+                if n.type == "parameter"
+            ]
+
             strat.reference_list.extend(nodes)
 
             assert type(models[m]) is not str
@@ -1368,10 +1192,6 @@ def forcefield_optimization_strategy_default(csys, models=None):
             else:
                 strat.target_list.extend(nodes)
 
-
-            # splitter = configs.smarts_splitter_config(
-            #     1, 2, 0, 0, 0, 0, False, True, 0, True, True, False, False
-            # )
             splitter = configs.smarts_splitter_config(
                 1, 2, 0, 0, 0, 0, True, True, 0, True, True, True, True
             )
@@ -1379,6 +1199,8 @@ def forcefield_optimization_strategy_default(csys, models=None):
                 0, 0, True
             )
             bounds[m] = configs.smarts_perception_config(splitter, extender)
+
+            # Currently, all SMARTS hierarchies are first so we cheat
             break
 
     strat.bounds.update(bounds)
@@ -1386,6 +1208,10 @@ def forcefield_optimization_strategy_default(csys, models=None):
 
 
 class forcefield_optimization_strategy(optimization.optimization_strategy):
+    """
+    Configuration for fitting a force field using BESMARTS (this package).
+    """
+
     def __init__(self, bounds):
         # build the 
         self.bounds = bounds
@@ -1468,6 +1294,9 @@ class forcefield_optimization_strategy(optimization.optimization_strategy):
         self.dihedral_periodicity_reset_min_k = 1e-3
         self.dihedral_periodicity_reset_max_k = 5.0
 
+        # The reference list to use for merge protect and target splitting.
+        # Because parameters can be added later, we only try to protect 
+        # the original (reference) set.
         self.reference_list = []
 
         # Do not merge these
@@ -1512,7 +1341,14 @@ class forcefield_optimization_strategy(optimization.optimization_strategy):
             forcefield_optimization_strategy_build_macro_iterations(self)
         )
 
-def forcefield_optimization_strategy_build_macro_iterations(strat: forcefield_optimization_strategy):
+def forcefield_optimization_strategy_build_macro_iterations(
+    strat: forcefield_optimization_strategy
+):
+    """
+    Build the macro iterations of a strategy, which define each step in the
+    optimization. Each macro step will be a list of micro steps, where each
+    micro step represents e.g. a parameter in the hierarchy.
+    """
 
     macro_iters = []
     boundlist = [x.splitter for x in strat.bounds.values()]
@@ -1546,8 +1382,8 @@ def forcefield_optimization_strategy_build_macro_iterations(strat: forcefield_op
 
                         mbounds: configs.smarts_perception_config
 
-                        # go through the model bounds and add if current settings
-                        # are a subset of bounds
+                        # go through the model bounds and add if current
+                        # settings are a subset of bounds
                         if mbounds.splitter.bit_search_limit < bits:
                             continue
                         if mbounds.splitter.bit_search_min > bits:
@@ -1601,8 +1437,6 @@ def forcefield_optimization_strategy_build_macro_iterations(strat: forcefield_op
                         if m not in [2,3]:
                             continue
 
-                        # go through the model bounds and add if current settings
-                        # are a subset of bounds
                         if mbounds.splitter.bit_search_limit < bits:
                             continue
                         if mbounds.splitter.bit_search_min > bits:
@@ -1656,8 +1490,6 @@ def forcefield_optimization_strategy_build_macro_iterations(strat: forcefield_op
 
                         mbounds: configs.smarts_perception_config
 
-                        # go through the model bounds and add if current settings
-                        # are a subset of bounds
                         if mbounds.splitter.bit_search_limit < bits:
                             continue
                         if mbounds.splitter.bit_search_min > bits:
@@ -1707,14 +1539,27 @@ def forcefield_optimization_strategy_build_macro_iterations(strat: forcefield_op
                         s.pcp = config
 
                         steps.append(s)
-                    macro_iters.append(optimization.optimization_iteration(steps))
-
+                    macro_step = optimization.optimization_iteration(steps)
+                    macro_iters.append(macro_step)
 
     strat.cursor = 0
 
     return macro_iters
 
+
 def fit(csys, gdb, objective, psystems, nodes, wq=None, verbose=False):
+    """
+    Helper function to easily run a force field fit
+
+    Parameters
+    ----------
+    csys: The reference chemical system to fit
+    gdb: The graph_db
+    objective: The objective tier to run
+    psystems: The parameterized systems
+    nodes: unused
+    wq: The workqueue_local to use for distributing computing
+    """
 
     assigned_nodes = sorted(set([
         (m, l) for psys in psystems.values()
@@ -1745,7 +1590,6 @@ def fit(csys, gdb, objective, psystems, nodes, wq=None, verbose=False):
     return ret
 
 
-eid_t = int
 def ff_optimize(
     csys0: mm.chemical_system,
     gdb: assignments.graph_db,
@@ -1756,6 +1600,21 @@ def ff_optimize(
     tiers: List[objective_tier],
     final_objective: objective_tier,
 ) -> mm.chemical_system:
+    """
+    The toplevel function to run a full BESMARTS force field fit.
+
+    Parameters
+    ----------
+    csys0: The initial chemical system to fit
+    gdb: The graph_db with all data
+    psystems: The initial parameterized systems
+    strategy: The fitting strategy
+    chemical_objective: The function that will compute the chemical objective
+    initial_objective: The objective_tier that will perform the initial fit
+    tiers: The tiers that will score each parameter candidate
+    final_objective: The objective_tier that will score the remaining
+    candidates passed by the tiers
+    """
 
     started = datetime.datetime.now()
     max_line = 0
