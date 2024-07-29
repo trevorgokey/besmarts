@@ -36,3 +36,8 @@ __7. Automated chemical perception for force field design (7_besmarts_fit.py)__
 This performs automated chemical perception starting from OpenFF Sage 2.1. For
 expedience, only b4 is targeted and only the lengths are fit. The resulting
 force field was fit on positions and gradients of a single molecule.
+
+__8. Find all splits using numerical SMARTS search__ (8_smarts_split.py)
+
+Enumerate all SMARTS patterns that can split (partition) the bonds of CCO into
+two groups.

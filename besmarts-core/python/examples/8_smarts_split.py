@@ -1,5 +1,8 @@
 """
 examples/split_smarts.py
+
+Enumerate all SMARTS patterns that can split (partition) the bonds of CCO into
+two groups.
 """
 
 from besmarts.core import graphs
@@ -7,9 +10,7 @@ from besmarts.core import configs
 from besmarts.core import topology
 from besmarts.core import splits
 from besmarts.core import codecs
-from besmarts.core import configs
 from besmarts.core import compute
-
 from besmarts.core.primitives import primitive_key
 
 # use the RDKit plugin
@@ -77,7 +78,8 @@ for i, f in enumerate(ic_list):
 configs.remote_compute_enable = False
 
 wq = compute.workqueue_local("127.0.0.1", 63210)
-results: splits.split_return_type = splits.split_structures_distributed(splitter, S0, G, selections, wq, icd)
+results: splits.split_return_type = splits.split_structures_distributed(
+    splitter, S0, G, selections, wq, icd)
 
 # custom processing of results
 
