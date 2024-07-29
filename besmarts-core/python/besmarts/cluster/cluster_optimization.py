@@ -136,10 +136,10 @@ def cluster_means(
 
     if optimization is None:
         splitter = configs.smarts_splitter_config(
-            1, 3, 0, 3, 0, 1, True, True, 0, True, True, True, True
+            1, 2, 0, 0, 0, 0, True, True, 0, False, True, True, True
         )
         extender = configs.smarts_extender_config(
-            0, 1, True
+            0, 0, True
         )
         cfg = configs.smarts_perception_config(splitter, extender)
         optimization = optimization_strategy_default(cfg)
