@@ -241,7 +241,7 @@ def run():
         f"Chemical {100*(C-C0)/C0:14.2f}%"
     )
 xml = """<?xml version="1.0" encoding="utf-8"?>
-<SMIRNOFF version="0.3" aromaticity_model="MDL">
+<SMIRNOFF version="0.3" aromaticity_model="AROMATICITY_MDL">
     <Constraints version="0.3">
     </Constraints>
     <Bonds version="0.4" potential="harmonic" fractional_bondorder_method="AM1-Wiberg" fractional_bondorder_interpolation="linear">

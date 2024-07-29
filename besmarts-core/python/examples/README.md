@@ -2,7 +2,7 @@
 Examples
 ========
 
-SMILES IO (smiles_oi.py)
+SMILES IO (smiles_io.py)
 ------------------------
 A simple example of getting a graph representation from a SMILES and how to
 use the native BESMARTS format.
@@ -14,7 +14,7 @@ a native BESMARTS function.
 
 Bond union (bond_union.py)
 --------------------------
-Example of combining the bond SMARTS of propane into a single SMARTS.
+Example of combining the bonds of propane into a single SMARTS.
 
 Initializing FF parameters (init_bonds_angles.py)
 -------------------------------------------------
