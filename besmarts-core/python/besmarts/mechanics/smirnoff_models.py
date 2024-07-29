@@ -717,6 +717,8 @@ def smirnoff_load(
     )
     vdw = chemical_model_vdw_smirnoff(d["vdW"], pcp)
 
+    aro_model = d["SMIRNOFF"]['options']["aromaticity_model"]
+    pcp.gcd.smiles_config.aromaticity = aro_model
     csys = mm.chemical_system(
         pcp,
         [
