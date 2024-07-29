@@ -7,35 +7,41 @@ two groups.
 
 from besmarts.core import graphs
 from besmarts.core import configs
-from besmarts.core import topology
 from besmarts.core import splits
 from besmarts.core import codecs
 from besmarts.core import compute
 from besmarts.core.primitives import primitive_key
 
-# use the RDKit plugin
+# Use the RDKit plugin for SMILES perception and substructure search
 from besmarts.codecs import codec_rdkit
 
-configs.processors = 16
+# Set the compute environment. Use 4 local cores
+configs.processors = 4
+configs.remote_compute_enable = False
+wq = compute.workqueue_local("127.0.0.1", 63210)
 
-prims = (primitive_key.ELEMENT, primitive_key.HYDROGEN), (
-    primitive_key.BOND_ORDER,
+prims = (
+    (primitive_key.ELEMENT, primitive_key.HYDROGEN),
+    (primitive_key.BOND_ORDER,)
 )
 
-# use all available primitives
+# Use all available primitives
 # prims = (None, None)
 
-pcp = codec_rdkit.graph_codec_rdkit(*prims)
-pcp.smiles_config.strip_hydrogen = False
+gcd = codec_rdkit.graph_codec_rdkit(*prims)
+
+# Packs graphs into a space efficient serialization for sending over networks
+# for distributed computing
 icd = codecs.intvec_codec(
-    pcp.primitive_codecs,
-    pcp.atom_primitives,
-    pcp.bond_primitives
+    gcd.primitive_codecs,
+    gcd.atom_primitives,
+    gcd.bond_primitives
 )
 
+# Currently the splitting functions are designed to handle intvec encoded
+# graphs since we assume jobs will be large and distributed
 smi = "CCO"
-
-G = {0: pcp.smiles_decode(smi)}
+G = {0: gcd.smiles_decode(smi)}
 ic_list = [s for s in graphs.graph_to_structure_bonds(G[0])]
 selections = [(i, x) for i in G for x in graphs.graph_bonds(G[i])]
 G[0] = icd.graph_encode(G[0])
@@ -69,19 +75,18 @@ splitter = configs.smarts_splitter_config(
 extender = configs.smarts_extender_config(branch_depth, branch_depth, True)
 graphs.structure_extend(extender, ic_list)
 
-S0 = pcp.smarts_decode("[*:1]~[*:2]")
-S0 = graphs.structure(S0.nodes, S0.edges, (1, 2), topology.bond)
+S0 = gcd.smarts_decode("[*:1]~[*:2]")
+S0 = graphs.subgraph_to_structure_bond(S0)
 
 for i, f in enumerate(ic_list):
-    print(i, pcp.smarts_encode(f))
+    print(i, gcd.smarts_encode(f))
 
-configs.remote_compute_enable = False
 
-wq = compute.workqueue_local("127.0.0.1", 63210)
+# The function that does the actual work
 results: splits.split_return_type = splits.split_structures_distributed(
     splitter, S0, G, selections, wq, icd)
 
-# custom processing of results
+# Custom processing of results as an example to use the results
 
 seen = {}
 keep = {}
@@ -90,7 +95,7 @@ print("Results:", len(results.splits))
 for j, (Sj, matches, bj) in enumerate(
     zip(results.splits, results.matched_idx, results.shards), 1
 ):
-    Sj = graphs.structure(Sj.nodes, Sj.edges, Sj.select, results.topology)
+    Sj = graphs.subgraph_as_structure(Sj, results.topology)
     atoms, bits = len(Sj.select), graphs.graph_bits(Sj, maxbits=True)
     matches = tuple(sorted(matches))
     unmatches = tuple(
@@ -136,14 +141,14 @@ for j, (matches, params) in enumerate(unique.items(), 1):
         )
     for k, (Sj, bj) in enumerate(params, 1):
 
-        Sj = graphs.structure(Sj.nodes, Sj.edges, Sj.select, results.topology)
-        print(f"   {k:2d} Sj:", pcp.smarts_encode(Sj))
+        Sj = graphs.subgraph_as_structure(Sj, results.topology)
+        print(f"   {k:2d} Sj:", gcd.smarts_encode(Sj))
         # print(f"   {k:2d} Sj:    ", Sj.nodes)
     if splitter.return_matches:
         print("      ", matches)
         for i, f in enumerate(ic_list):
             if i in matches:
-                print(f"{i:4d}", " -> ", f.select, pcp.smarts_encode(f))
+                print(f"{i:4d}", " -> ", f.select, gcd.smarts_encode(f))
             else:
-                print(f"{i:4d}", f.select, pcp.smarts_encode(f))
+                print(f"{i:4d}", f.select, gcd.smarts_encode(f))
     print("####################################")
