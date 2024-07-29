@@ -1576,6 +1576,23 @@ def subgraph_to_structure(
     g_ = structure(g_.nodes, g_.edges, tuple(g.select), topo)
     return g_
 
+
+def subgraph_to_structure_bond(g: subgraph) -> structure:
+    return subgraph_to_structure(g, topology.bond)
+
+
+def subgraph_to_structure_angle(g: subgraph) -> structure:
+    return subgraph_to_structure(g, topology.angle)
+
+
+def subgraph_to_structure_torsion(g: subgraph) -> structure:
+    return subgraph_to_structure(g, topology.torsion)
+
+
+def subgraph_to_structure_outofplane(g: subgraph) -> structure:
+    return subgraph_to_structure(g, topology.outofplane)
+
+
 def subgraph_as_graph(
     g: subgraph
 ) -> structure:
