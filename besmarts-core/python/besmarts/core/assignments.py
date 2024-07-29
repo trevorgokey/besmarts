@@ -844,9 +844,9 @@ def smiles_assignment_geometry_torsions(
     for torsion in indices:
         c1, c2, c3, c4 = torsion
         selections[torsion] = geometry.measure_dihedral(xyz[c1,], xyz[c2,], xyz[c3,], xyz[c4,])
-            
 
     return torsion_assignment_float(selections)
+
 
 def smiles_assignment_geometry_torsions_nonlinear(
     pos: smiles_assignment_float,

@@ -1675,7 +1675,7 @@ def clustering_initial_conditions(
     if hidx is None:
         hidx = hierarchies.structure_hierarchy(trees.tree_index(), {}, {}, topo)
 
-        hidx.index.node_add(None, trees.tree_node(0, "parameter", "", "p0"))
+        hidx.index.node_add(None, trees.tree_node(0, tuple(), "parameter", "p0"))
 
         if topo == topology.atom:
             S0 = gcd.smarts_decode("[*:1]")
