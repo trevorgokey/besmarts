@@ -17,7 +17,7 @@ a native BESMARTS function.
 Example of combining the bonds of propane into a single SMARTS.
 
 4. Initializing FF parameters (4_init_bonds_angles.py)
------------------------------------------------------
+------------------------------------------------------
 Resetting FF bonds and angles according to a molecule geometry
 
 5. Perform a force field fit on ethane (5_forcefield_fit.py) 
