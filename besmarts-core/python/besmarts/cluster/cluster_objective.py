@@ -63,13 +63,13 @@ class clustering_objective_mean_separation(clustering_objective):
         A: Sequence[float] = list(A)
         B: Sequence[float] = list(B)
         if len(A) == 0:
-            abar = 0.0
+            abar = [0.0]
         else:
             abar = arrays.array_scale(sum_obj(A), 1/len(A))
             # abar = sum(A) / len(A)
 
         if len(B) == 0:
-            bbar = 0.0
+            bbar = [0.0]
         else:
             bbar = arrays.array_scale(sum_obj(B), 1/len(B))
             # bbar = sum(B) / len(B)
