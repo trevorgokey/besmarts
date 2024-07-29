@@ -360,6 +360,7 @@ def make_vdw_model_ethane():
     cm.procedures.append(proc)
     return cm
 
+
 def make_chemical_system_ethane():
 
     csys = mm.chemical_system(

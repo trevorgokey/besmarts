@@ -298,6 +298,7 @@ def optimization_strategy_iteration_next(
 
     return macro
 
+
 def optimization_strategy_build_macro_iterations(strat: optimization_strategy):
     macro_iters = []
     bounds = strat.bounds.splitter

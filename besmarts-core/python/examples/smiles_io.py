@@ -1,5 +1,6 @@
 """
-Example using RDKit to decode a SMILES string and save to a native BESMARTS format.
+Example using RDKit to decode a SMILES string and save to a native BESMARTS
+format.
 """
 
 from besmarts.codecs import codec_rdkit 

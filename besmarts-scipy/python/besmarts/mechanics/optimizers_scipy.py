@@ -422,20 +422,11 @@ def objective_gradient_gdb(args, keys, csys, gdb, obj, priors, penalties=None, h
             # print("dxdp", dxdp)
             hess[j] += d2x2dp2
 
-
-
-        if verbose:
             gnormx = arrays.array_inner_product(gradx, gradx)**.5
             line = f">> S= {pen.scale: 14.6f} R2= {x2: 14.6f} |g|= {gnormx: 14.6f}"
             if verbose:
                 print(line)
             out.append(line)
-
-
-    # grad = arrays.array_round(grad)
-    # grady = arrays.array_round(grady)
-
-
 
     for k, g in zip(keys, grad):
         line = f"{k} {g}"
