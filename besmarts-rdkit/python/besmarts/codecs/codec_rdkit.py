@@ -113,7 +113,22 @@ class graph_codec_rdkit(graph_codec):
         # smiles = self.smiles_encode(g)
         return assignments.graph_assignment(smiles, sa.selections, g), extras
 
-    def rdmol_decode(self, mol) -> assignments.graph_assignment:
+    def rdmol_decode(self, mol: Chem.Mol) -> graphs.graph:
+        """
+        Build a graph directly from an RDKit molecule. This sidesteps all
+        sanitization and manipulation; the graph is built by directly querying
+        the molecule for primmitives. Make sure the aromaticity model is
+        compatible!
+
+        Parameters
+        ----------
+        mol: Chem.Mol
+            The RDKit molecule to parse
+
+        Returns
+        -------
+        graphs.graph
+        """
         return rdkit_mol_decode(
             self.primitive_codecs,
             self.array,
