@@ -32,6 +32,7 @@ needed to cluster bond lengths that differ 0.1 Angstroms using SMARTS patterns
 as the cluster labels.
 
 __7. Automated chemical perception for force field design (7_besmarts_fit.py)__
+
 This performs automated chemical perception starting from OpenFF Sage 2.1. For
 expedience, only b4 is targeted and only the lengths are fit. The resulting
 force field was fit on positions and gradients of a single molecule.
