@@ -4352,44 +4352,4 @@ def reset_project_torsions(csys, gdb, psystems, max_n=6, alpha=-.25, m=2, verbos
         psystems = psys
     return psystems
 
-def parse_xyz(xyzdata):
-
-    N = None
-    lines = xyzdata.split('\n')
-
-    if N is None:
-        N = int(lines[0].split()[0])
-
-    assert N == int(lines[0].split()[0])
-
-    syms = []
-    xyzs = []
-    for chunk in arrays.batched(lines, N+2):
-        sym = [None]*N
-        xyz = [None]*N
-        if chunk and chunk[0]:
-            for i, line in enumerate(chunk, -2):
-                if i >= 0:
-                    s, x, y, z = line.split()[:4]
-                    sym[i] = s
-                    xyz[i] = [[*map(float, (x, y, z))]]
-        if all(sym) and all(xyz):
-            syms.append(sym)
-            xyzs.append(xyz)
-    return syms, xyzs
-
-def xyz_to_graph_assignment(gcd, smi, xyzdata: List, indices=None) -> assignments.graph_assignment:
-    """
-    
-    """
-    g = graphs.subgraph_as_graph(gcd.smiles_decode(smi))
-    sel = {}
-
-    for xyzs in xyzdata:
-        for ic, xyz in enumerate(xyzs, 1):
-            if (ic,) not in sel:
-                sel[ic,] = []
-            sel[ic,].extend(xyz)
-
-    return assignments.graph_assignment(smi, sel, g)
 
