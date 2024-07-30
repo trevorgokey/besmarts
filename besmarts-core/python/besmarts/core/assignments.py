@@ -2,11 +2,34 @@
 besmarts.core.assignments
 
 Associates BESMARTS structures to data
+
+There are two intepretations of the data. The first simpler model is the
+the graph_assignments, which contain (ic, data) pairs. The data is assumed to
+be a list of lists of independent samples, i.e. multiple conformers. This
+distinction means a "system" where there are two molecules interacting requires
+a list of graph assignments. These assignments are quite flexible and agnostic
+of the data. An additional layer is required to interpret data, which is
+provided, at least partially, to graph_db objects.
+
+In constrast to the simple assignment objectives, the more complex graph_db
+system is explicitly designed to handle large systems with redundant graph
+information, e.g. a box of water where point triples use the same graph, and
+each triple exists in the same system and should be overlapping. See the
+documentation for graph_db for more information.
+
+In general, most of the work is performed on assignments, and graph_db objects
+are designed to be a management system for the various types of data assigned to
+graphs, such as positions, gradients, and hessians.
 """
 
-from typing import List, Dict, Sequence, Tuple, Any
-from besmarts.core import graphs, topology, codecs, hierarchies, geometry
 import math
+from typing import List, Dict, Sequence, Tuple, Any
+from besmarts.core import graphs
+from besmarts.core import topology
+from besmarts.core import codecs
+from besmarts.core import hierarchies
+from besmarts.core import geometry
+from besmarts.core import primitives
 
 assignment_mapping = Dict[str, List[List[Sequence[int]]]]
 cartesian_coordinates = List[List[Tuple[float, float, float]]]
@@ -26,7 +49,6 @@ RADII = 11
 PHYSICAL_MODEL_BOND_LABELS = 12
 
 ASSN_NAMES = {
-    # floats
     POSITIONS : "positions", # atom, 1x3 
     GRADIENTS : "gradients", # atom, 1x3
     HESSIANS : "hessians", # bond, 1x9
@@ -52,7 +74,20 @@ pid_t = int # topology id
 xid_t = int
 
 class graph_db_address:
-    def __init__(self, *, eid=None, tid=None, gid=None, rid=None, cid=None, sid=None, xid=None):
+    """
+    A query for information in a graph_db.
+    """
+    def __init__(
+        self,
+        *,
+        eid=None,
+        tid=None,
+        gid=None,
+        rid=None,
+        cid=None,
+        sid=None,
+        xid=None
+    ):
         self.eid: list = [] if not eid else eid
         self.tid: list = [] if not tid else tid
         self.gid: list = [] if not gid else gid
@@ -60,6 +95,7 @@ class graph_db_address:
         self.cid: list = [] if not cid else cid
         self.sid: list = [] if not sid else sid
         self.xid: list = [] if not xid else xid
+
 
 class graph_db_column:
 
@@ -89,6 +125,7 @@ class graph_db_row:
     def __setitem(self, cid: cid_t, columns):
         self.columns[cid] = columns
 
+
 class graph_db_graph:
 
     __slots__ = "rows",
@@ -101,6 +138,7 @@ class graph_db_graph:
 
     def __setitem(self, rid: rid_t, rows):
         self.columns[rid] = rows
+
 
 class graph_db_table:
     """
@@ -119,6 +157,7 @@ class graph_db_table:
     def __setitem(self, gid: rid_t, graph: graph_db_graph):
         self.graphs[gid] = graph
 
+
 class graph_db_entry:
     """
     Data associated with a set of graphs
@@ -131,13 +170,54 @@ class graph_db_entry:
     def __getitem__(self, tid: tid_t) -> graph_db_table:
         return self.tables[tid]
 
-    def __setitem(self, gid: rid_t, table: graph_db_table):
+    def __setitem(self, tid: rid_t, table: graph_db_table):
         self.tables[tid] = table
+
+
+class graph_db_selection:
+
+    __slots__ = "coords",
+
+    def __init__(self):
+        self.coords: Dict[sid_t, Sequence[int]] = {}
+
+    def __getitem__(self, sid: sid_t) -> Dict[sid_t, Sequence[int]]:
+        return self.coords[sid]
+
+    def __setitem(self, sid: sid_t, ic: Sequence[int]):
+        self.tables[sid] = ic
+
 
 class graph_db:
 
     """
-    The global data definitions
+    Holds a heterogeneous set of data associated to graphs
+
+    Here is the layout of a graph_db. Defined here are the smiles, graphs, and
+    selections which are indexed by a graph id (gid). The entries use a
+    different id (eid) which points to a graph_db_table object. This object
+    holds several tables indexed by a table id (tid), which are similar to
+    types of data. Examples of tables are positions and Hessians. Each table
+    points to graphs, which use the same gid as those in the graphs member
+    here. Each graph then points to "rows" indexed by rid, which are analogous
+    to individual systems/snapshots/frames. Each row can points to "columns"
+    indexed by cid, which are analogous to conformations in the same system.
+    Finally, each cid points to selection id (sid) and data id pairs (xid). The
+    (sid, xid) pairs are similar to a graph assignment, except in this case
+    the data is always a flat array and xid is the index in that array.
+
+    The structures have a corresponding member to traverse deeper; however,
+    the simple array notation is supported. This means that rather than
+
+    gdb.entries[eid].tables[tid].graphs[gid].rows[rid].columns[cid].selections.[sid].data[xid]
+
+    one can simply write
+
+    gdb[eid][tid][gid][rid][cid][sid][xid] -> float
+
+    TODO: most of the development has been on single molecules in gas phase.
+    As such, some functions assume this and may not handle multigraph, multi
+    conformation data gracefully.
     """
     __slots__ = "smiles", "graphs", "selections", "entries"
 
@@ -153,11 +233,16 @@ class graph_db:
     def __setitem(self, eid: eid_t, entry: graph_db_entry):
         self.entries[eid] = entry
 
+
 def graph_db_get_entries(GDB: graph_db, eids: List[eid_t]) -> graph_db:
     gdb = graph_db()
 
     gdb.entries = {i: GDB.entries[i] for i in eids}
-    gids = set([gid for t in gdb.entries.values() for r in t.tables.values() for gid in r.graphs])
+    gids = set([
+        gid for t in gdb.entries.values()
+        for r in t.tables.values()
+        for gid in r.graphs
+    ])
     gdb.graphs.update({i: GDB.graphs[i] for i in gids})
 
     gdb.smiles.update({i: GDB.smiles[i] for i in gids})
@@ -870,8 +955,9 @@ def smiles_assignment_geometry_torsions_nonlinear(
         if any(abs(x)*deg > angle_degrees for ai in a for x in ai):
             continue
         selections[torsion] = geometry.measure_dihedral(xyz[c1,], xyz[c2,], xyz[c3,], xyz[c4,])
-            
+
     return torsion_assignment_float(selections)
+
 
 def graph_assignment_geometry_bonds(
     pos: graph_assignment_float,
@@ -940,32 +1026,6 @@ def graph_assignment_geometry_outofplanes(
 
     return outofplane_assignment_float(selections)
 
-def graph_assignment_geometry_bonds_v1(
-    smiles: str,
-    graph: graphs.graph,
-    confs: List[List[Tuple[float, float, float]]],
-) -> graph_assignment:
-    selections = {}
-
-    indices = graphs.graph_bonds(graph)
-
-    lhs = [x[0] for x in indices]
-    rhs = [x[1] for x in indices]
-
-    # confs = np.array(confs)
-
-    distances = []
-    for c in confs:
-        (x0, y0, z0), (x1, y1, z1) = c[lhs], c[rhs]
-        r = ((x1 - x0) ** 2 + (y1 - y0) ** 2 + (z0 - z1) ** 2) ** 0.5
-        selections[idx].append(r)
-        # dist = [ for (x0, y0, z0), (x1, y1, z1) in zip(c[lhs], c[rhs])]
-        # distances.append(dist)
-    # distances = np.linalg.norm(confs[:, lhs] - confs[:, rhs], axis=2)
-    # for idx, d in enumerate(zip(indices, distances)):
-    #     selections[idx] = d
-
-    return graph_assignment(smiles, graph, selections)
 
 def smiles_assignment_to_graph_assignment(
     smas: smiles_assignment, gcd
@@ -1019,23 +1079,26 @@ def graph_db_iter_values(db):
                     kv[(aid, gid, sid, did)] = v
     return kv
 
+
 def graph_db_add_graph(gdb: graph_db, smi, g) -> gid_t:
     """
     """
     for gid, g0 in gdb.graphs.items():
         if graphs.graph_same(g, g0):
             return gid
-    gid = max(len(gdb.graphs), 0 if not len(gdb.graphs) else max(gdb.graphs) + 1)
+    gid = max(
+        len(gdb.graphs),
+        0 if not len(gdb.graphs) else max(gdb.graphs) + 1
+    )
     gdb.graphs[gid] = g
     gdb.smiles[gid] = smi
 
     topo = topology.index_of(topology.atom)
     if topo not in gdb.selections:
         gdb.selections[topo] = {}
-    gdb.selections[topo][gid] = {k: v for k, v in enumerate(graphs.graph_atoms(g))}
-    # gdb.selections[topology.index_of(topology.bond)] = {
-    #     gid: {k: v for k, v in enumerate(graphs.graph_bonds(g))}
-    # }
+    gdb.selections[topo][gid] = {
+        k: v for k, v in enumerate(graphs.graph_atoms(g))
+    }
     return gid
 
 
@@ -1134,16 +1197,6 @@ def graph_db_add_positions(db, gid, sel: graph_db_table):
     graph_db_add_selection(db, gid, POSITIONS, sel)
     return aid
 
-def graph_db_set_energy(gdb, eid, energy: List[float]):
-    gde = gdb.entries[eid]
-    if ENERGY not in gde.tables:
-        gdt = graph_db_table(topology.null)
-        gde.tables[ENERGY] = gdt
-        gdt.values.extend(energy)
-    else:
-        gde.tables[ENERGY].values.clear()
-        gde.tables[ENERGY].values.extend(energy)
-
 
 def graph_db_set_positions(gdb, eid, gid, sel, rid=None) -> rid_t:
     gde = gdb.entries[eid]
@@ -1169,15 +1222,6 @@ def graph_db_set_positions(gdb, eid, gid, sel, rid=None) -> rid_t:
     gdg.rows[rid][cid].selections.update(sel)
     return rid
 
-def graph_db_set_energy(gdb, eid, energy: List[float]):
-    gde = gdb.entries[eid]
-    if ENERGY not in gde.tables:
-        gdt = graph_db_table(topology.null)
-        gde.tables[ENERGY] = gdt
-        gdt.values.extend(energy)
-    else:
-        gde.tables[ENERGY].values.clear()
-        gde.tables[ENERGY].values.extend(energy)
 
 def graph_db_set_gradient(gdb, eid, gradient: List[float]):
     gde = gdb.entries[eid]
@@ -1190,7 +1234,15 @@ def graph_db_set_gradient(gdb, eid, gradient: List[float]):
         gde.tables[tid].values.clear()
         gde.tables[tid].values.extend(gradient)
 
-def graph_db_graph_to_graph_assignment(gdb, eid, tid, gid=None, rid=None, cid=None) -> graph_assignment:
+
+def graph_db_graph_to_graph_assignment(
+    gdb,
+    eid,
+    tid,
+    gid=None,
+    rid=None,
+    cid=None
+) -> graph_assignment:
 
     sel = {}
 
@@ -1225,12 +1277,12 @@ def graph_db_graph_to_graph_assignment(gdb, eid, tid, gid=None, rid=None, cid=No
     ga = graph_assignment(smi, sel, graphs.subgraph_as_graph(g))
     return ga
 
+
 def graph_assignment_to_graph_db_graph(ga, topo):
 
     gdg = graph_db_graph()
 
     gic_r = {v: k for k, v in enumerate(graphs.graph_topology(ga.graph, topo))}
-    pid = topology.index_of(topo)
 
     for ic, rows in ga.selections.items():
         ici = gic_r[ic]
@@ -1241,3 +1293,23 @@ def graph_assignment_to_graph_db_graph(ga, topo):
             gdg.rows[rid][0].selections[ici] = row
 
     return gdg
+
+
+def graph_assignment_to_format_xyz(
+    pos: graph_assignment,
+    comment=""
+) -> List[str]:
+
+    lines = [
+        str(len(pos.selections)),
+        comment
+    ]
+    for ic, xyz in pos.selections.items():
+        n = pos.graph.nodes[ic[0]]
+        sym = primitives.element_tr[str(n.primitives['element'].on()[0])]
+        try:
+            x, y, z = xyz[0][:3]
+        except TypeError:
+            x, y, z = xyz[:3]
+        lines.append(f"{sym:8s} {x:.6f} {y:.6f} {z:.6f}")
+    return lines
