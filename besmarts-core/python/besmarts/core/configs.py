@@ -9,6 +9,11 @@ remote_compute_enable = True
 workqueue_port = 55555
 compute_verbosity = 0
 
+# for computations that may suffer from error accumulation, round the numbers
+# to this precision
+precision = 12
+
+
 class smiles_perception_config:
     def __init__(
         self,

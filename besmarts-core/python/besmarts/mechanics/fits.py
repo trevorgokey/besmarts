@@ -42,6 +42,8 @@ from besmarts.mechanics import molecular_models as mm
 
 eid_t = int
 
+PRECISION = configs.precision
+
 POSITIONS = assignments.POSITIONS
 HESSIANS = assignments.HESSIANS
 GRADIENTS = assignments.GRADIENTS
@@ -206,7 +208,7 @@ class compute_config_gradient(compute_config):
         """
         csys = self.csys
         gdb = self.GDB
-        tbl_idx = assignments.GRADIENTS
+        tbl_idx = GRADIENTS
         tid = assignments.POSITIONS
 
         all_results = []
@@ -256,10 +258,10 @@ class compute_config_gradient(compute_config):
                                 )
 
                     gx = optimizers_openmm.physical_system_gradient_openmm(
-                        csys,
-                        psys
+                        psys,
+                        csys
                     )
-                    gx = arrays.array_round(gx, 12)
+                    gx = arrays.array_round(gx, PRECISION)
                     tbl.values.extend(gx)
 
                 r = {tbl_idx: tbl}
@@ -282,7 +284,7 @@ class compute_config_hessian(compute_config):
         # print("Starting calculation", self)
         csys = self.csys
         gdb = self.GDB
-        tbl_idx = assignments.HESSIANS
+        tbl_idx = HESSIANS
         tid = assignments.POSITIONS
 
         all_results = []
@@ -357,8 +359,8 @@ class compute_config_hessian(compute_config):
                     tbl_grad.values.extend(gx)
 
                 r = {
-                    assignments.HESSIANS: tbl_hess,
-                    assignments.GRADIENTS: tbl_grad
+                    HESSIANS: tbl_hess,
+                    GRADIENTS: tbl_grad
                 }
 
                 results.append(r)
@@ -464,7 +466,7 @@ class compute_config_penalty(compute_config):
         for k, ref in self.targets.items():
             val = keys.get(k)
             if val is not None:
-                results[k] = round(val - ref, 12)
+                results[k] = round(val - ref, PRECISION)
         return results
 
 
@@ -542,14 +544,14 @@ class objective_config:
                                 dxb.extend(dv)
 
         dxdp = arrays.array_difference(dxb, dxa)
-        dxdp = arrays.array_round(dxdp, 12)
+        dxdp = arrays.array_round(dxdp, PRECISION)
         dxdp = arrays.array_scale(dxdp, 1/(2*h))
 
         d2xdp2 = arrays.array_add(
             arrays.array_scale(X0, -2),
             arrays.array_add(dxb, dxa)
         )
-        d2xdp2 = arrays.array_round(d2xdp2, 12)
+        d2xdp2 = arrays.array_round(d2xdp2, PRECISION)
         d2xdp2 = arrays.array_scale(d2xdp2, 1.0/(h*h))
 
         return dxdp, d2xdp2
@@ -584,7 +586,7 @@ class objective_config:
 
                             for ic, x1, x0 in zip(gdc0.selections, x1l, x0l):
                                 x = arrays.array_difference(x1, x0)
-                                x = arrays.array_round(x, 12)
+                                x = arrays.array_round(x, PRECISION)
                                 obj.extend(x)
                                 xyz1 = " ".join([f"{xi:8.4f}" for xi in x1])
                                 xyz0 = " ".join([f"{xi:8.4f}" for xi in x0])
@@ -603,7 +605,7 @@ class objective_config:
                 f"Total Position SSE: {X2:10.5f} A^2",
                 f"RMSE: {rmse:10.5f} A"
             ]))
-        return returns.success(arrays.array_round(obj, 12), out=out, err=[])
+        return returns.success(arrays.array_round(obj, PRECISION), out=out, err=[])
 
 
 class objective_config_gradient(objective_config):
@@ -652,14 +654,14 @@ class objective_config_gradient(objective_config):
                 dxb.extend(x1)
 
         dxdp = arrays.array_difference(dxb, dxa)
-        dxdp = arrays.array_round(dxdp, 12) 
+        dxdp = arrays.array_round(dxdp, PRECISION) 
         dxdp = arrays.array_scale(dxdp, 1/(2*h))
 
         d2xdp2 = arrays.array_add(
             arrays.array_scale(X0, -2),
             arrays.array_add(dxb, dxa)
         )
-        d2xdp2 = arrays.array_round(d2xdp2, 12)
+        d2xdp2 = arrays.array_round(d2xdp2, PRECISION)
         d2xdp2 = arrays.array_scale(d2xdp2, 1.0/(h*h))
 
         return dxdp, d2xdp2
@@ -721,7 +723,7 @@ class objective_config_gradient(objective_config):
                 f" Total Gradient SSE: {X2:10.5f} (kJ/mol/A)^2",
                 f"RMSE: {rmse:10.5f} kJ/mol/A"
             ]))
-        return returns.success(arrays.array_round(X, 12), out=out, err=[])
+        return returns.success(arrays.array_round(X, PRECISION), out=out, err=[])
 
 
 class objective_config_hessian(objective_config):
@@ -779,14 +781,14 @@ class objective_config_hessian(objective_config):
             dxb.extend(x1)
 
         dxdp = arrays.array_difference(dxb, dxa)
-        dxdp = arrays.array_round(dxdp, 12)
+        dxdp = arrays.array_round(dxdp, PRECISION)
         dxdp = arrays.array_scale(dxdp, 1/(2*h))
 
         d2xdp2 = arrays.array_add(
             arrays.array_scale(X0, -2),
             arrays.array_add(dxb, dxa)
         )
-        d2xdp2 = arrays.array_round(d2xdp2, 12)
+        d2xdp2 = arrays.array_round(d2xdp2, PRECISION)
         d2xdp2 = arrays.array_scale(d2xdp2, 1.0/(h*h))
 
         return dxdp, d2xdp2
@@ -826,13 +828,13 @@ class objective_config_hessian(objective_config):
 
                     torsions = False
                     pairs = False
-                    ics, B = hessians.bmatrix(
+                    ics, B = assignments.bmatrix(
                         hess_qm_pos,
                         torsions=torsions,
                         pairs=pairs,
                         remove1_3=False
                     )
-                    ics, B2 = hessians.b2matrix(
+                    ics, B2 = assignments.b2matrix(
                         hess_qm_pos,
                         torsions=torsions,
                         pairs=pairs,
@@ -856,8 +858,8 @@ class objective_config_hessian(objective_config):
 
                 x0 = list(self.cache['IC:qm_freq'])
 
-                hess_mm = tbls[assignments.HESSIANS].values
-                grad_mm = list(tbls[assignments.GRADIENTS].values)
+                hess_mm = tbls[HESSIANS].values
+                grad_mm = list(tbls[GRADIENTS].values)
                 DL = self.cache['IC:dl']
                 (ics, B, B2) = self.cache['IC:b']
 
@@ -884,7 +886,7 @@ class objective_config_hessian(objective_config):
                     print(out[i])
             X.extend(x)
 
-        return returns.success(arrays.array_round(X, 12), out=out, err=[])
+        return returns.success(arrays.array_round(X, PRECISION), out=out, err=[])
 
 
 class objective_config_energy(objective_config):
@@ -982,7 +984,7 @@ class objective_config_penalty(objective_config):
                 else:
                     DX += m*n*abs(dx**(n-1))
 
-        return round(DX, 12)
+        return round(DX, PRECISION)
 
     def compute_hessian(self, result):
         """
@@ -1000,7 +1002,7 @@ class objective_config_penalty(objective_config):
                 else:
                     DX += m*n*(n-1)*abs(dx**(n-2))
 
-        return round(DX, 12)
+        return round(DX, PRECISION)
 
     def compute_diff(self, result, verbose=False):
         """
@@ -1013,7 +1015,7 @@ class objective_config_penalty(objective_config):
                 else:
                     DX += m*dx**n
 
-        return returns.success(round(DX, 12), out=[], err=[])
+        return returns.success(round(DX, PRECISION), out=[], err=[])
 
 
 class objective_tier:
@@ -3787,11 +3789,11 @@ def smiles_assignment_force_constants(gdb, alpha=-.25, guess_periodicity=True, m
         "torsion_k": [],
     }
 
-    eid_hess = [eid for eid, e in gdb.entries.items() if assignments.HESSIANS in e.tables]
+    eid_hess = [eid for eid, e in gdb.entries.items() if HESSIANS in e.tables]
 
     for i, eid in enumerate(eid_hess, 1):
         # psys = psystems[eid]
-        hessian = gdb.entries[eid].tables[assignments.HESSIANS].values
+        hessian = gdb.entries[eid].tables[HESSIANS].values
 
         # labeled_ic = [x for model in psystems[eid].models for x in model.labels[0]]
         # B = {ic:x for ic, x in zip(icb, B) if ic in labeled_ic}
@@ -3800,17 +3802,17 @@ def smiles_assignment_force_constants(gdb, alpha=-.25, guess_periodicity=True, m
         pos = assignments.graph_db_graph_to_graph_assignment(gdb, eid, assignments.POSITIONS)
         g = pos.graph
 
-        icb, B = hessians.bmatrix(pos, torsions=True, outofplanes=False, pairs=False ,remove1_3=True, linear_torsions=145.0)
+        icb, B = assignments.bmatrix(pos, torsions=True, outofplanes=False, pairs=False ,remove1_3=True, linear_torsions=145.0)
 
         # xyz = np.vstack([x[0] for x in pos.selections.values()], dtype=float)
-        # xyz = xyz.round(12)
+        # xyz = xyz.round(PRECISION)
         # sym = graphs.graph_symbols(pos.graph)
         # mass = np.array([[vibration.mass_table[sym[n]]]*3 for n in sym])
 
         # sym = list(sym.values())
 
         # hess_qm_freq, hess_qm_modes = vibration.hessian_modes(hess_qm, sym, xyz, mass, 0, remove=0, stdtr=True, verbose=False)
-        # omega = np.round(hess_qm_freq, 12)
+        # omega = np.round(hess_qm_freq, PRECISION)
         # omega_qm = omega
         hess_qm_ic = hessians.project_ics(B, hessian)
         hess_qm_ic = [hess_qm_ic[i][i] for i in range(len(hess_qm_ic))]
@@ -3825,7 +3827,10 @@ def smiles_assignment_force_constants(gdb, alpha=-.25, guess_periodicity=True, m
         ga = assignments.graph_assignment(pos.smiles, sel, pos.graph)
         sag_map["bond_k"].append(ga)
         bond_l = assignments.graph_assignment_geometry_bonds(pos)
-        bond_l.selections = {ic: [x for y in v for x in y] for ic, v in bond_l.selections.items()}
+        bond_l.selections = {
+            ic: [x for y in v for x in y]
+            for ic, v in bond_l.selections.items()
+        }
         ga = assignments.graph_assignment(pos.smiles, bond_l.selections, pos.graph)
         sag_map["bond_l"].append(ga)
 
@@ -3837,7 +3842,10 @@ def smiles_assignment_force_constants(gdb, alpha=-.25, guess_periodicity=True, m
         sag_map["angle_k"].append(ga)
 
         angle_l = assignments.graph_assignment_geometry_angles(pos)
-        angle_l.selections = {ic: [x for y in v for x in y] for ic, v in angle_l.selections.items()}
+        angle_l.selections = {
+            ic: [x for y in v for x in y]
+            for ic, v in angle_l.selections.items()
+        }
         ga = assignments.graph_assignment(pos.smiles, angle_l.selections, pos.graph)
         sag_map["angle_l"].append(ga)
 
@@ -3860,7 +3868,10 @@ def smiles_assignment_force_constants(gdb, alpha=-.25, guess_periodicity=True, m
                 csys_n = []
                 csys_p = []
                 for i in [*range(1, max_n+1)]:
-                    if all(math.cos(i*t) < alpha for t in angles) or all(math.cos(i*t)  >  -alpha for t in angles):
+                    if (
+                        all(math.cos(i*t) < alpha for t in angles)
+                        or all(math.cos(i*t) > -alpha for t in angles)
+                    ):
                         csys_n.append(i)
                         csys_p.append(0)
                         break
@@ -3990,12 +4001,18 @@ def reset(reset_config, csys, gdb, psystems=None, verbose=False, ws=None):
     max_k = reset_config.get("dihedral_max_k", 5.0)
     min_k = reset_config.get("dihedral_max_k", 1e-3)
 
-    # print(datetime.datetime.now(), f"Resetting bonds and angles: bk={reset_bond_k} bl={reset_bond_l} ak={reset_angle_k} al={reset_angle_l} tk={reset_torsion_k} ok={reset_outofplane_k}")
     if psystems is None:
         psystems = gdb_to_physical_systems(gdb, csys)
-    if not any([reset_bond_k, reset_bond_l, reset_angle_k, reset_angle_l, reset_torsion_k]):
+    if not any([
+        reset_bond_k,
+        reset_bond_l,
+        reset_angle_k,
+        reset_angle_l,
+        reset_torsion_k
+    ]):
         return psystems
-    eid_hess = [eid for eid, e in gdb.entries.items() if assignments.HESSIANS in e.tables]
+
+    eid_hess = [eid for eid, e in gdb.entries.items() if HESSIANS in e.tables]
     psys_hess = [psystems[eid] for eid in eid_hess]
 
     reset = set()
@@ -4019,21 +4036,21 @@ def reset(reset_config, csys, gdb, psystems=None, verbose=False, ws=None):
         if ws:
             iterable = {}
             for eid in eid_hess:
-                icb, B = hessians.bmatrix(psystems[eid].models[0].positions[0], torsions=reset_torsion_k, outofplanes=reset_outofplane_k, pairs=False ,remove1_3=True)
+                icb, B = assignments.bmatrix(psystems[eid].models[0].positions[0], torsions=reset_torsion_k, outofplanes=reset_outofplane_k, pairs=False ,remove1_3=True)
                 labeled_ic = [x for model in psystems[eid].models for x in model.labels[0]]
                 B = {ic:x for ic, x in zip(icb, B) if ic in labeled_ic}
                 B = list(B.keys()), list(B.values())
 
-                iterable[eid] = [[csys, psystems[eid],gdb.entries[eid].tables[assignments.HESSIANS].values], {"B": B}]
+                iterable[eid] = [[csys, psystems[eid],gdb.entries[eid].tables[HESSIANS].values], {"B": B}]
             results =  compute.workspace_submit_and_flush(ws, hessians.hessian_project_onto_ics, iterable, verbose=True)
             psys_hic_all.update(results)
         else:
             for i, eid in enumerate(eid_hess, 1):
                 psys = psystems[eid]
-                hessian = gdb.entries[eid].tables[assignments.HESSIANS].values
+                hessian = gdb.entries[eid].tables[HESSIANS].values
                 if verbose:
                     print(f"Projecting hessian for EID {eid} {i:8d}/{len(eid_hess)} {psys.models[0].positions[0].smiles}")
-                icb, B = hessians.bmatrix(psystems[eid].models[0].positions[0], torsions=reset_torsion_k, outofplanes=reset_outofplane_k, pairs=False ,remove1_3=True)
+                icb, B = assignments.bmatrix(psystems[eid].models[0].positions[0], torsions=reset_torsion_k, outofplanes=reset_outofplane_k, pairs=False ,remove1_3=True)
 
                 labeled_ic = [x for model in psystems[eid].models for x in model.labels[0]]
                 B = {ic:x for ic, x in zip(icb, B) if ic in labeled_ic}
@@ -4283,11 +4300,16 @@ def reset(reset_config, csys, gdb, psystems=None, verbose=False, ws=None):
         psys = {}
         reuse = list(set(range(len(csys.models))).difference(reset))
         for eid, gde in gdb.entries.items():
-            tid = assignments.POSITIONS
+            tid = POSITIONS
             gid = list(gde.tables[tid].graphs)[0]
             rid = 0
             pos = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
-            psys[eid] = mm.chemical_system_to_physical_system(csys, [pos], ref=psystems[eid], reuse=list(reuse))
+            psys[eid] = mm.chemical_system_to_physical_system(
+                csys,
+                [pos],
+                ref=psystems[eid],
+                reuse=list(reuse)
+            )
         psystems = psys
 
     return psystems
@@ -4322,30 +4344,71 @@ def reset_project_torsions(csys, gdb, psystems, max_n=6, alpha=-.25, m=2, verbos
     psys_hic_all = {}
     psys_hics = []
     psyss = []
-    eid_hess = [eid for eid, e in gdb.entries.items() if assignments.HESSIANS in e.tables]
+    eid_hess = [eid for eid, e in gdb.entries.items() if HESSIANS in e.tables]
     psys_hess = [psystems[eid] for eid in eid_hess]
 
     psys_hic = {}
     if ws:
-        iterable = {eid: [[csys, psystems[eid],gdb.entries[eid].tables[assignments.HESSIANS].values], {"B": hessians.bmatrix(psystems[eid].models[0].positions[0], torsions=True, outofplanes=False, pairs=False ,remove1_3=True)}] for eid in eid_hess}
-        results =  compute.workspace_submit_and_flush(ws, hessians.hessian_project_onto_ics, iterable, verbose=True)
+        iterable = {
+            eid: [[
+                    csys,
+                    psystems[eid],
+                    gdb.entries[eid].tables[HESSIANS].values
+                ],
+                {"B": assignments.bmatrix(
+                    psystems[eid].models[0].positions[0],
+                    torsions=True,
+                    outofplanes=False,
+                    pairs=False,
+                    remove1_3=True
+                )}
+            ] for eid in eid_hess
+        }
+
+        results = compute.workspace_submit_and_flush(
+            ws,
+            hessians.hessian_project_onto_ics,
+            iterable,
+            verbose=True
+        )
         psys_hic_all.update(results)
+
     else:
+
         for i, eid in enumerate(eid_hess, 1):
             psys = psystems[eid]
-            hessian = gdb.entries[eid].tables[assignments.HESSIANS].values
+            hessian = gdb.entries[eid].tables[HESSIANS].values
             if verbose:
                 print(f"Projecting hessian for EID {eid} {i:8d}/{len(eid_hess)} {psys.models[0].positions[0].smiles}")
-            hic = hessians.hessian_project_onto_ics(csys, psys, hessian, verbose=verbose, B=hessians.bmatrix(psystems[eid].models[0].positions[0], torsions=True, outofplanes=False, pairs=False ,remove1_3=True))
+
+            hic = hessians.hessian_project_onto_ics(
+                csys,
+                psys,
+                hessian,
+                verbose=verbose,
+                B=assignments.bmatrix(
+                    psystems[eid].models[0].positions[0],
+                    torsions=True,
+                    outofplanes=False,
+                    pairs=False,
+                    remove1_3=True
+                )
+            )
             psys_hic_all[eid] = hic
 
     for eid in eid_hess:
         psys = psystems[eid]
         hic = psys_hic_all[eid]
         if m == 2:
-            psys_hics.append({k: [[hic.selections[k]]] for k in graphs.graph_torsions(hic.graph)})
+            psys_hics.append({
+                k: [[hic.selections[k]]]
+                for k in graphs.graph_torsions(hic.graph)
+            })
         elif m == 3:
-            psys_hics.append({k: [[hic.selections[k]]] for k in graphs.graph_outofplanes(hic.graph)})
+            psys_hics.append({
+                k: [[hic.selections[k]]]
+                for k in graphs.graph_outofplanes(hic.graph)
+            })
         else:
             assert False
         psyss.append(psys)
@@ -4405,8 +4468,13 @@ def reset_project_torsions(csys, gdb, psystems, max_n=6, alpha=-.25, m=2, verbos
                         b.append(hq)
                     else:
                         b.append(0)
+                    i2 = i + 2
+                    ix = (i2) % 4
                     for n, p in zip(csys_n, csys_p):
-                        x = [sign[(i+2)%4] * n**(i+2)*deriv[(i+2) % 4](n*t - p) for t in angles]
+                        x = [
+                            sign[ix] * n**i2*deriv[ix](n*t - p)
+                            for t in angles
+                        ]
                         x = sum(x) / len(x) * 2
                         row.append(x)
                     A.append(row)
@@ -4416,6 +4484,7 @@ def reset_project_torsions(csys, gdb, psystems, max_n=6, alpha=-.25, m=2, verbos
                 new_p = []
                 new_n = []
                 changed = False
+
                 for n,p,k in zip(csys_n, csys_p, new_k_lst):
                     if abs(k) > 1e-4:
                         new_n.append(n)
@@ -4427,11 +4496,6 @@ def reset_project_torsions(csys, gdb, psystems, max_n=6, alpha=-.25, m=2, verbos
                 if changed:
                     csys_n = new_n
                     csys_p = new_p
-
-            # print("Final npk:")
-            # for n,p,k in zip(new_n, new_p, new_k):
-            #     print(n, p, k)
-            # new_k_lst = new_k
 
             # at this point we have our new_n and new_p; project onto npk0
             new_k_lst = project_torsions(npk0, (new_n, new_p), angles)
@@ -4451,12 +4515,22 @@ def reset_project_torsions(csys, gdb, psystems, max_n=6, alpha=-.25, m=2, verbos
         psys = {}
         reuse = list(set(range(len(csys.models))).difference(reset))
         for eid, gde in gdb.entries.items():
-            tid = assignments.POSITIONS
+            tid = POSITIONS
             gid = list(gde.tables[tid].graphs)[0]
             rid = 0
-            pos = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
-            psys[eid] = mm.chemical_system_to_physical_system(csys, [pos], ref=psystems[eid], reuse=list(reuse))
+            pos = assignments.graph_db_graph_to_graph_assignment(
+                gdb,
+                eid,
+                tid,
+                gid,
+                rid
+            )
+            psys[eid] = mm.chemical_system_to_physical_system(
+                csys,
+                [pos],
+                ref=psystems[eid],
+                reuse=list(reuse)
+            )
         psystems = psys
+
     return psystems
-
-

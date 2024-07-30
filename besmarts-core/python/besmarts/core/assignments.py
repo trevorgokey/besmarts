@@ -18,8 +18,8 @@ each triple exists in the same system and should be overlapping. See the
 documentation for graph_db for more information.
 
 In general, most of the work is performed on assignments, and graph_db objects
-are designed to be a management system for the various types of data assigned to
-graphs, such as positions, gradients, and hessians.
+are designed to be a management system for the various types of data assigned
+to graphs, such as positions, gradients, and Hessians.
 """
 
 import math
@@ -50,28 +50,28 @@ RADII = 11
 PHYSICAL_MODEL_BOND_LABELS = 12
 
 ASSN_NAMES = {
-    POSITIONS : "positions", # atom, 1x3 
-    GRADIENTS : "gradients", # atom, 1x3
-    HESSIANS : "hessians", # bond, 1x9
-    ENERGY : "energy", # null, 1x1 
-    DISTANCES : "distances", # bond, 1x1
-    ANGLES : "angles", # angle, 1x1
-    TORSIONS : "torsions",
-    OUTOFPLANES : "outofplanes",
-    CHARGES : "charges",
-    GRID : "grid", # null, Nx3
-    ESP : "esp", # null, Nx1
-    RADII : "radii", # atom, 1x1
+    POSITIONS: "positions",  # atom, 1x3
+    GRADIENTS: "gradients",  # atom, 1x3
+    HESSIANS: "hessians",  # bond, 1x9
+    ENERGY: "energy",  # null, 1x1
+    DISTANCES: "distances",  # bond, 1x1
+    ANGLES: "angles",  # angle, 1x1
+    TORSIONS: "torsions",
+    OUTOFPLANES: "outofplanes",
+    CHARGES: "charges",
+    GRID: "grid",  # null, Nx3
+    ESP: "esp",  # null, Nx1
+    RADII: "radii",  # atom, 1x1
 }
 
-eid_t = int # entry
-tid_t = int # table id
-gid_t = int # graph id
-rid_t = int # row id
-cid_t = int # col id
-sid_t = int # selection id
+eid_t = int  # entry
+tid_t = int  # table id
+gid_t = int  # graph id
+rid_t = int  # row id
+cid_t = int  # col id
+sid_t = int  # selection id
 
-pid_t = int # topology id
+pid_t = int  # topology id
 xid_t = int
 
 class graph_db_address:
@@ -286,7 +286,6 @@ def graph_db_get(GDB: graph_db, addr: graph_db_address) -> graph_db:
 
     gdb.graphs.update({i: GDB.graphs[i] for i in gids})
 
-
     gdb.smiles.update({i: GDB.smiles[i] for i in gids})
 
     for topo, sel in GDB.selections.items():
@@ -294,32 +293,13 @@ def graph_db_get(GDB: graph_db, addr: graph_db_address) -> graph_db:
 
     return gdb
 
+
 def graph_db_table_get_row_ids(gdt):
     rids = []
     for gdg in gdt.graphs.values():
         rids.extend(set(gdg.rows).difference(rids))
     return rids
 
-# entry has to mean system conformation? it might as well be..
-# then this means that the row 0 refers to a single graph
-# and therefore row 1 refers to the second conformation... 
-# however this complicates energy calculation. However it might be very useful
-# to unpack nb for this and this just might be what i need to do
-# IF I HAVE another entry, then  I can refer to the same graph with different
-# data, thus a trajectory is a list of entries.. this just means that a particular
-# objective will need a list of entries (which are all the same)
-
-
-# for total energy then I need to compute totals
-# now this means we can have entries that refer to other graphs
-# 
-#   system     data      graph     conf    selections
-#gdb.entries[0].tables[0].graphs[0].rows[0].selections[0] = [1.0]
-
-# 
-
-
-# table sum therefore means sum over all rows and selections
 
 class smiles_assignment:
     __slots__ = "smiles", "selections"
@@ -341,6 +321,7 @@ class smiles_assignment_group:
 
     def copy(self):
         return smiles_assignment_group_copy(self)
+
 
 class graph_assignment(smiles_assignment):
     """
@@ -380,22 +361,6 @@ class topology_assignment_group:
     def __init__(self):
         self.topology = None
         self.assignments: List[Dict] = []
-
-class smiles_state:
-    def __init__(self):
-        self.smiles = ""
-        self.assignments: Dict[str, topology_assignment] = {}
-
-class graph_state:
-    """
-    this keeps track of the observables, e.g.
-    state.assignments[POSITIONS][(1,)]
-    
-    """
-    def __init__(self):
-        self.smiles = ""
-        self.graph = None
-        self.assignments: Dict[str, topology_assignment] = {}
 
 
 class smarts_hierarchy_assignment:
@@ -450,6 +415,7 @@ class smarts_hierarchy_assignment:
     ) -> smiles_assignment_group:
         raise NotImplementedError()
 
+
 class smiles_assignment_float(smiles_assignment):
     __slots__ = "smiles", "selections"
 
@@ -457,11 +423,6 @@ class smiles_assignment_float(smiles_assignment):
         self.smiles: str = smiles
         self.selections: Dict[Sequence[int], List[float]] = selections
 
-    def copy(self):
-        return smiles_assignment_float_copy(self)
-
-    def compute(self, idx) -> List[float]:
-        return smiles_assignment_float_compute(self, idx)
 
 class graph_assignment_float(smiles_assignment):
     __slots__ = "graph", "selections"
@@ -470,51 +431,7 @@ class graph_assignment_float(smiles_assignment):
         self.graph: str = graph
         self.selections: Dict[Sequence[int], List[float]] = selections
 
-    def copy(self):
-        return smiles_assignment_float_copy(self)
 
-    def compute(self, idx) -> List[float]:
-        return smiles_assignment_float_compute(self, idx)
-
-def graph_assignment_combine(ga_lst: List[graph_assignment]) -> graph_assignment:
-
-    if len(ga_list) == 0:
-        return None
-    elif len(ga_list) == 1:
-        return ga_lst[0]
-
-    idx = 0
-    g = ga_lst[0].copy()
-    for ha in ga_lst[1:]:
-
-        M = {j:i for i,j in enumerate(h.nodes, max(g.graph.nodes)+1)}
-
-        h = graphs.graph_relabel_nodes(ha.graph, M)
-        g.graph.nodes.update(h.nodes)
-        g.graph.edges.update(h.edges)
-
-        sel = {}
-        for k, v in ha.selections.items():
-            sel[M[k]] = v
-        g.selections.update(sel)
-
-    return g
-        
-
-
-# class structure_assignment_float(smiles_assignment):
-#     __slots__ = "graph", "selections"
-
-#     def __init__(self, graph, selections):
-#         self.graph: str = graph
-#         self.selections: Dict[Sequence[int], List[float]] = selections
-#         self.topology: topology.structure_topology = None
-
-#     def copy(self):
-#         return smiles_assignment_float_copy(self)
-
-#     def compute(self, idx) -> List[float]:
-#         return smiles_assignment_float_compute(self, idx)
 class smarts_assignment:
     __slots__ = "smarts", "selections"
 
@@ -1362,3 +1279,111 @@ def xyz_to_graph_assignment(
         sel[ic,].extend(xyz)
 
     return graph_assignment(smi, sel, g)
+
+
+def bmatrix(
+    pos,
+    bonds=True,
+    angles=True,
+    torsions=True,
+    outofplanes=True,
+    pairs=True,
+    remove1_3=False,
+    linear_torsions=145.0
+):
+
+    def print_ic(ic, i=0):
+        for j, (k, v) in enumerate(ic.selections.items(), i+1):
+            print(j, k, v)
+        return j
+
+    N = len(pos.selections)
+    i = 0
+    if bonds:
+        bonds = graph_assignment_jacobian_bonds(pos)
+
+    if angles:
+        angles = graph_assignment_jacobian_angles(pos)
+
+    if torsions:
+        torsions = graph_assignment_jacobian_torsions(pos)
+        if linear_torsions is not None:
+            t = smiles_assignment_geometry_torsions_nonlinear(
+                pos,
+                angle_degrees=linear_torsions
+            )
+            torsions.selections = {
+                k: torsions.selections[k] for k in t.selections
+            }
+
+    if outofplanes:
+        outofplanes = graph_assignment_jacobian_outofplanes(pos)
+
+    if pairs:
+        pairs = graph_assignment_jacobian_pairs(pos)
+        if angles and remove1_3:
+            for a in angles.selections:
+                if (a[0], a[2]) in pairs.selections:
+                    del pairs.selections[(a[0], a[2])]
+
+    conf = 0
+    B = []
+    ics = []
+    for valence in filter(None, (bonds, angles, torsions, outofplanes, pairs)):
+        ics.extend(valence.selections)
+        for ic, confs in valence.selections.items():
+            brow = [0.0 for _ in range(3*N)]
+            for i, nid in enumerate(ic):
+                d = (nid-1)*3
+                for j in range(d, d+3):
+                    brow[j] += confs[conf][i][j]
+            B.append(brow)
+
+    return ics, B
+
+
+def b2matrix(
+    pos,
+    bonds=True,
+    angles=True,
+    torsions=True,
+    outofplanes=True,
+    pairs=True,
+    remove1_3=False
+):
+
+    if bonds:
+        bonds = graph_assignment_jacobian2_bonds(pos)
+
+    if angles:
+        angles = graph_assignment_jacobian2_angles(pos)
+
+    if torsions:
+        torsions = graph_assignment_jacobian2_torsions(pos)
+
+    if outofplanes:
+        outofplanes = graph_assignment_jacobian2_outofplanes(pos)
+
+    if pairs:
+        pairs = graph_assignment_jacobian2_pairs(pos)
+        if angles and remove1_3:
+            for a in angles.selections:
+                if (a[0], a[2]) in pairs.selections:
+                    del pairs.selections[(a[0], a[2])]
+
+    B2 = []
+    ics = []
+
+    for valence in filter(None, (bonds, angles, torsions, outofplanes, pairs)):
+        ics.extend(valence.selections)
+        for ic, confs in valence.selections.items():
+
+            b2 = []
+            for conf in confs:
+                b2.append(geometry.jacobian2_reshape_to_matrix(conf))
+            B2.append(b2)
+
+    return ics, B2
+
+
+
