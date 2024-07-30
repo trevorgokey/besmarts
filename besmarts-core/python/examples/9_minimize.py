@@ -1,5 +1,6 @@
 
 """
+
 """
 
 import sys
@@ -79,7 +80,7 @@ def run(ff_fname, sdf_fname):
     print("\n".join(print_xyz(psys.models[0].positions[0])))
 
     pos = optimizers_scipy.optimize_positions_scipy(csys, psys)
-    
+
     print("\n".join(print_xyz(pos)))
 
 if __name__ == "__main__":

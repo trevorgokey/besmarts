@@ -41,3 +41,7 @@ __8. Find all splits using numerical SMARTS search (8_smarts_split.py)__
 
 Enumerate all SMARTS patterns that can split (partition) the bonds of CCO into
 two groups.
+
+__8. Minimize a molecules energy by optimizing positions (9_minimize.py)__
+
+Perform a standard geometry minimization.
