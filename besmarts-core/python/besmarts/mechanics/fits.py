@@ -3053,7 +3053,7 @@ def calc_tier_distributed(S, Sj, operation, edits, oid, verbose=False, wq=None, 
     # need to perform the operation and then add to keys
     # would also need to add the node to the FF
     if operation == optimization.optimization_strategy.SPLIT:
-        node = mm.chemical_model_smarts_hierarchy_copy_node(cm, cid, pid, uid, S, None)
+        node = mm.chemical_model_smarts_hierarchy_copy_node(cm, pid, uid, S, None)
         hidx.subgraphs[node.index] = Sj
         sma = gcd.smarts_encode(Sj)
         hidx.smarts[node.index] = sma
@@ -3225,7 +3225,7 @@ def perform_operations(
                 continue
             topo = hidx.topology
             # param_name = "p" + str(group_number)
-            node = mm.chemical_model_smarts_hierarchy_copy_node(cm, cid, pid, uid, S, None)
+            node = mm.chemical_model_smarts_hierarchy_copy_node(cm, pid, uid, S, None)
             node.type = "parameter"
             # print(datetime.datetime.now(), '*** 2')
             assert Sj.select
@@ -3279,38 +3279,10 @@ def perform_operations(
 
     return csys, nodes
 
-def print_xyz(pos, comment="") -> List[str]:
-    lines = []
-    lines.append(str(len(pos.selections)))
-    lines.append(comment)
-    for ic, xyz in pos.selections.items():
-        n = pos.graph.nodes[ic[0]]
-        sym = primitives.element_tr[str(n.primitives['element'].on()[0])]
-        try:
-            x, y, z = xyz[0][:3]
-        except TypeError:
-            x, y, z = xyz[:3]
-        lines.append(f"{sym:8s} {x:.6f} {y:.6f} {z:.6f}")
-    return lines
 
-def chemical_system_get_hessian(csys, psystems, m, fn, names=None) -> dict:
-    """
-    Look for hessians, do the projections
-    Need to calculate the MM hessians
-    set alpha to sum(QMic)/sum(MMic), set MMic = alpha * MMic 
-    """
-    kv = {(k[0], 'l', k[2], None): [] for k in mm.chemical_system_iter_keys(csys) if k[0] == m and k[1] == 'l'}
-    for psys in psystems:
-        pm: mm.physical_model = psys.models[m]
-        pos = pm.positions[0]
-        measure = fn(pos)
-        for ic, ic_terms in pm.labels[0].items():
-            lbl = ic_terms['l']
-            if names and lbl not in names:
-                continue
-            x = measure.selections[ic][0]
-            kv[(m, 'l', lbl, None)].extend(x)
-    return kv
+def print_xyz(pos, comment="") -> List[str]:
+    return assignments.graph_assignment_to_format_xyz(pos, comment=comment)
+
 
 def chemical_system_cluster_data(csys, m, sag, objective, strategy=None):
     if strategy is None:
