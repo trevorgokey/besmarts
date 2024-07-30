@@ -49,7 +49,11 @@ RDKit is needed to decode SMILES into graphs and offers a faster implementation
 of SMARTS matching when labeling from a SMARTS hierarchy.
 
 Geometry optimization uses the SciPy minimizer and can be installed using
-using a similar process as above with `besmarts-scipy`.
+using a similar process as above with `besmarts-scipy`. There is also an
+interface to OpenMM and this minimizer can be used instead after installing
+`besmarts-openmm`. The OpenMM plugin is quite a bit faster and is recommended
+if large or heavily numerical computations are needed (e.g. fitting frequencies
+from calculating MM Hessians with finite differences).
 
 Molecular mechanics energy and gradient evaluations are implemented, but
 require partial charges. By default, `besmarts` will try to charge molecules
