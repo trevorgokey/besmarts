@@ -25,6 +25,8 @@ configs.processors = 4
 configs.remote_compute_enable = False
 configs.workqueue_port = 54321
 
+smi = "[C:1]1([H:9])=[C:2]([H:10])[C:3]([H:11])=[C:4]([C:5](=[O:6])[Cl:7])[O:8]1"
+
 xyz_positions = """11
 
   C -1.44819400 -0.84940800  0.16848900
@@ -39,6 +41,7 @@ xyz_positions = """11
   H -2.52743000  1.04809900 -0.06180000
   H  0.02935200  2.05273200 -0.28965800
 """
+
 xyz_grad = """11
 
   C      0.49755    0.17370   -0.04115
@@ -81,7 +84,9 @@ def load_xyz(flist, indices=None) -> assignments.graph_db_row:
     return gdr
 
 def make():
-    smi = "[C:1]1([H:9])=[C:2]([H:10])[C:3]([H:11])=[C:4]([C:5](=[O:6])[Cl:7])[O:8]1"
+    global smi
+    global xyz_positions
+    global xyz_grad
     s = xyz_positions
     g = xyz_grad
     d  = {
