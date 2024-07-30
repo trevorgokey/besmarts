@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
-import pickle
-import numpy as np
-# import matplotlib.pyplot as plt
-# from matplotlib.ticker import MultipleLocator, AutoMinorLocator
-# from geometric.internal import *
-# from geometric.molecule import Molecule as geometric_mol
-from scipy.linalg import svd
+
 import sys
+import numpy as np
 
 gpermol2au = 1836
 au2amu = 1/1836.
@@ -23,29 +18,8 @@ au2cm = 5.29177249e-9
 c = 137
 conversion = 1.0 /(2*np.pi * c * au2cm)
 
-def load_xyz(fname):
-
-    xyzdat = np.genfromtxt(fname, skip_header=2, usecols=range(4), dtype=('U2', 'f8', 'f8', 'f8' ))
-    syms = [x[0] for x in xyzdat]
-    xyz  = np.array([list(x)[1:] for x in xyzdat])
-    return syms, xyz
-
 def converteig( eigs):
     return np.sign( eigs) * np.sqrt( np.abs( eigs))*conversion
-
-# connect means whether to remove TR
-#    True -> remove TR
-#    False -> keep TR
-
-# CoordSysDict = {'cart':(CartesianCoordinates, False, False),
-#             'prim':(PrimitiveInternalCoordinates, False, False),
-#             'dlc':(DelocalizedInternalCoordinates, True, False),
-#             'hdlc':(DelocalizedInternalCoordinates, False, True),
-#             'tric':(DelocalizedInternalCoordinates, True, False)}
-# coordsys = 'prim' # kwargs.get('coordsys', 'tric')
-# CVals = None
-# CoordClass, connect, addcart = CoordSysDict[coordsys.lower()]
-# Cons = None
 
 # swap_internals = not connect
 debug = False
@@ -71,18 +45,25 @@ def printmat( mat, dec=4):
         print()
 
 
-mass_table = {'C': 12.011, 'H': 1.008, 'N': 14.007, 'O': 15.999, 'P': 30.973, \
-        'S': 32.06, 'F': 18.998, "Cl": 35.45, "CL": 35.45, "B": 10.81, "I": 126.9, "Br": 79.04, "Na": 22.90 }
-# mass_table = {'C': 12.000, 'H': 1.000, 'N': 14.000, 'O': 16.0, 'P': 31.00, \
-#         'S': 32.00, 'F': 19.0, "Cl": 35, "B": 11.00, "Br": 70.0, "I": 106., "Se": 68.0  }
-# mass_table = {'C': 12.000, 'H': 1.007825032230, 'N': 14.003074004430, 'O': 15.994914619570, 'P': 31.00, \
-#     'S': 32.00, 'F': 19.0, "CL": 35, "B": 11.00 }
-# mass_table_unit = {'C': 1.000, 'H': 1.000, 'N': 1.000, 'O': 1.0, 'P': 1.00, \
-#     'S': 1.00, 'F': 1.0, "Cl": 1.0, "B": 1.00 }
+mass_table = {
+    'C': 12.011,
+    'H': 1.008,
+    'N': 14.007,
+    'O': 15.999,
+    'P': 30.973,
+    'S': 32.06,
+    'F': 18.998,
+    "Cl": 35.45,
+    "B": 10.81,
+    "I": 126.9,
+    "Br": 79.04,
+    "Na": 22.90
+}
+for k, v in list(mass_table.items()):
+    mass_table[k.upper()] = v
 
-# mass_table = mass_table_unit
-
-
+# TODO clean and move these GS to a better home
+# The useful code uses QR so these are no longer needed here
 def gram_schmidt(vectors):
     basis = []
     for v in vectors:
@@ -112,6 +93,8 @@ def gs2(X, row_vecs=True, norm=True):
         return Y
     else:
         return Y.T
+
+
 def gs(X, row_vecs=True, norm = True):
     if not row_vecs:
         X = X.T
@@ -136,7 +119,7 @@ def save_xyz(syms, xyz, outfd=sys.stdout, comment=""):
 
 def mode_to_xyz(syms, node, mode, outfd=sys.stdout, comment="", norm=True, magnitude=10.0):
 
-    # from Lee-Ping Wangs version
+    # from Lee-Ping Wang's version
     if(norm):
         mode = mode / np.linalg.norm(mode)/np.sqrt(mode.shape[0])
     spac = np.linspace(0, 1, 21)
@@ -152,6 +135,7 @@ def mode_to_xyz(syms, node, mode, outfd=sys.stdout, comment="", norm=True, magni
     nodeCOM =  (node * weight[:,np.newaxis]).sum(axis=0)
     for dx in disp:
         save_xyz(syms, node - nodeCOM + mode*dx, outfd=outfd, comment=comment)
+
 
 def mode_COM_to_xyz(syms, node, mode, outfd=sys.stdout, comment="", norm=True, magnitude=0.1):
 
@@ -177,29 +161,19 @@ def mode_COM_to_xyz(syms, node, mode, outfd=sys.stdout, comment="", norm=True, m
 
 
 def angular_momentum( xyz, mass, mode):
+
     COM = center_of_mass( xyz, mass)
     xyz = xyz - COM
-    #print("angular_momentum: COM is ", center_of_mass( xyz, mass))
+
     L = np.cross( mass.reshape( -1, 1) * mode.reshape( -1, 3), xyz, axis=1)
-    # print("angular_momentum: L is shape", L.shape)
+
     return np.linalg.norm(L.sum( axis=0))
-    return L.sum( axis=0)
 
 
 def center_of_mass(xyz, mass):
     mass = mass / mass.sum()
     COM = ( xyz * mass[ :, np.newaxis]).sum( axis=0)
     return COM
-
-
-def inertia_tensor2(xyz, mass):
-    I = np.zeros((3, 3))
-    for i, xi in enumerate(xyz):
-        I += mass[ i]*( np.dot( xi,xi) * np.eye( 3) - np.outer( xi, xi))
-    if debug:
-        print("I:")
-        print(I)
-    return I
 
 
 def inertia_tensor(xyz, mass):
@@ -277,69 +251,21 @@ def trans_rot_modes(xyz, mass, X, rot=True):
     #print(dot.shape)
     #for i in range(3):
     #    D[i+3,:] = np.concatenate([np.cross(dot, X[j])[:,i] for j in range(3)])
+
     #D[3:6] = np.cross(np.dot(P,X),np.dot(P,X)).reshape(3,-1)
     #D[3] /= np.linalg.norm(D[3])
     #D[4] /= np.linalg.norm(D[3])
     #D[5] /= np.linalg.norm(D[3])
     return D
 
-
-def load_xyz_hessian_from_old( d, mol_number):
-
-    mol_key = list(d['mol_data'].keys())[mol_number]
-    print( "RECORD", mol_number, "=>", mol_key)
-    mol_name = "mol_" + str(mol_number)
-    mol_xyz_fname = mol_name + ".min.xyz"
-    mol_hess_fname = mol_name + ".min.hessian.nxmxmx9.dat"
-    #mol_hess_fname = '../psi4/gp2/psi4/hessian_psi4.out'
-    #IC = d['mol_data'][mol_key]['hessian']['prim']['IC']
-    IC = CoordClass(geometric_mol(mol_xyz_fname), build=True,
-                            connect=connect, addcart=addcart, constraints=Cons,
-                            cvals=CVals[0] if CVals is not None else None )
-
-    xyzdat = np.genfromtxt(mol_xyz_fname, skip_header=2, usecols=range(4), dtype=('U2', 'f8', 'f8', 'f8' ))
-    syms = [x[0] for x in xyzdat]
-    xyz  = np.array([list(x)[1:] for x in xyzdat])
-    weight = np.array([mass_table[sym] for sym in syms])
-    #weight = np.ones(len(syms))
-    weight /= weight.sum()
-    nodeCOM =  (xyz * weight[:,np.newaxis]).sum(axis=0)
-    #xyz -= nodeCOM
-    xyzdat = None
-    #syms = np.genfromtxt(mol_xyz_fname, skip_header=2, usecols=(0,), dtype='U' )
-    #xyz = np.genfromtxt(mol_xyz_fname, skip_header=2, usecols=(1,2,3))
-    na = len(syms)
-    
-    #hessmat = np.genfromtxt(mol_hess_fname)
-    #hess = hessmat
-    #print("Loading", mol_hess_fname)
-    hessmat = np.genfromtxt(mol_hess_fname,skip_header=2)
-    hess = np.zeros((na*3,na*3))
-    for line in hessmat:
-        row = int(line[0])
-        col = int(line[1])
-        hess[3*row:3*row+3,3*col:3*col+3] = line[2:].reshape(3,3)
-        hess[3*col:3*col+3,3*row:3*row+3] = line[2:].reshape(3,3).T
-    convert = kcal2hartree / ang2bohr**2
-    hess *= convert
-    convert = 1
-    #with open("hessian_full.dat", 'w') as fid:
-    #    [fid.write(("{:16.13f} "*len(line) + '\n').format(*(line * convert ))) for line in hess]
-
-
-    return hess, xyz, syms
-
 def hessian_transform_mass_weighted(hess, mass):
+
+    # assumes hess is kcal/A/A using mass in amu
 
     mass = np.array(mass) * amu2au
     hess = np.array(hess)
     mass_mat = (np.dot(np.sqrt(mass).reshape(-1,1), np.sqrt(mass).reshape(1,-1)))
 
-    # assumes hess is kcal/A/A
-    # no idea where this magic number comes from, didn't take notes :(
-    # it should be Eq 8 in the Gaussian white paper
-    # hess_convert = 1.0 / mass_mat * 937583.0699999963 * kcal2hartree / ang2bohr**2
-    # hess_convert = 1.0 / mass_mat * 937583.07 * kcal2hartree / ang2bohr**2
     hess_convert = 1.0 / mass_mat * kcal2hartree / ang2bohr**2
 
     hess *= hess_convert
@@ -347,7 +273,7 @@ def hessian_transform_mass_weighted(hess, mass):
     return hess
 
 
-def hessian_modes( hess, syms, xyz, mass, mol_number, remove=0, stdtr=False, debug=False, verbose=False, return_DL=False):
+def hessian_modes( hess, syms, xyz, mass, mol_number, remove=0, stdtr=True, debug=False, verbose=False, return_DL=False):
 
     # xyz = xyz * ang2bohr
     xyz = np.array(xyz)
