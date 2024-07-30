@@ -30,6 +30,7 @@ from besmarts.core import codecs
 from besmarts.core import hierarchies
 from besmarts.core import geometry
 from besmarts.core import primitives
+from besmarts.core import arrays
 
 assignment_mapping = Dict[str, List[List[Sequence[int]]]]
 cartesian_coordinates = List[List[Tuple[float, float, float]]]
@@ -1315,7 +1316,7 @@ def graph_assignment_to_format_xyz(
     return lines
 
 
-def parse_xyz(xyzdata: List[str]) -> Tuple[List[str], cartesian_coordinates]:
+def parse_xyz(xyzdata: str) -> Tuple[List[str], cartesian_coordinates]:
 
     N = None
     lines = xyzdata.split('\n')
@@ -1345,7 +1346,7 @@ def parse_xyz(xyzdata: List[str]) -> Tuple[List[str], cartesian_coordinates]:
 def xyz_to_graph_assignment(
     gcd,
     smi,
-    xyzdata: List,
+    xyzdata: str,
     indices=None
 ) -> graph_assignment:
     """
@@ -1353,10 +1354,11 @@ def xyz_to_graph_assignment(
     g = graphs.subgraph_as_graph(gcd.smiles_decode(smi))
     sel = {}
 
-    for xyzs in xyzdata:
-        for ic, xyz in enumerate(xyzs, 1):
-            if (ic,) not in sel:
-                sel[ic,] = []
-            sel[ic,].extend(xyz)
+    _, xyzs = parse_xyz(xyzdata)
+
+    for ic, xyz in enumerate(xyzs[0], 1):
+        if (ic,) not in sel:
+            sel[ic,] = []
+        sel[ic,].extend(xyz)
 
     return graph_assignment(smi, sel, g)

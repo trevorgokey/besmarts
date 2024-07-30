@@ -31,7 +31,6 @@ def physical_system_to_openmm_system(psys):
         n = node.primitives['element'].on()[0]
         m = openmm.app.element.Element.getByAtomicNumber(n)
         atom_map[i] = system.addParticle(m.mass)
-    
 
     frc, b_map = assign_bonds(psys, atom_map)
     system.addForce(frc)
@@ -96,7 +95,7 @@ def physical_system_to_openmm_system(psys):
 
     return sim
 
-def optimize_positions_openmm(csys, psys: mm.physical_system, step_limit=10000, tol=1e-10):
+def optimize_positions_openmm(csys, psys: mm.physical_system, step_limit=1000, tol=1e-10):
 
     sim = physical_system_to_openmm_system(psys)
     # print("PSYS ENERGY:", objectives.physical_system_energy(psys, csys))
@@ -104,15 +103,36 @@ def optimize_positions_openmm(csys, psys: mm.physical_system, step_limit=10000, 
     state = sim.context.getState(getPositions=True)
 
     pos = psys.models[0].positions[0]
-    atom_map_r = {j: i for j, i in enumerate(pos.graph.nodes)}
-    newpos = {(atom_map_r[i],): [
-            arrays.array_scale(arrays.array_round([a.x, a.y, a.z], 12), 10.0)
+
+    xyz = state.getPositions()
+    xyz = xyz / xyz.unit
+
+    newpos = {(j,): [
+            arrays.array_scale(arrays.array_round(xyz[i], 12), 10.0)
         ]
-        for i, a in enumerate(state.getPositions())}
+        for i, j in enumerate(sorted(pos.graph.nodes))}
 
-    return assignments.graph_assignment(pos.smiles, newpos, pos.graph)
+    pos = assignments.graph_assignment(pos.smiles, newpos, pos.graph)
+    return pos
 
-def physical_system_force_openmm(csys, psys):
+def physical_system_energy_openmm(psys, csys):
+
+    sim = physical_system_to_openmm_system(psys)
+
+    pos = psys.models[0].positions[0]
+
+    xyz = []
+    for i, j in enumerate(sorted(pos.graph.nodes)):
+        xyz.append(arrays.array_scale(pos.selections[j,][0], 0.1))
+    sim.context.setPositions(xyz)
+
+    state = sim.context.getState(getEnergy=True)
+    energy = state.getPotentialEnergy()
+    energy = energy / energy.unit
+    return energy
+
+
+def physical_system_force_openmm(psys, csys):
 
     sim = physical_system_to_openmm_system(psys)
 
@@ -128,10 +148,10 @@ def physical_system_force_openmm(csys, psys):
     grad = [x/x.unit for y in state.getForces() for x in y]
     return grad
 
-def physical_system_gradient_openmm(csys, psys):
-    return [-x for x in physical_system_force_openmm(csys, psys)]
+def physical_system_gradient_openmm(psys, csys):
+    return [-x for x in physical_system_force_openmm(psys, csys)]
 
-def physical_system_hessian_openmm(csys, psys, h=1e-4):
+def physical_system_hessian_openmm(psys, csys, h=1e-4):
 
     sim = physical_system_to_openmm_system(psys)
 
@@ -143,12 +163,17 @@ def physical_system_hessian_openmm(csys, psys, h=1e-4):
         xyz.append(arrays.array_scale(pos.selections[j,][0], 0.1))
     sim.context.setPositions(xyz)
 
+
+    # this is the original (Angstrom) scale
+    # which will convert the final result
     scale = 1/(4*h*h)
+
+    # angstrom to nm to displacements, noting we use the above conversion
+    # for the actual Hessian values
+    h = h / 10
 
     N = len(xyz)*3
 
-    # angstrom to nm
-    h = h / 10
     x = xyz
 
     hess = []
@@ -186,9 +211,8 @@ def physical_system_hessian_openmm(csys, psys, h=1e-4):
         # undo the divide up top for only off-diag
         row[i] = round(4*e, 12)
 
-        # print(i, i, e/h/h/4*4.184)
-
         x[a1][c1] -= h
+        # print(i, i, e, e/h/h / 100, energy(sim, x))
 
         for j in range(i+1, N):
 

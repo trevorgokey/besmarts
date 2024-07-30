@@ -22,7 +22,6 @@ from besmarts.mechanics import fits
 def optimize_positions_scipy(csys, psys: mm.physical_system, step_limit=1000, tol=1e-10):
 
     pos = copy.deepcopy(psys.models[0].positions[0])
-    
     args, keys = objectives.array_flatten_assignment(pos.selections)
 
     # jac = objectives.array_geom_gradient
@@ -56,7 +55,6 @@ def optimize_positions_scipy(csys, psys: mm.physical_system, step_limit=1000, to
         method=method,
     )
 
-    n_confs = len(list(pos.selections.values())[0])
     for (c, n, i), v in zip(keys, arrays.array_round(result.x, 12)):
         pos.selections[n][c][i] = v
 

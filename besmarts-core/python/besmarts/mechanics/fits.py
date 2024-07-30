@@ -266,14 +266,14 @@ class compute_config_hessian(compute_config):
 
                     args, keys = objectives.array_flatten_assignment(pos.selections)
 
-                    hess_mm = optimizers_openmm.physical_system_hessian_openmm(csys, psys, h=1e-4)
+                    hess_mm = optimizers_openmm.physical_system_hessian_openmm(psys, csys, h=1e-4)
 
                     hx = []
                     for row in hess_mm:
                         hx.append(arrays.array_scale(row, 1/4.184))
                     tbl_hess.values.extend(hx)
 
-                    grad_mm = optimizers_openmm.physical_system_gradient_openmm(csys, psys)
+                    grad_mm = optimizers_openmm.physical_system_gradient_openmm(psys, csys)
                     gx = arrays.array_scale(grad_mm, 1/4.184)
                     tbl_grad.values.extend(gx)
 

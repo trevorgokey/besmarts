@@ -275,7 +275,10 @@ def array_geom_hessian(args, keys, csys, psys: mm.physical_system, h=1e-4):
 
         # undo the divide up top for only off-diag
         row[i] = round(4*e, 12)
-        # print(i, i, e/h/h/4*4.184)
+        x[i] -= h
+
+        # print(i, i, e*4.184, e/h/h*4.184,
+        #     array_geom_energy(x, keys, csys, psys)*4.184)
 
         for j in range(i+1, len(args)):
             e = 0
