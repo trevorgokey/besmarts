@@ -53,7 +53,13 @@ using a similar process as above with `besmarts-scipy`. There is also an
 interface to OpenMM and this minimizer can be used instead after installing
 `besmarts-openmm`. The OpenMM plugin is quite a bit faster and is recommended
 if large or heavily numerical computations are needed (e.g. fitting frequencies
-from calculating MM Hessians with finite differences).
+from calculating MM Hessians with finite differences). The native interface
+to calculating energies and gradients is useful if novel functional forms are
+needed and not in standard packages (e.g. OpenMM). We recommend using OpenMM if
+it is supported and available on your system. The energies, hessians, and
+gradients compared between the native and OpenMM implementations are nearly
+exact; for energy/gradient down to 12 decimal places for linear terms, around 6
+places for torsions, and between 4-12 places for Hessians.
 
 Molecular mechanics energy and gradient evaluations are implemented, but
 require partial charges. By default, `besmarts` will try to charge molecules
