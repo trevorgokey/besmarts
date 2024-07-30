@@ -320,7 +320,7 @@ def optimization_strategy_build_macro_iterations(strat: optimization_strategy):
                     if branch_d > 0 and branches == 0:
                         continue
                     if branches > bits:
-                        continue
+                        branches = bits
                     # if branches < branch_d:
                     #     continue
 
