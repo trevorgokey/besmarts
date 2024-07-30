@@ -290,7 +290,7 @@ def hessian_project_onto_ics(
         print(omega)
 
     if B is None:
-        ics, B = bmatrix(
+        ics, B = assignments.bmatrix(
             pos,
             torsions=torsions,
             outofplanes=outofplanes,
