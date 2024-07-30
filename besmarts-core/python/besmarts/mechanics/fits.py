@@ -28,7 +28,6 @@ from besmarts.core import splits
 from besmarts.core import trees
 from besmarts.core import tree_iterators
 from besmarts.core import optimization
-from besmarts.core import primitives
 from besmarts.core import logs
 from besmarts.core import returns
 from besmarts.cluster import cluster_objective
@@ -43,8 +42,12 @@ from besmarts.mechanics import molecular_models as mm
 
 eid_t = int
 
-class compute_config:
+POSITIONS = assignments.POSITIONS
+HESSIANS = assignments.HESSIANS
+GRADIENTS = assignments.GRADIENTS
 
+
+class compute_config:
     """
     Configuration for computing some property of an entry in a graph_db. The
     addr is the address of the entry in the graph_db. Keys are from a chemical
@@ -57,7 +60,7 @@ class compute_config:
         self.keys = []
 
     def run(self) -> List[Dict[assignments.tid_t, assignments.graph_db_table]]:
-        # print("Starting calculation", self)
+
         csys = self.csys
         GDB = self.GDB
         tbl_idx = assignments.ENERGY
@@ -65,18 +68,29 @@ class compute_config:
 
         all_results = []
         for keyset in self.keys:
-            results: List[Dict[assignments.tid_t, assignments.graph_db_table]] = []
+            results = []
+            results: List[Dict[assignments.tid_t, assignments.graph_db_table]]
 
             for eid, gdb in GDB.entries.items():
                 tbl = assignments.graph_db_table(topology.null)
                 for gid in gdb.graphs:
                     rid = 0
-                    pos0 = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
+                    pos0 = assignments.graph_db_graph_to_graph_assignment(
+                        gdb,
+                        eid,
+                        tid,
+                        gid,
+                        rid
+                    )
 
-                    psys = mm.chemical_system_to_physical_system(csys, [pos0], ref=self.psys, reuse=self.reuse)
+                    psys = mm.chemical_system_to_physical_system(
+                        csys,
+                        [pos0],
+                        ref=self.psys,
+                        reuse=self.reuse
+                    )
                     reapply = set()
                     for k, v in keyset.items():
-                        # print(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.10g} to {v:.10g} d={v-mm.chemical_system_get_value(csys, k):.10g}")
                         mm.physical_system_set_value(psys, k, v)
                         reapply.add(k[0])
                     for m in reapply:
@@ -86,9 +100,16 @@ class compute_config:
                                 psys.models[m].values.pop()
                                 psys.models[m].labels.pop()
                             for proc in procs[1:]:
-                                psys.models[m] = proc.assign(csys.models[m], psys.models[m], overrides={k[1:]: v for k, v in keyset.items() if k[0] == m})
+                                psys.models[m] = proc.assign(
+                                    csys.models[m],
+                                    psys.models[m],
+                                    overrides={
+                                        k[1:]: v for k, v in keyset.items()
+                                        if k[0] == m
+                                    }
+                                )
                     ene = objectives.physical_system_energy(psys, csys)
-                    
+
                     tbl[gid] = ene
                 r = {tbl_idx: tbl}
                 # print("Done calculating", self)
@@ -99,7 +120,6 @@ class compute_config:
 
 
 class compute_config_energy(compute_config):
-
     """
     """
 
@@ -107,7 +127,6 @@ class compute_config_energy(compute_config):
         """
         Compute the energy of the entries and store them in graph_db tables.
         """
-
         # print("Starting calculation", self)
         csys = self.csys
         gdb = self.GDB
@@ -116,23 +135,33 @@ class compute_config_energy(compute_config):
 
         all_results = []
         for keyset in self.keys:
-            results: List[Dict[assignments.tid_t, assignments.graph_db_table]] = []
+            results = []
+            results: List[Dict[assignments.tid_t, assignments.graph_db_table]]
             for eid, gde in gdb.entries.items():
                 tbl = assignments.graph_db_table(topology.null)
                 rids = assignments.graph_db_table_get_row_ids(gde[tid])
                 for rid in rids:
                     system = []
                     for gid in gdb.graphs:
-                    # pos0 = assignments.graph_db_entry_to_graph_assignment(gdb, assignments.POSITIONS, gid)
 
-                        pos0 = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
+                        pos0 = assignments.graph_db_graph_to_graph_assignment(
+                            gdb,
+                            eid,
+                            tid,
+                            gid,
+                            rid
+                        )
                         system.append(pos0)
 
 
-                    psys = mm.chemical_system_to_physical_system(csys, system, ref=self.psys, reuse=self.reuse)
+                    psys = mm.chemical_system_to_physical_system(
+                        csys,
+                        system,
+                        ref=self.psys,
+                        reuse=self.reuse
+                    )
                     reapply = set()
                     for k, v in keyset.items():
-                        # print(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.10g} to {v:.10g} d={v-mm.chemical_system_get_value(csys, k):.10g}")
                         mm.physical_system_set_value(psys, k, v)
                         reapply.add(k[0])
                     for m in reapply:
@@ -142,7 +171,14 @@ class compute_config_energy(compute_config):
                                 psys.models[m].values.pop()
                                 psys.models[m].labels.pop()
                             for proc in procs[1:]:
-                                psys.models[m] = proc.assign(csys.models[m], psys.models[m], overrides={k[1:]: v for k, v in keyset.items() if k[0] == m})
+                                psys.models[m] = proc.assign(
+                                    csys.models[m],
+                                    psys.models[m],
+                                    overrides={
+                                        k[1:]: v for k, v in keyset.items()
+                                        if k[0] == m
+                                    }
+                                )
 
                     ene = objectives.physical_system_energy(psys, csys)
 
@@ -168,7 +204,6 @@ class compute_config_gradient(compute_config):
         Compute the gradient of the entries and store them in graph_db tables.
         compute_config_gradient::run
         """
-        # print("Starting calculation", self)
         csys = self.csys
         gdb = self.GDB
         tbl_idx = assignments.GRADIENTS
@@ -176,7 +211,8 @@ class compute_config_gradient(compute_config):
 
         all_results = []
         for keyset in self.keys:
-            results: List[Dict[assignments.tid_t, assignments.graph_db_table]] = []
+            results = []
+            results: List[Dict[assignments.tid_t, assignments.graph_db_table]]
             for eid, gde in gdb.entries.items():
                 tbl = assignments.graph_db_table(topology.atom)
                 rids = assignments.graph_db_table_get_row_ids(gde[tid])
@@ -184,13 +220,23 @@ class compute_config_gradient(compute_config):
                     system = []
                     for gid in gde.tables[tid].graphs:
 
-                        pos0 = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
+                        pos0 = assignments.graph_db_graph_to_graph_assignment(
+                            gdb,
+                            eid,
+                            tid,
+                            gid,
+                            rid
+                        )
                         system.append(pos0)
 
-                    psys = mm.chemical_system_to_physical_system(csys, system, ref=self.psys, reuse=self.reuse)
+                    psys = mm.chemical_system_to_physical_system(
+                        csys,
+                        system,
+                        ref=self.psys,
+                        reuse=self.reuse
+                    )
                     reapply = set()
                     for k, v in keyset.items():
-                        # dprint(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.10g} to {v:.10g} d={v-mm.chemical_system_get_value(csys, k):.10g}", on=verbose)
                         mm.physical_system_set_value(psys, k, v)
                         reapply.add(k[0])
                     for m in reapply:
@@ -200,9 +246,19 @@ class compute_config_gradient(compute_config):
                                 psys.models[m].values.pop()
                                 psys.models[m].labels.pop()
                             for proc in procs[1:]:
-                                psys.models[m] = proc.assign(csys.models[m], psys.models[m], overrides={k[1:]: v for k, v in keyset.items() if k[0] == m})
+                                psys.models[m] = proc.assign(
+                                    csys.models[m],
+                                    psys.models[m],
+                                    overrides={
+                                        k[1:]: v for k, v in keyset.items()
+                                        if k[0] == m
+                                    }
+                                )
 
-                    gx = optimizers_openmm.physical_system_gradient_openmm(csys, psys)
+                    gx = optimizers_openmm.physical_system_gradient_openmm(
+                        csys,
+                        psys
+                    )
                     gx = arrays.array_round(gx, 12)
                     tbl.values.extend(gx)
 
@@ -215,7 +271,6 @@ class compute_config_gradient(compute_config):
 
 
 class compute_config_hessian(compute_config):
-
     """
     """
 
@@ -232,8 +287,8 @@ class compute_config_hessian(compute_config):
 
         all_results = []
         for ki, keyset in enumerate(self.keys, 1):
-            # print(f"Hessian keyset {ki} of {len(self.keys)}")
-            results: List[Dict[assignments.tid_t, assignments.graph_db_table]] = []
+            results = []
+            results: List[Dict[assignments.tid_t, assignments.graph_db_table]]
             for eid, gde in gdb.entries.items():
                 tbl_hess = assignments.graph_db_table(topology.null)
                 tbl_grad = assignments.graph_db_table(topology.null)
@@ -242,13 +297,23 @@ class compute_config_hessian(compute_config):
                     system = []
                     for gid in gde.tables[tid].graphs:
 
-                        pos0 = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
+                        pos0 = assignments.graph_db_graph_to_graph_assignment(
+                            gdb,
+                            eid,
+                            tid,
+                            gid,
+                            rid
+                        )
                         system.append(pos0)
 
-                    psys = mm.chemical_system_to_physical_system(csys, system, ref=self.psys, reuse=self.reuse)
+                    psys = mm.chemical_system_to_physical_system(
+                        csys,
+                        system,
+                        ref=self.psys,
+                        reuse=self.reuse
+                    )
                     reapply = set()
                     for k, v in keyset.items():
-                        # dprint(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.10g} to {v:.10g} d={v-mm.chemical_system_get_value(csys, k):.10g}", on=verbose)
                         mm.physical_system_set_value(psys, k, v)
                         reapply.add(k[0])
                     for m in reapply:
@@ -258,22 +323,36 @@ class compute_config_hessian(compute_config):
                                 psys.models[m].values.pop()
                                 psys.models[m].labels.pop()
                             for proc in procs[1:]:
-                                psys.models[m] = proc.assign(csys.models[m], psys.models[m], overrides={k[1:]: v for k, v in keyset.items() if k[0] == m})
+                                psys.models[m] = proc.assign(
+                                    csys.models[m],
+                                    psys.models[m],
+                                    overrides={
+                                        k[1:]: v for k, v in keyset.items()
+                                        if k[0] == m
+                                    }
+                                )
 
                     pos = psys.models[0].positions[0]
 
-                    hess_qm = gdb.entries[eid].tables[assignments.HESSIANS].values
+                    args, keys = objectives.array_flatten_assignment(
+                        pos.selections
+                    )
 
-                    args, keys = objectives.array_flatten_assignment(pos.selections)
-
-                    hess_mm = optimizers_openmm.physical_system_hessian_openmm(psys, csys, h=1e-4)
+                    hess_mm = optimizers_openmm.physical_system_hessian_openmm(
+                        psys,
+                        csys,
+                        h=1e-4
+                    )
 
                     hx = []
                     for row in hess_mm:
                         hx.append(arrays.array_scale(row, 1/4.184))
                     tbl_hess.values.extend(hx)
 
-                    grad_mm = optimizers_openmm.physical_system_gradient_openmm(psys, csys)
+                    grad_mm = optimizers_openmm.physical_system_gradient_openmm(
+                        psys,
+                        csys
+                    )
                     gx = arrays.array_scale(grad_mm, 1/4.184)
                     tbl_grad.values.extend(gx)
 
@@ -288,7 +367,6 @@ class compute_config_hessian(compute_config):
 
 
 class compute_config_position(compute_config):
-
     """
     """
 
@@ -305,17 +383,28 @@ class compute_config_position(compute_config):
 
         all_results = []
         for keyset in self.keys:
-            results: List[Dict[assignments.tid_t, assignments.graph_db_table]] = []
+            results = []
+            results: List[Dict[assignments.tid_t, assignments.graph_db_table]]
             for eid, gde in gdb.entries.items():
                 tbl = assignments.graph_db_table(topology.atom)
                 for gid in gdb.graphs:
                     for rid in gde[tid][gid].rows:
-                        pos0 = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
-                        psys = mm.chemical_system_to_physical_system(csys, [pos0], ref=self.psys, reuse=self.reuse)
+                        pos0 = assignments.graph_db_graph_to_graph_assignment(
+                            gdb,
+                            eid,
+                            tid,
+                            gid,
+                            rid
+                        )
+                        psys = mm.chemical_system_to_physical_system(
+                            csys,
+                            [pos0],
+                            ref=self.psys,
+                            reuse=self.reuse
+                        )
                         
                         reapply = set()
                         for k, v in keyset.items():
-                            # print(f"-> Obj Setting {k} from {mm.chemical_system_get_value(csys, k):.10g} to {v:.10g} d={v-mm.chemical_system_get_value(csys, k):.10g}")
                             mm.physical_system_set_value(psys, k, v)
                             reapply.add(k[0])
                         for m in reapply:
@@ -325,20 +414,39 @@ class compute_config_position(compute_config):
                                     psys.models[m].values.pop()
                                     psys.models[m].labels.pop()
                                 for proc in procs[1:]:
-                                    psys.models[m] = proc.assign(csys.models[m], psys.models[m], overrides={k[1:]: v for k, v in keyset.items() if k[0] == m})
+                                    psys.models[m] = proc.assign(
+                                        csys.models[m],
+                                        psys.models[m],
+                                        overrides={
+                                            k[1:]: v for k, v in keyset.items()
+                                            if k[0] == m
+                                        }
+                                    )
+
                         # print(f"Initial xyz for EID {eid}:")
                         # print("\n".join(print_xyz(pos0)))
-                        # pos = optimizers_scipy.optimize_positions_scipy(csys, psys, step_limit=self.step_limit, tol=self.tol)
-                        pos = optimizers_openmm.optimize_positions_openmm(csys, psys, step_limit=self.step_limit, tol=self.tol)
+
+                        # opt = optimizers_openmm.optimize_positions_openmm
+                        opt = optimizers_scipy.optimize_positions_scipy
+                        pos = opt(
+                            csys,
+                            psys,
+                            step_limit=self.step_limit,
+                            tol=self.tol
+                        )
                         # print(f"Optimized xyz for EID {eid}:")
                         # print("\n".join(print_xyz(pos)))
-                        gdg = assignments.graph_assignment_to_graph_db_graph(pos, topology.atom)
+                        gdg = assignments.graph_assignment_to_graph_db_graph(
+                            pos,
+                            topology.atom
+                        )
                         tbl.graphs[gid] = gdg
                 r = {tbl_idx: tbl}
                 results.append(r)
             all_results.append(results)
         # print("Done calculating", self)
         return all_results
+
 
 class compute_config_penalty(compute_config):
 
@@ -361,12 +469,11 @@ class compute_config_penalty(compute_config):
 
 
 class objective_config:
-
     """
     Configuration of an objective function for force field fitting. The
-    objective has two parts. The first part is how the properties are calculated
-    and is configured with a compute_config. The next is how the objective is
-    computed from the properties and is configured here.
+    objective has two parts. The first part is how the properties are
+    calculated and is configured with a compute_config. The next is how the
+    objective is computed from the properties and is configured here.
     """
 
     def __init__(self, addr, include=True, scale=1, coordinate_system="C"):
@@ -379,7 +486,14 @@ class objective_config:
         self.cache = {}
         self.batch_size = None
 
-    def get_task(self, GDB, csys, keys=None, psys=None, reuse=None) -> compute_config:
+    def get_task(
+        self,
+        GDB,
+        csys,
+        keys=None,
+        psys=None,
+        reuse=None
+    ) -> compute_config:
         """
         Build and return a compute_config that will compute the needed
         properties.
@@ -396,14 +510,22 @@ class objective_config:
         cc.reuse = reuse
         return cc
 
-    def compute_gradient_2pt(self, ref, X0, E, D: List[Dict[int, assignments.graph_db_table]], h):
+
+    def compute_gradient_2pt(
+        self,
+        ref,
+        X0,
+        E,
+        D: List[Dict[int, assignments.graph_db_table]],
+        h
+    ):
         """
         Compute the parameter gradients of this objective.
         """
 
         dxa = []
         dxb = []
-        for etbls, dtbls  in zip(E, D):
+        for etbls, dtbls in zip(E, D):
             for tid, dtbl in dtbls.items():
                 etbl = etbls[tid]
                 for gid, dgdg in dtbl.graphs.items():
@@ -412,38 +534,39 @@ class objective_config:
                         egdr = egdg.rows[rid]
                         for cid, dgdc in dgdr.columns.items():
                             egdc = egdr.columns[cid]
-                            for ev, dv in zip(egdc.selections.values(), dgdc.selections.values()):
-                                # vstr = "["+",".join([f"{vi:10.5f}" for vi in v]) + "]"
-                                # v0str = "["+",".join([f"{vi:10.5f}" for vi in v0]) + "]"
-                                # dxi = arrays.array_difference(dv, ev)
+                            for ev, dv in zip(
+                                egdc.selections.values(),
+                                dgdc.selections.values()
+                            ):
                                 dxa.extend(ev)
                                 dxb.extend(dv)
-                                # dx += sum(x)
-                                # print(f"{rid:3d} Position SSE: {sse:10.5f} {vstr} {vstr}")
-        # print(f"Total Position SSE: {obj:10.5f} A^2")
-        # dx = arrays.array_round(dx, 12)
 
         dxdp = arrays.array_difference(dxb, dxa)
-        dxdp = arrays.array_round(dxdp, 12) 
-        dxdp = arrays.array_scale(dxdp, 1/(2*h)) 
+        dxdp = arrays.array_round(dxdp, 12)
+        dxdp = arrays.array_scale(dxdp, 1/(2*h))
 
         d2xdp2 = arrays.array_add(
             arrays.array_scale(X0, -2),
             arrays.array_add(dxb, dxa)
         )
-        d2xdp2 = arrays.array_round(d2xdp2, 12) 
+        d2xdp2 = arrays.array_round(d2xdp2, 12)
         d2xdp2 = arrays.array_scale(d2xdp2, 1.0/(h*h))
 
         return dxdp, d2xdp2
 
-    def compute_diff(self, GDB: assignments.graph_db, D: List[Dict[int, assignments.graph_db_table]], verbose=False):
+    def compute_diff(
+        self,
+        GDB: assignments.graph_db,
+        D: List[Dict[int, assignments.graph_db_table]],
+        verbose=False
+    ):
         """
         Compute the difference of the computed properties versus a reference
         """
 
         obj = []
         out = []
-        for (eid, gde), tbls  in zip(GDB.entries.items(), D):
+        for (eid, gde), tbls in zip(GDB.entries.items(), D):
             rmse = []
             out.append(f"EID {eid} Position objective:")
             for tid, tbl in tbls.items():
@@ -459,7 +582,6 @@ class objective_config:
                             x1l = [xyz for xyz in gdc.selections.values()]
                             x0l = [xyz for xyz in gdc0.selections.values()]
 
-                            # print(f"{rid:3d} F= {vstr} F0= {v0str}")
                             for ic, x1, x0 in zip(gdc0.selections, x1l, x0l):
                                 x = arrays.array_difference(x1, x0)
                                 x = arrays.array_round(x, 12)
@@ -468,12 +590,19 @@ class objective_config:
                                 xyz0 = " ".join([f"{xi:8.4f}" for xi in x0])
                                 dxyz = " ".join([f"{xi:8.4f}" for xi in  x])
                                 rmse.append(arrays.array_inner_product(x, x))
-                                out.append(f"    {eid:4d} {gid:2d} {rid:2d} {cid:2d} {ic[0]:3d} MM: {xyz1} QM: {xyz0} dP: {dxyz}")
+                                addr = f"    {eid:4d} {gid:2d} {rid:2d} "
+                                addr += f"{cid:2d} {ic[0]:3d}"
+                                out  = f" MM: {xyz1} QM: {xyz0} dP: {dxyz}"
+                                out.append(addr + out)
             if len(rmse):
                 rmse = (sum(rmse)/len(rmse))**.5
             else:
                 rmse = 0
-            out.append(f"Total Position SSE: {arrays.array_inner_product(obj, obj):10.5f} A^2 RMSE: {rmse:10.5f} A")
+            X2 = arrays.array_inner_product(obj, obj)
+            out.append(" ".join([
+                f"Total Position SSE: {X2:10.5f} A^2",
+                f"RMSE: {rmse:10.5f} A"
+            ]))
         return returns.success(arrays.array_round(obj, 12), out=out, err=[])
 
 
@@ -510,10 +639,10 @@ class objective_config_gradient(objective_config):
                 x0 = etbls[tid].values
                 x1 = dtbl.values
                 if self.coordinate_system == "D":
-                    gid = list(gde.tables[assignments.POSITIONS].graphs)[0]
+                    gid = list(gde[POSITIONS].graphs)[0]
                     g = ref.graphs[gid]
                     smiles = ref.smiles[gid]
-                    sel = gde.tables[assignments.POSITIONS].graphs[gid].rows[0].columns[0].selections
+                    sel = gde[POSITIONS][gid][0][0].selections
                     sel = {k: [v] for k, v in sel.items()}
                     pos = assignments.graph_assignment(smiles, sel, g)
                     x0 = array_numpy.dlcmatrix_project_gradients(pos, x0)
@@ -521,38 +650,42 @@ class objective_config_gradient(objective_config):
 
                 dxa.extend(x0)
                 dxb.extend(x1)
-                # x = arrays.array_difference(x1, x0)
-                # dx.extend(x)
+
         dxdp = arrays.array_difference(dxb, dxa)
         dxdp = arrays.array_round(dxdp, 12) 
-        dxdp = arrays.array_scale(dxdp, 1/(2*h)) 
+        dxdp = arrays.array_scale(dxdp, 1/(2*h))
 
         d2xdp2 = arrays.array_add(
             arrays.array_scale(X0, -2),
             arrays.array_add(dxb, dxa)
         )
-        d2xdp2 = arrays.array_round(d2xdp2, 12) 
+        d2xdp2 = arrays.array_round(d2xdp2, 12)
         d2xdp2 = arrays.array_scale(d2xdp2, 1.0/(h*h))
 
         return dxdp, d2xdp2
 
-    def compute_diff(self, GDB: assignments.graph_db, D: List[Dict[int, assignments.graph_db_table]], verbose=False):
+    def compute_diff(
+        self,
+        GDB: assignments.graph_db,
+        D: List[Dict[int, assignments.graph_db_table]],
+        verbose=False
+    ):
         """
         """
 
         out = []
         X = []
-        for (eid, gde), tbls  in zip(GDB.entries.items(), D):
+        for (eid, gde), tbls in zip(GDB.entries.items(), D):
             rmse = []
             for tid, tbl in tbls.items():
                 x0 = gde.tables[tid].values
                 x1 = tbl.values
 
                 if self.coordinate_system == "D":
-                    gid = list(gde.tables[assignments.POSITIONS].graphs)[0]
+                    gid = list(gde.tables[POSITIONS].graphs)[0]
                     g = GDB.graphs[gid]
                     smiles = GDB.smiles[gid]
-                    sel = gde.tables[assignments.POSITIONS].graphs[gid].rows[0].columns[0].selections
+                    sel = gde.tables[POSITIONS][gid][0][0].selections
                     sel = {k: [v] for k, v in sel.items()}
                     pos = assignments.graph_assignment(smiles, sel, g)
 
@@ -564,7 +697,6 @@ class objective_config_gradient(objective_config):
                     else:
                         x0 = self.cache['D:x0']
 
-
                 x = arrays.array_difference(x1, x0)
                 nlines = len(out)
                 out.append(f" EID {eid} Gradient objective:")
@@ -573,7 +705,7 @@ class objective_config_gradient(objective_config):
                     xyz1 = " ".join([f"{xi:12.4e}" for xi in x1[3*i:3*i+3]])
                     xyz0 = " ".join([f"{xi:12.4e}" for xi in x0[3*i:3*i+3]])
                     dxyz = " ".join([f"{xi:12.4e}" for xi in xx])
-                    out.append(f"    {i+1:4d} MM: {xyz1} QM: {xyz0} dG: {dxyz}")
+                    out.append(f"   {i+1:4d} MM: {xyz1} QM: {xyz0} dG: {dxyz}")
                     rmse.append(arrays.array_inner_product(xx, xx))
                 if verbose:
                     for i in range(len(out) - nlines):
@@ -584,7 +716,11 @@ class objective_config_gradient(objective_config):
             else:
                 rmse = 0
 
-            out.append(f" Total Gradient SSE: {arrays.array_inner_product(X,X):10.5f} (kJ/mol/A)^2 RMSE: {rmse:10.5f} kJ/mol/A")
+            X2 = arrays.array_inner_product(X,X)
+            out.append(" ".join([
+                f" Total Gradient SSE: {X2:10.5f} (kJ/mol/A)^2",
+                f"RMSE: {rmse:10.5f} kJ/mol/A"
+            ]))
         return returns.success(arrays.array_round(X, 12), out=out, err=[])
 
 
@@ -616,24 +752,24 @@ class objective_config_hessian(objective_config):
         dxb = []
         gde = ref.entries[self.addr.eid[0]]
 
-        for etbls, dtbls  in zip(E0, E1):
+        for etbls, dtbls in zip(E0, E1):
             # for tid, dtbl in dtbls.items():
 
             # x0 = etbls[tid].values
             # x1 = dtbl.values
 
-            gid = list(gde.tables[assignments.POSITIONS].graphs)[0]
+            gid = list(gde.tables[POSITIONS].graphs)[0]
             g = ref.graphs[gid]
             DL = self.cache['IC:dl']
             (ics, B, B2) = self.cache['IC:b']
 
-            hess0 = dtbls[assignments.HESSIANS].values
-            grad0 = list(dtbls[assignments.GRADIENTS].values)
-            x0 =  hessians.hessian_frequencies(g, hess0, grad0, DL, ics, B, B2)
+            hess0 = dtbls[HESSIANS].values
+            grad0 = list(dtbls[GRADIENTS].values)
+            x0 = hessians.hessian_frequencies(g, hess0, grad0, DL, ics, B, B2)
 
-            hess1 = etbls[assignments.HESSIANS].values
-            grad1 = list(etbls[assignments.GRADIENTS].values)
-            x1 =  hessians.hessian_frequencies(g, hess1, grad1, DL, ics, B, B2)
+            hess1 = etbls[HESSIANS].values
+            grad1 = list(etbls[GRADIENTS].values)
+            x1 = hessians.hessian_frequencies(g, hess1, grad1, DL, ics, B, B2)
 
             # keep this for when I want to try internal hess
             # x0 = array_numpy.dlcmatrix_project_gradients(pos, x0)
@@ -641,22 +777,26 @@ class objective_config_hessian(objective_config):
 
             dxa.extend(x0)
             dxb.extend(x1)
-            # x = arrays.array_difference(x1, x0)
-            # dx.extend(x)
+
         dxdp = arrays.array_difference(dxb, dxa)
-        dxdp = arrays.array_round(dxdp, 12) 
-        dxdp = arrays.array_scale(dxdp, 1/(2*h)) 
+        dxdp = arrays.array_round(dxdp, 12)
+        dxdp = arrays.array_scale(dxdp, 1/(2*h))
 
         d2xdp2 = arrays.array_add(
             arrays.array_scale(X0, -2),
             arrays.array_add(dxb, dxa)
         )
-        d2xdp2 = arrays.array_round(d2xdp2, 12) 
+        d2xdp2 = arrays.array_round(d2xdp2, 12)
         d2xdp2 = arrays.array_scale(d2xdp2, 1.0/(h*h))
 
         return dxdp, d2xdp2
 
-    def compute_diff(self, GDB: assignments.graph_db, D: List[Dict[int, assignments.graph_db_table]], verbose=False):
+    def compute_diff(
+        self,
+        GDB: assignments.graph_db,
+        D: List[Dict[int, assignments.graph_db_table]],
+        verbose=False
+    ):
         """
         """
 
@@ -668,15 +808,15 @@ class objective_config_hessian(objective_config):
             g = GDB.graphs[gid]
             smiles = GDB.smiles[gid]
 
-            hess_qm = gde.tables[assignments.HESSIANS].values
-            hess_qm_sel = gde.tables[assignments.POSITIONS].graphs[gid].rows[0].columns[0].selections
+            hess_qm = gde.tables[HESSIANS].values
+            hess_qm_sel = gde.tables[POSITIONS][gid][0][0].selections
             # shim until I get off the fence on the dimensions of sel
             hess_qm_sel = {k: [v] for k, v in hess_qm_sel.items()}
 
             hess_qm_pos = assignments.graph_assignment(smiles, hess_qm_sel, g)
 
             xyz = list([x[0] for x in hess_qm_sel.values()])
-            # xyz = None
+
             sym = graphs.graph_symbols(g)
             mass = [[vibration.mass_table[sym[n]]]*3 for n in sym]
             sym = list(sym.values())
@@ -686,14 +826,30 @@ class objective_config_hessian(objective_config):
 
                     torsions = False
                     pairs = False
-                    ics, B = hessians.bmatrix(hess_qm_pos, torsions=torsions, pairs=pairs, remove1_3=False) # pairs=False, torsions=False, outofplanes=False)
-                    ics, B2 = hessians.b2matrix(hess_qm_pos, torsions=torsions, pairs=pairs,remove1_3=False) # pairs=False, torsions=False, outofplanes=False)
+                    ics, B = hessians.bmatrix(
+                        hess_qm_pos,
+                        torsions=torsions,
+                        pairs=pairs,
+                        remove1_3=False
+                    )
+                    ics, B2 = hessians.b2matrix(
+                        hess_qm_pos,
+                        torsions=torsions,
+                        pairs=pairs,
+                        remove1_3=False
+                    )
 
-                    hess_qm_freq, hess_qm_modes, DL = vibration.hessian_modes(hess_qm, sym, xyz, mass, 0, remove=0, stdtr=True, return_DL=True)
+                    hess_qm_freq, hess_qm_modes, DL = vibration.hessian_modes(
+                        hess_qm,
+                        sym,
+                        xyz,
+                        mass,
+                        0,
+                        remove=0,
+                        stdtr=True,
+                        return_DL=True
+                    )
 
-                    # hess_qm_ic = project_ics(B, hess_qm)
-                    # ic_qm_fcs = dict(zip(ics, np.diag(hess_qm_ic)))
-                    # x0 = array_numpy.dlcmatrix_project_gradients(pos, x0)
                     self.cache['IC:qm_freq'] = hess_qm_freq
                     self.cache['IC:b'] = (ics, B, B2)
                     self.cache['IC:dl'] = DL
@@ -705,7 +861,9 @@ class objective_config_hessian(objective_config):
                 DL = self.cache['IC:dl']
                 (ics, B, B2) = self.cache['IC:b']
 
-                x1 =  list(hessians.hessian_frequencies(g, hess_mm, grad_mm, DL, ics, B, B2))
+                x1 = list(hessians.hessian_frequencies(
+                    g, hess_mm, grad_mm, DL, ics, B, B2)
+                )
 
 
             x = arrays.array_difference(x1, x0)
@@ -728,51 +886,17 @@ class objective_config_hessian(objective_config):
 
         return returns.success(arrays.array_round(X, 12), out=out, err=[])
 
-    def compute_total(self, GDB: assignments.graph_db, D: List[Dict[int, assignments.graph_db_table]]):
-        """
-        D is the results for some objective idx
-        so it is a list of tables (with their own tid)
-                                   
-        which now means that each is a table with structs which have indices
-        """
-        obj = 0
-        g = [0, 0, 0]
-        g0 = [0, 0, 0]
-        for gde, tbls  in zip(GDB.entries.values(), D):
-            for tid, tbl in tbls.items():
-                tbl0 = gde.tables[tid]
-            
-                for i in range(0,len(tbl.values),3):
-                    v = tbl.values[i:i+3]
-                    v0 = tbl0.values[i:i+3]
-                    estr = "["+",".join([f"{vi:10.5f}" for vi in v]) + "]"
-                    e0str = "["+",".join([f"{vi:10.5f}" for vi in v0]) + "]"
-                    x = arrays.array_difference(v, v0)
-                    g[0] += v[0]
-                    g[1] += v[1]
-                    g[2] += v[2]
-                    g0[0] += v0[0]
-                    g0[1] += v0[1]
-                    g0[2] += v0[2]
-
-                    sse = arrays.array_inner_product(x, x)
-                    # print(f"Gradient SSE: {sse:10.5f} kJ/mol/A {estr} {e0str}")
-                    obj += sse
-        estr = "["+",".join([f"{vi:10.5f}" for vi in g]) + "]"
-        e0str = "["+",".join([f"{vi:10.5f}" for vi in g0]) + "]"
-        x = arrays.array_difference(g, g0)
-        sse = arrays.array_inner_product(x, x)
-        # print(f"G summed SSE: {sse:10.5f} kJ/mol/A {estr} {e0str}")
-                
-        # print(f"Total gradient SSE: {obj:10.5f} kJ/mol/A")
-        return obj
-
-
-
 
 class objective_config_energy(objective_config):
 
-    def get_task(self, GDB: assignments.graph_db, csys, keys=None, psys=None, reuse=None) -> compute_config:
+    def get_task(
+        self,
+        GDB: assignments.graph_db,
+        csys,
+        keys=None,
+        psys=None,
+        reuse=None
+    ) -> compute_config:
         cc = compute_config_energy(self.addr)
         cc.GDB = assignments.graph_db_get(GDB, self.addr)
         cc.csys = csys
@@ -784,31 +908,17 @@ class objective_config_energy(objective_config):
         cc.reuse = reuse
         return cc
 
-    def compute_total(self, GDB: assignments.graph_db, D: List[Dict[int, assignments.graph_db_table]]):
-        """
-        D is the results for some objective idx
-        so it is a list of tables (with their own tid)
-                                   
-        which now means that each is a table with structs which have indices
-        """
-        obj = 0
-        for gde, tbls  in zip(GDB.entries.values(), D):
-            for tid, tbl in tbls.items():
-                tbl0 = gde.tables[tid]
-                
-                estr = "["+",".join([f"{vi:10.5f}" for vi in tbl.values]) + "]"
-                e0str = "["+",".join([f"{vi:10.5f}" for vi in tbl0.values]) + "]"
-                x = arrays.array_difference(tbl.values, tbl0.values)
-                sse = arrays.array_inner_product(x, x)
-                # print(f"Energy SSE: {sse:10.5f} kJ/mol {estr} {e0str}")
-                obj += sse
-                
-        # print(f"Total Energy SSE: {obj:10.5f}")
-        return obj
 
 class objective_config_position(objective_config):
 
-    def get_task(self, GDB, csys, keys=None, psys=None, reuse=None) -> compute_config:
+    def get_task(
+        self,
+        GDB,
+        csys,
+        keys=None,
+        psys=None,
+        reuse=None
+    ) -> compute_config:
         cc = compute_config_position(self.addr)
         cc.GDB = assignments.graph_db_get(GDB, self.addr)
         cc.csys = csys
@@ -915,40 +1025,41 @@ class objective_tier:
     perform 1 or 2 fitting steps for each force field, and the top N force
     fields would be accepted (and passed to the next tier.
     """
+
     def __init__(self):
         self.objectives: Dict[int, objective_config] = {}
         h = 1e-6
         self.h = h
         self.bounds = {
-            "s": (0,None), # scale
-            "c": (0,None), # cutoff
-            "r": (0,None), # sigma
-            "e": (h,None), # epsilon
-            "k": (0,None), # 
-            ("k", "b"): (0,None), # scale
-            ("l", "b"): (0,None), # scale
-            ("k", "a"): (0,None), # scale
-            ("l", "a"): (0, 3.1415), # scale
-            ("k", "t"): (-10,10), # scale
-            ("k", "i"): (-10,10), # scale
-            ("s", "q"): (0,None), # scale
-            ("s", "n"): (0,None), # scale
+            "s": (0, None),
+            "c": (0, None),
+            "r": (0, None),
+            "e": (h, None),
+            "k": (0, None),
+            ("k", "b"): (0, None),
+            ("l", "b"): (0, None),
+            ("k", "a"): (0, None),
+            ("l", "a"): (0, 3.1415),
+            ("k", "t"): (-10, 10),
+            ("k", "i"): (-10, 10),
+            ("s", "q"): (0, None),
+            ("s", "n"): (0, None),
             None: (None, None)
         }
         self.priors = {
-            "s": (None, None), # scale
-            "c": (None, None), # cutoff
-            "r": (None, .1), # sigma
-            "e": (None, 1), # epsilon
-            "k": (None, 1e9), # 
-            ("k", "b"): (None, 1e9), # scale
-            ("l", "b"): (None, .1), # scale
-            ("k", "a"): (None, 1e9), # scale
-            ("l", "a"): (None, .2), # scale
-            ("k", "t"): (None, 1.0), # scale
-            ("k", "i"): (None, 1.0), # scale
-            ("s", "q"): (None, 1.0), # scale
-            ("s", "n"): (None, 1.0), # scale
+            "s": (None, None),
+            "c": (None, None),
+            "r": (None, .1),
+            "e": (None, 1),
+            "k": (None, 1e9),
+            ("k", "b"): (None, 1e9),
+            ("l", "b"): (None, .1),
+            ("k", "a"): (None, 1e9),
+            ("l", "a"): (None, .2),
+            ("k", "t"): (None, 1.0),
+            ("k", "i"): (None, 1.0),
+            ("s", "q"): (None, 1.0),
+            ("s", "n"): (None, 1.0),
             None: (None, None)
         }
         self.fit_models = None
@@ -977,6 +1088,7 @@ class objective_tier:
 def objective_tier_get_keys(ot, csys):
     keys = *filter(ot.key_filter, mm.chemical_system_iter_keys(csys)),
     return keys
+
 
 def gdb_to_physical_systems(gdb, csys, ref=None, reuse=None):
     """
@@ -1011,8 +1123,15 @@ def gdb_to_physical_systems(gdb, csys, ref=None, reuse=None):
 
 
 def objective_tier_run(
-    ot, gdb: assignments.graph_db, csys: mm.chemical_system, keys,
-    oid=None, psysref=None, reuse=None, wq=None, verbose=False
+    ot,
+    gdb: assignments.graph_db,
+    csys: mm.chemical_system,
+    keys,
+    oid=None,
+    psysref=None,
+    reuse=None,
+    wq=None,
+    verbose=False
 ):
     """
     Run the given objective and return the resulting parameters, and the
@@ -1041,8 +1160,6 @@ def objective_tier_run(
     elif configs.processors > 1:
         ws = compute.workspace_local('127.0.0.1', 0, shm={"csys": csys})
 
-    
-
     # build the initial psys (for charges)
     # if verbose:
     #     print(datetime.datetime.now(), "Building physical systems")
@@ -1061,7 +1178,6 @@ def objective_tier_run(
     history = []
 
     kv = dict(zip(keys, x0))
-    
     for penalty in ot.penalties:
         penalty.reference.clear()
         penalty.reference.update(kv)
@@ -1144,7 +1260,7 @@ def objective_tier_run(
         ws.close()
         ws = None
 
-    kv = {k: v*p[1] + p[0] for k,v,p in zip(keys, result, priors)}
+    kv = {k: v*p[1] + p[0] for k, v, p in zip(keys, result, priors)}
 
     return returns.success((kv, y0, y1, gx), out=ret.out, err=[])
 
@@ -1173,7 +1289,6 @@ def forcefield_optimization_strategy_default(csys, models=None):
     for m, cm in enumerate(csys.models):
         if m not in models:
             continue
-
 
         hiers = mm.chemical_model_iter_smarts_hierarchies(cm)
 
@@ -1213,7 +1328,7 @@ class forcefield_optimization_strategy(optimization.optimization_strategy):
     """
 
     def __init__(self, bounds):
-        # build the 
+
         self.bounds = bounds
 
         self.objective_accept_total = [0]
@@ -1222,7 +1337,8 @@ class forcefield_optimization_strategy(optimization.optimization_strategy):
         self.objective_accept_clusters = [0]
 
         # Update objective on each evaluation. Some objectives change if new
-        # clusters are added. This option determines whether accepting causes a refresh
+        # clusters are added. This option determines whether accepting causes a
+        # refresh
         self.objective_update_on_each_accept = True
 
         self.cursor = -1
@@ -1249,28 +1365,28 @@ class forcefield_optimization_strategy(optimization.optimization_strategy):
 
         # Number of operations to accept per macro step
         # Relabeling is done here
-        # self.accept_max = 1 will give best performance, but will cost the most
-        # self.accept_max = 0 is no max
+        # self.accept_max = 1 will give best performance, but will cost the
+        # most self.accept_max = 0 is no max
         self.macro_accept_max_total: int = 1
 
         # Number of operations to accept per micro step
         # We do not relabel here but instead just keep this many
-        # self.accept_max = 1 will give best performance, but will cost the most
-        # self.accept_max = 0 is no max
+        # self.accept_max = 1 will give best performance, but will cost the
+        # most self.accept_max = 0 is no max
         self.micro_accept_max_total: int = 1
 
         # Number of operations to accept per step per cluster
-        # self.accept_max = 1 will give best performance, but will cost the most
-        # self.accept_max = 0 is no max
+        # self.accept_max = 1 will give best performance, but will cost the
+        # most self.accept_max = 0 is no max
         self.macro_accept_max_per_cluster: int = 1
 
         # Number of operations to accept per step per cluster
-        # self.accept_max = 1 will give best performance, but will cost the most
-        # self.accept_max = 0 is no max
+        # self.accept_max = 1 will give best performance, but will cost the
+        # most self.accept_max = 0 is no max
         self.micro_accept_max_per_cluster: int = 1
 
         # If we accept too many operations, some can match nothing due to
-        # unexpected occlusion. With this enabled, we shortcut merging and 
+        # unexpected occlusion. With this enabled, we shortcut merging and
         # prevent zero-matching SMARTS from being added.
         self.prune_empty = True
 
@@ -1286,8 +1402,8 @@ class forcefield_optimization_strategy(optimization.optimization_strategy):
         self.enable_reset_torsion_stiffness = False
         self.enable_reset_outofplane_stiffness = False
         self.hessian_projection_method = "native"
-        
-        # After splitting and modifying periodicities, reset to a more 
+
+        # After splitting and modifying periodicities, reset to a more
         self.enable_dihedral_periodicity_reset = True
         self.dihedral_periodicity_reset_max_n = 6
         self.dihedral_periodicity_reset_alpha = -.5
@@ -1295,7 +1411,7 @@ class forcefield_optimization_strategy(optimization.optimization_strategy):
         self.dihedral_periodicity_reset_max_k = 5.0
 
         # The reference list to use for merge protect and target splitting.
-        # Because parameters can be added later, we only try to protect 
+        # Because parameters can be added later, we only try to protect
         # the original (reference) set.
         self.reference_list = []
 
@@ -1332,7 +1448,10 @@ class forcefield_optimization_strategy(optimization.optimization_strategy):
         """
         if self.steps is None:
             self.build_steps()
-        return optimization.optimization_strategy_iteration_next(self, clusters)
+        return optimization.optimization_strategy_iteration_next(
+            self,
+            clusters
+        )
 
     def build_steps(self):
         if self.steps is None:
@@ -1340,6 +1459,7 @@ class forcefield_optimization_strategy(optimization.optimization_strategy):
         self.steps.extend(
             forcefield_optimization_strategy_build_macro_iterations(self)
         )
+
 
 def forcefield_optimization_strategy_build_macro_iterations(
     strat: forcefield_optimization_strategy
@@ -1428,13 +1548,15 @@ def forcefield_optimization_strategy_build_macro_iterations(
                         s.pcp = config
                         steps.append(s)
 
-                    macro_iters.append(optimization.optimization_iteration(steps))
+                    macro = optimization.optimization_iteration(steps)
+                    macro_iters.append(macro)
+
                 if strat.enable_modify:
                     steps = []
                     for m, mbounds in strat.bounds.items():
 
                         mbounds: configs.smarts_perception_config
-                        if m not in [2,3]:
+                        if m not in [2, 3]:
                             continue
 
                         if mbounds.splitter.bit_search_limit < bits:
@@ -1483,7 +1605,9 @@ def forcefield_optimization_strategy_build_macro_iterations(
                         s.pcp = config
                         steps.append(s)
 
-                    macro_iters.append(optimization.optimization_iteration(steps))
+                    macro = optimization.optimization_iteration(steps)
+                    macro_iters.append(macro)
+
                 if strat.enable_split:
                     steps = []
                     for m, mbounds in strat.bounds.items():
@@ -1571,11 +1695,11 @@ def fit(csys, gdb, objective, psystems, nodes, wq=None, verbose=False):
 
     fitkeys = [
         x for x in objective_tier_get_keys(objective, csys)
-            if (x[0], x[2]) in assigned_nodes
+        if (x[0], x[2]) in assigned_nodes
     ]
 
     fitting_models = set((k[0] for k in fitkeys))
-    reuse0=[k for k,_ in enumerate(csys.models) if k not in fitting_models]
+    reuse0 = [k for k, _ in enumerate(csys.models) if k not in fitting_models]
 
     ret = objective_tier_run(
         objective,
@@ -1623,7 +1747,10 @@ def ff_optimize(
         print("Optimization strategy is building steps...")
         strategy.build_steps()
 
-    print(f"{datetime.datetime.now()} The optimization strategy has the following iterations:")
+    print(" ".join([
+        f"{datetime.datetime.now()}",
+        "The optimization strategy has the following iterations:"
+    ]))
 
     for ma_i, macro in enumerate(strategy.steps, 1):
         cur = "  "
@@ -1645,8 +1772,11 @@ def ff_optimize(
             )
 
     gcd = csys0.perception.gcd
-    labeler = csys0.perception.labeler
-    icd = codecs.intvec_codec(gcd.primitive_codecs, gcd.atom_primitives, gcd.bond_primitives)
+    icd = codecs.intvec_codec(
+        gcd.primitive_codecs,
+        gcd.atom_primitives,
+        gcd.bond_primitives
+    )
 
     reset_config = {
         "bond_l": strategy.enable_reset_bond_lengths,
@@ -1663,7 +1793,6 @@ def ff_optimize(
     }
     wq = compute.workqueue_local('0.0.0.0', configs.workqueue_port)
 
-    # print(datetime.datetime.now(), "Resetting bonds and angles to reference values")
     ws = compute.workqueue_new_workspace(wq)
     psystems = reset(
         reset_config,
@@ -1679,7 +1808,6 @@ def ff_optimize(
 
     G0 = {i: icd.graph_encode(g) for i, g in gdb.graphs.items()}
 
-    N = 1
     n_ics = 1
 
     repeat = set()
@@ -1702,7 +1830,10 @@ def ff_optimize(
     print("Initial parameter assignments of dataset:")
     print_chemical_system(csys, show_parameters=[x[1] for x in assigned_nodes])
 
-    assigned_nodes = [x for x in assigned_nodes if x[0] in strategy.bounds and x[1] not in "sc"] 
+    assigned_nodes = [
+        x for x in assigned_nodes
+        if x[0] in strategy.bounds and x[1] not in "sc"
+    ]
     assigned_nodes = set([x[1] for x in assigned_nodes])
 
     print("### BESMARTS chemical perception on the following assignments ###")
@@ -1712,18 +1843,6 @@ def ff_optimize(
     reuse0 = set(range(len(csys.models))).difference((k[0] for k in keys))
     print(f"{datetime.datetime.now()} Will be caching models {reuse0}")
 
-    # if strategy.enable_dihedral_periodicity_reset:
-    #     print("Resetting torsion periodicities")
-    #     psystems = reset_project_torsions(
-    #         csys,
-    #         gdb,
-    #         psystems,
-    #         max_n=strategy.dihedral_periodicity_reset_max_n,
-    #         alpha=strategy.dihedral_periodicity_reset_alpha,
-    #         m=2,
-    #         verbose=True
-    #     )
-
     kv0 = mm.chemical_system_iter_keys(csys)
     print(f"{datetime.datetime.now()} Computing physical objective")
 
@@ -1731,12 +1850,19 @@ def ff_optimize(
     if configs.processors == 1:
         fitwq = None
 
-    ret = fit(csys, gdb, initial_objective, psystems, assigned_nodes, wq=fitwq, verbose=True)
+    ret = fit(
+        csys,
+        gdb,
+        initial_objective,
+        psystems,
+        assigned_nodes,
+        wq=fitwq,
+        verbose=True
+    )
     kv, P00, P0, gp0 = ret.value
 
     print(f"{datetime.datetime.now()} Computing chemical objective")
 
-    CP0 = P0
     CX0 = mm.chemical_system_smarts_complexity(csys)
 
     C00 = chemical_objective(csys, P0=len(G0), C0=CX0)
@@ -1745,7 +1871,10 @@ def ff_optimize(
     print(f"{datetime.datetime.now()} C0={C0}")
     X0 = P0 + C0
     P = P0
-    print(datetime.datetime.now(), f"Initial objective: X={P0+C0:13.6g} P={P0:13.6g} C={C0:13.6g}")
+    print(" ".join([
+        datetime.datetime.now(),
+        f"Initial objective: X={P0+C0:13.6g} P={P0:13.6g} C={C0:13.6g}"
+    ]))
     for k, v in kv.items():
         v0 = kv0[k]
         mm.chemical_system_set_value(csys, k, v)
@@ -1753,11 +1882,11 @@ def ff_optimize(
 
     for psys in psystems.values():
         reapply = set()
+
         for k, v in kv.items():
-            # print(f"Setting pval to {k}={v}")
-            # mm.chemical_system_set_value(csys, k, v)
             mm.physical_system_set_value(psys, k, v)
             reapply.add(k[0])
+
         for m in reapply:
             procs = csys.models[m].procedures
             if len(procs) > 1:
@@ -1816,11 +1945,15 @@ def ff_optimize(
         )
 
         candidates = {}
-        pq = []
+
         n_added = 0
         n_macro = len(strategy.steps)
 
-        mdls = set([m for mstep in strategy.steps[strategy.cursor-1].steps for m in mstep.models])
+        mdls = set([
+            m
+            for mstep in strategy.steps[strategy.cursor-1].steps
+            for m in mstep.models
+        ])
         mds = " ".join([f"{i}:{csys.models[i].name}" for i in mdls])
         t = datetime.datetime.now()
         print("*******************")
@@ -1834,9 +1967,10 @@ def ff_optimize(
         print("*******************")
         print()
 
-        # compute the current psystems
-
-        print(f"{datetime.datetime.now()} Initial parameterization using reuse={reuse0}")
+        print(" ".join([
+            f"{datetime.datetime.now()}",
+            f"Initial parameterization using reuse={reuse0}"
+        ]))
 
         reuse = reuse0
         psys = {}
@@ -1844,7 +1978,13 @@ def ff_optimize(
             tid = assignments.POSITIONS
             gid = list(gde.tables[tid].graphs)[0]
             rid = 0
-            pos = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
+            pos = assignments.graph_db_graph_to_graph_assignment(
+                gdb,
+                eid,
+                tid,
+                gid,
+                rid
+            )
             psys[eid] = mm.chemical_system_to_physical_system(
                 csys,
                 [pos],
@@ -1880,9 +2020,6 @@ def ff_optimize(
                 step_tracker[tkey] = strategy.cursor
                 continue
             S0 = graphs.subgraph_to_structure(hidx.subgraphs[S.index], topo)
-            # S0 = graphs.subgraph_to_structure(
-            #     cst.hierarchy.subgraphs[S.index], topo
-            # )
 
             cfg = config.extender.copy()
 
@@ -1907,14 +2044,12 @@ def ff_optimize(
                         if S.name in term_lbls.values():
                             selected_ics.append((gid, ic))
                             selected_graphs.add(gid)
-            # aa = cst.mappings[S.name]
-            # selected_graphs = set((x[0] for x in aa))
+
             aa = selected_ics
             G = {k: v for k, v in G0.items() if k in selected_graphs}
             del selected_graphs
 
             assn_s = aa
-            # assn_s = {i: assn[i] for i in cst.mappings[S.name]}
 
             iteration += 1
 
@@ -1937,15 +2072,12 @@ def ff_optimize(
             )
 
             if step.operation == strategy.SPLIT:
-                new_pq = []
                 new_candidates = {}
                 new_candidates_direct = {}
                 direct_success = False
 
                 print(f"Attempting to split {S.name}:")
                 print("S0:", gcd.smarts_encode(S0))
-
-
 
                 if not aa:
                     print("No matches.")
@@ -1954,7 +2086,6 @@ def ff_optimize(
 
                 print(f"Matched N={len(aa)}")
                 seen = set()
-                # depth = graphs.structure_max_depth(S0)
                 extend_config = config.extender.copy()
                 extend_config.depth_max = config.splitter.branch_depth_limit
                 extend_config.depth_min = config.splitter.branch_depth_min
@@ -1963,11 +2094,14 @@ def ff_optimize(
                 # until I can make a case for IC objective accounting
 
                 for seen_i, i in enumerate(aa, 1):
-                    g = graphs.graph_to_structure(icd.graph_decode(G[i[0]]), i[1], topo) 
+                    g = graphs.graph_to_structure(
+                        icd.graph_decode(G[i[0]]),
+                        i[1],
+                        topo
+                    )
                     graphs.structure_extend(extend_config, [g])
                     g = graphs.structure_remove_unselected(g)
-                    # if g not in seen:
-                    # seen_g.add(g)
+
                     if seen_i < 100:
                         print(
                             f"{seen_i:06d} {str(i):24s}",
@@ -1981,30 +2115,20 @@ def ff_optimize(
                     step_tracker[tkey] = strategy.cursor
                     continue
 
-                # if len(set(map(tuple, groups[S.name]))) == 1:
-                #     print(f"Skipping {S.name} since all data are the same")
-                #     step_tracker[tkey.name] = strategy.cursor
-                #     continue
-
-
                 if len(seen) < 2 and len(assn_s) < 100:
                     print(f"Skipping {S.name} since all graphs are the same")
                     step_tracker[tkey] = strategy.cursor
                     continue
-
-                # if objective.single(assn_s.values()) == 0.0:
-                #     print(f"Skipping {S.name} due to no objective")
-                #     step_tracker[tkey] = strategy.cursor
-                #     continue
 
                 if graphs.structure_max_depth(S0) > config.splitter.branch_depth_min:
                     print("This parameter exceeds current depth. Skipping")
                     step_tracker[tkey] = strategy.cursor
                     continue
 
-
                 # this is where I generate all candidates
-                if step.direct_enable and config.splitter.bit_search_limit < len(assn_s):
+                if step.direct_enable and (
+                        config.splitter.bit_search_limit < len(assn_s)
+                    ):
                     assn_i = []
                     if len(assn_s) < step.direct_limit:
                         # or form matches based on unique smarts
@@ -2013,24 +2137,21 @@ def ff_optimize(
                         extend_config.depth_max = config.splitter.branch_depth_limit
                         extend_config.depth_min = config.splitter.branch_depth_min
                         for seen_i, (i, x) in enumerate(assn_s.items(), 1):
-                            g = graphs.graph_to_structure(icd.graph_decode(G[i[0]]), i[1], topo) 
+                            g = graphs.graph_to_structure(
+                                icd.graph_decode(G[i[0]]),
+                                i[1],
+                                topo
+                            )
                             graphs.structure_extend(extend_config, [g])
                             g = graphs.structure_remove_unselected(g)
                             a.append(g)
-                        # if len(a) < step.direct_limit:
-                        #     lbls = dict()
-                            # for (i, idx), sg in a.items():
-                            #     lbl_i = lbls.get(a, len(lbls))
-                            #     lbls[a] = lbl_i
-                            #     assn_i.append(lbl_i)
 
                         assn_i = list(range(len(a)))
 
                         pcp = step.pcp.copy()
                         pcp.extender = cfg
                         print("Direct splitting....")
-                        # pcp.extender.depth_max = pcp.splitter
-                        # pcp.extender.depth_min = strategy.bounds.extender.depth_min
+
                         ret = splits.split_all_partitions(
                             topo,
                             pcp,
@@ -2073,12 +2194,6 @@ def ff_optimize(
 
 
                 if step.iterative_enable and not direct_success:
-                    # Q = mapper.union_list_parallel(
-                    #     list(a.values()),
-                    #     reference=S0,
-                    #     max_depth=graphs.structure_max_depth(S0),
-                    #     icd=icd if len(a) > 100000 else None
-                    # )
 
                     # here I need to get the graphs from the gdb
                     # where aa refers to the indices
@@ -2108,7 +2223,6 @@ def ff_optimize(
                     )
                     config.splitter.return_matches = return_matches
 
-                    # backmap = {i: j for i, j in enumerate(cst.mappings[S.name])}
                     print(
                         f"{datetime.datetime.now()} Collecting new candidates"
                     )
@@ -2117,7 +2231,10 @@ def ff_optimize(
                     )
                     for k in new_candidates:
                         v = list(new_candidates[k])
-                        v[1] = graphs.subgraph_as_structure(new_candidates[k][1], topo)
+                        v[1] = graphs.subgraph_as_structure(
+                            new_candidates[k][1],
+                            topo
+                        )
                         new_candidates[k] = tuple(v)
 
                 p_j_max = -1
@@ -2138,8 +2255,6 @@ def ff_optimize(
 
             elif step.operation == strategy.MERGE:
 
-                # note that if the parameter list is flat, deleting won't be
-                # possible
                 for p_j, jidx in enumerate(hidx.index.below[S.index]):
                     J = hidx.index.nodes[jidx]
                     if J.type != "parameter":
@@ -2152,8 +2267,9 @@ def ff_optimize(
 
             elif step.operation == strategy.MODIFY:
 
-                if S.type == "parameter" and S.category[0] in [2,3]:
-                    s_per = csys.models[S.category[0]].topology_terms['n'].values[S.name] 
+                if S.type == "parameter" and S.category[0] in [2, 3]:
+                    cm = csys.models[S.category[0]]
+                    s_per = cm.topology_terms['n'].values[S.name]
                     f_max = 6
                     if S.category[0] == 2:
                         f_max = step.modify_torsion_frequency_limit
@@ -2163,17 +2279,8 @@ def ff_optimize(
                     mod_max = step.pcp.splitter.bit_search_limit
                     mod_min = step.pcp.splitter.bit_search_min
 
-
-                    p_j = 0
                     s_add = tuple(sorted(set(range(1, f_max+1)).difference(s_per)))
                     s_per = tuple(s_per)
-
-                    # key = (tuple(s_add), macro.cursor, p_j)
-                    # cnd = (S, S, step, None, None, None, None)
-                    # candidates[key] = cnd
-                    # p_j = 1
-                    # print(f"Adding modifactions min={mod_min} max={mod_max}")
-                    # print(f"Adding modification {p_j} {S.name}: {s_add}")
 
                     for to_remove in range(0, min(mod_max, len(s_per))+1):
                         for rem_combo in map(list, itertools.combinations(s_per, to_remove)):
@@ -2286,7 +2393,7 @@ def ff_optimize(
                 "reuse": reuse,
                 "psysref": tier_psystems,
                 "reset_config": reset_config_search,
-            }) 
+            })
 
             j = tuple(tier.objectives)
             iterable = {
@@ -2361,16 +2468,16 @@ def ff_optimize(
                     work_new[i] = [0, 0, 0, 0, {}, []]
                 for ij, j in work:
                     if i == ij:
-                        ret = work[(i,j)]
+                        ret = work[(i, j)]
                         line = ret.value
                         work_new[i][0] |= int(line[0])
                         work_new[i][1] += line[1]
-                        work_new[i][2]  = line[2]
+                        work_new[i][2] = line[2]
                         work_new[i][3] += line[3]
                         # probably use average or something else
                         work_new[i][4].update(line[4])
                         work_new[i][5].extend(ret.out)
-                    
+
             work_full = work
             work = work_new
 

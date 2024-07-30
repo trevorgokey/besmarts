@@ -95,7 +95,12 @@ def physical_system_to_openmm_system(psys):
 
     return sim
 
-def optimize_positions_openmm(csys, psys: mm.physical_system, step_limit=1000, tol=1e-10):
+def optimize_positions_openmm(
+    csys,
+    psys: mm.physical_system,
+    step_limit=1000,
+    tol=1e-10
+):
 
     sim = physical_system_to_openmm_system(psys)
     # print("PSYS ENERGY:", objectives.physical_system_energy(psys, csys))

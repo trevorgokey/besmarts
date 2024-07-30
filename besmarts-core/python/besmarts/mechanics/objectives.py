@@ -48,10 +48,17 @@ def physical_system_force(psys: mm.physical_system, csys):
 
             icq = csys.models[m].internal_function(pos)
 
-            system_terms = {k: v.values for k, v in csys.models[m].system_terms.items()}
+            system_terms = {
+                k: v.values for k, v in csys.models[m].system_terms.items()
+            }
 
             params = pm.values
-            f = mm.smiles_assignment_function(csys.models[m].force_function, system_terms, params, icq)
+            f = mm.smiles_assignment_function(
+                csys.models[m].force_function,
+                system_terms,
+                params,
+                icq
+            )
 
             jac = csys.models[m].derivative_function(pos)
 
@@ -68,6 +75,7 @@ def physical_system_force(psys: mm.physical_system, csys):
 
     return arrays.array_scale(force, 4.184)
 
+
 def physical_system_energy(psys: mm.physical_system, csys):
     energy = 0
 
@@ -78,13 +86,6 @@ def physical_system_energy(psys: mm.physical_system, csys):
                 {k: copy.deepcopy(v) for k, v in refpos.selections.items()}
         )
 
-        # pos = assignments.graph_assignment_float(
-        #         refpos.graph,
-        #         {k: v.copy() for k, v in refpos.selections.items()}
-        # )
-
-        # n_confs = len(list(refpos.selections.values())[0])
-
         ic = csys.models[m].internal_function(pos)
 
         # build system terms
@@ -93,13 +94,15 @@ def physical_system_energy(psys: mm.physical_system, csys):
 
         # build topology terms
         ene = mm.smiles_assignment_function(csys.models[m].energy_function, system_terms, params, ic)
-        pm_ene = sum([x for y in ene.values() for z in y for x in z]) 
+        pm_ene = sum([x for y in ene.values() for z in y for x in z])
+
         # print(csys.models[m].name, "energy:", pm_ene * 4.184)
         # pprint.pprint(ene)
+
         energy += pm_ene
-        # print(csys.models[m].name, "energy:", pm_ene * 4.184, "cumsum:", energy)
 
     return energy * 4.184
+
 
 def physical_system_hessian(psys: mm.physical_system, csys: mm.chemical_model, h=1e-7):
     """
@@ -108,10 +111,10 @@ def physical_system_hessian(psys: mm.physical_system, csys: mm.chemical_model, h
     """
 
     args, keys = array_flatten_assignment(psys.models[0].positions[0].selections)
-
-    # print(dict(zip(keys,args)))
     hess = array_geom_hessian(args, keys, csys, psys, h=h)
+
     return hess
+
 
 def array_geom_energy(args, keys, csys, psys: mm.physical_system):
 
@@ -121,27 +124,27 @@ def array_geom_energy(args, keys, csys, psys: mm.physical_system):
 
     for m, pm in enumerate(psys.models):
         refpos = psys.models[m].positions[0]
-        # pos = copy.deepcopy(refpos)
         pos = refpos
-        # pos = assignments.graph_assignment_float(
-        #         refpos.graph,
-        #         {k: v.copy() for k, v in refpos.selections.items()}
-        # )
 
-        n_confs = len(list(refpos.selections.values())[0])
         i = 0
         for (c, n, i), v in zip(keys, args):
             pos.selections[n][c][i] = v
 
         # build system terms
-        system_terms = {k: v.values for k, v in csys.models[m].system_terms.items()}
+        system_terms = {
+            k: v.values for k, v in csys.models[m].system_terms.items()
+        }
         params = pm.values
 
         ic = csys.models[m].internal_function(pos)
 
-
         # build topology terms
-        ene = mm.smiles_assignment_function(csys.models[m].energy_function, system_terms, params, ic)
+        ene = mm.smiles_assignment_function(
+            csys.models[m].energy_function,
+            system_terms,
+            params,
+            ic
+        )
         ene = sum([x for y in ene.values() for z in y for x in z])
         energy += ene
         # print(csys.models[m].name, ene*4.184, end=" ")
@@ -149,39 +152,46 @@ def array_geom_energy(args, keys, csys, psys: mm.physical_system):
     # print("TotalEnergy:", energy*4.184)
     return round(energy, 12)
 
+
 def array_geom_energy_gradient(args, keys, csys, psys: mm.physical_system):
     energy = 0
     grad = list([0.0]*len(args))
 
     for m, pm in enumerate(psys.models):
         refpos = psys.models[m].positions[0]
-        # pos = copy.deepcopy(refpos)
-        # pos = refpos
+
         pos = assignments.graph_assignment_float(
                 refpos.graph,
                 {k: copy.deepcopy(v) for k, v in refpos.selections.items()}
         )
-        # pos = assignments.graph_assignment_float(
-        #         refpos.graph,
-        #         {k: v.copy() for k, v in refpos.selections.items()}
-        # )
 
-        n_confs = len(list(refpos.selections.values())[0])
         i = 0
         for (c, n, i), v in zip(keys, args):
             pos.selections[n][c][i] = v
 
         ic = csys.models[m].internal_function(pos)
-        system_terms = {k: v.values for k, v in csys.models[m].system_terms.items()}
+        system_terms = {
+            k: v.values for k, v in csys.models[m].system_terms.items()
+        }
         params = pm.values
 
-        ene = mm.smiles_assignment_function(csys.models[m].energy_function, system_terms, params, ic)
-        # print(csys.models[m].name, 4.184* sum([x for y in ene.values() for z in y for x in z]))
+        ene = mm.smiles_assignment_function(
+            csys.models[m].energy_function,
+            system_terms,
+            params,
+            ic
+        )
+
         energy += sum([x for y in ene.values() for z in y for x in z])
 
         if csys.models[m].derivative_function:
 
-            f = mm.smiles_assignment_function(csys.models[m].force_function, system_terms, params, ic)
+            f = mm.smiles_assignment_function(
+                csys.models[m].force_function,
+                system_terms,
+                params,
+                ic
+            )
 
             jac = csys.models[m].derivative_function(pos)
 
@@ -195,13 +205,12 @@ def array_geom_energy_gradient(args, keys, csys, psys: mm.physical_system):
                         grad[nic*idx + (i-1)*3 + 1] -= fq*dq[j][1]
                         grad[nic*idx + (i-1)*3 + 2] -= fq*dq[j][2]
 
-
-    # print("\n".join(print_xyz(pos, comment=f"{energy*4.184:15.9e} {max(grad)*4.148:15.9e} {arrays.array_inner_product(grad, grad)**.5 * 4.184:15.8g}")))
-
     return energy*4.184, arrays.array_scale(grad, 4.184)
+
 
 def array_geom_gradient(args, keys, csys, psys: mm.physical_system):
     return [-x for x in array_geom_force(args, keys, csys, psys)]
+
 
 def array_geom_force(args, keys, csys, psys: mm.physical_system):
     """
@@ -218,22 +227,26 @@ def array_geom_force(args, keys, csys, psys: mm.physical_system):
                 {k: v.copy() for k, v in refpos.selections.items()}
         )
 
-        n_confs = len(list(refpos.selections.values())[0])
-
         i = 0
 
         for (c, n, i), v in zip(keys, args):
             pos.selections[n][c][i] = v
 
-
         if csys.models[m].derivative_function:
 
             icq = csys.models[m].internal_function(pos)
 
-            system_terms = {k: v.values for k, v in csys.models[m].system_terms.items()}
+            system_terms = {
+                k: v.values for k, v in csys.models[m].system_terms.items()
+            }
 
             params = pm.values
-            f = mm.smiles_assignment_function(csys.models[m].force_function, system_terms, params, icq)
+            f = mm.smiles_assignment_function(
+                csys.models[m].force_function,
+                system_terms,
+                params,
+                icq
+            )
 
             jac = csys.models[m].derivative_function(pos)
 
@@ -310,17 +323,3 @@ def array_geom_hessian(args, keys, csys, psys: mm.physical_system, h=1e-4):
             hess[j][i] = hess[i][j]
 
     return hess
-
-def print_xyz(pos, comment=""):
-    lines = []
-    lines.append(str(len(pos.selections)))
-    lines.append(comment)
-    for ic, xyz in pos.selections.items():
-        n = pos.graph.nodes[ic[0]]
-        sym = primitives.element_tr[str(n.primitives['element'].on()[0])]
-        try:
-            x, y, z = xyz[0][:3]
-        except TypeError:
-            x, y, z = xyz[:3]
-        lines.append(f"{sym:8s} {x:.6f} {y:.6f} {z:.6f}")
-    return lines
