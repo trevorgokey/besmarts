@@ -45,3 +45,9 @@ two groups.
 __9. Minimize a molecules energy by optimizing positions (9_minimize.py)__
 
 Perform a standard geometry minimization.
+
+__10. Minimize a molecules energy by optimizing positions (10_vibfreq.py)__
+
+Calculate the MM vibrational frequencies of ethane. Also shows how to calculate
+energies using the pure python implementation versus OpenMM. Compares between
+the SciPy and OpenMM backends for minimization.
