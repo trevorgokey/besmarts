@@ -2681,12 +2681,19 @@ def workspace_flush(ws: workspace_local, indices, timeout: float = TIMEOUT, verb
         if idx in ws.holding_remote:
             ws.holding_remote.pop(idx)
 
+    patience = 0  # force an update every n seconds
+
     ttp = 0  # times to print; 100 is every 1%, 0 disables
     if verbose:
         if configs.compute_verbosity == 1:
             ttp = 10
+            patience = 60
         elif configs.compute_verbosity > 1:
             ttp = 100
+            patience = 2
+        elif configs.compute_verbosity > 10:
+            ttp = 100
+            patience = 0.5
 
 
     update = set()
@@ -2715,7 +2722,7 @@ def workspace_flush(ws: workspace_local, indices, timeout: float = TIMEOUT, verb
         oqsize = ws.oqueue.qsize()
 
         if ttp > 0:
-            if dt < 2.0:
+            if dt < patience:
                 force_update = False
             else:
                 force_update = True
