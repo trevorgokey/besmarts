@@ -649,7 +649,6 @@ def smarts_clustering_optimize(
         print(f"{datetime.datetime.now()} Saving checkpoint to chk.cst.p")
         pickle.dump([sag, cst, strategy], open("chk.cst.p", "wb"))
 
-        
         step = None
 
         while not optimization.optimization_iteration_is_done(macro):
@@ -756,7 +755,6 @@ def smarts_clustering_optimize(
                     print(f"Skipping {S.name} since all data are the same")
                     step_tracker[S.name] = strategy.cursor
                     continue
-
 
                 if len(seen) < 2 and len(assn_s) < 100:
                     print(f"Skipping {S.name} since all graphs are the same")

@@ -40,14 +40,11 @@ class clustering_objective_mean_separation(clustering_objective):
         A: Sequence[float] = list(A)
         B: Sequence[float] = list(B)
         if len(A) == 0 or len(B) == 0:
-            print(f"LEN A: {len(A):.8f} LEN B: {len(B):.8f}")
             return overlap
 
         abar = arrays.array_scale(sum_obj(A), 1/len(A))
         bbar = arrays.array_scale(sum_obj(B), 1/len(B))
         d = max(map(abs, arrays.array_difference(abar, bbar)))
-        # print(f"MEAN A: {abar:.8f} MEAN B: {bbar:.8f} ABS DIFF: {d:.8f}")
-        # print(f"MEAN A: {abar} MEAN B: {bbar} ABS DIFF: {d:.8f}")
 
         if d < self.split_separation:
             return d
