@@ -120,6 +120,7 @@ def optimize_positions_openmm(
     pos = assignments.graph_assignment(pos.smiles, newpos, pos.graph)
     return pos
 
+
 def physical_system_energy_openmm(psys, csys):
 
     sim = physical_system_to_openmm_system(psys)

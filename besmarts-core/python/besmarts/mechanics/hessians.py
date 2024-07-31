@@ -20,7 +20,6 @@ PRECISION = configs.precision
 
 
 def transform(B):
-
     """
     full inv G
     """
@@ -30,9 +29,6 @@ def transform(B):
     u, v = np.linalg.eigh(G)
     u = u.round(PRECISION)
     v = v.round(PRECISION)
-    # print("G eigenvals", u)
-
-    # w = []
 
     ginv = np.zeros_like(G)
     for ui, vi in zip(u[::-1], v.T[::-1]):
@@ -51,13 +47,13 @@ def transform(B):
     # print("G inverse")
     # print(ginv)
 
-    GB = np.dot(ginv, B) # MxN
+    GB = np.dot(ginv, B)  # MxN
     GB = GB.round(PRECISION)
     # print("GB is", GB.min(), GB.mean(), GB.max())
     return GB
+
 
 def transform(B):
-
     """
     full inv G
     """
@@ -88,14 +84,14 @@ def transform(B):
     # print("G inverse")
     # print(ginv)
 
-    GB = np.dot(ginv, B) # MxN
+    GB = np.dot(ginv, B)  # MxN
     GB = GB.round(PRECISION)
-    
+
     # print("GB is", GB.min(), GB.mean(), GB.max())
     return GB
 
-def transform_v2(B):
 
+def transform_v2(B):
     """
     just use diag of inv G
     """
@@ -125,15 +121,13 @@ def transform_v2(B):
     # print("G inverse")
     # print(ginv)
 
-    GB = np.dot(ginv, B) # MxN
+    GB = np.dot(ginv, B)  # MxN
     GB = GB.round(PRECISION)
-    
     # print("GB is", GB.min(), GB.mean(), GB.max())
     return GB
 
 
 def transform_v3(B):
-
     """
     just use diag of G
     """
@@ -164,9 +158,9 @@ def transform_v3(B):
     # print("G inverse")
     # print(ginv)
 
-    GB = np.dot(ginv, B) # MxN
+    GB = np.dot(ginv, B)  # MxN
     GB = GB.round(PRECISION)
-    
+
     # print("GB is", GB.min(), GB.mean(), GB.max())
     return GB
 
@@ -174,11 +168,12 @@ def project_ics(B, H):
 
     H = np.array(H, dtype=float)
     H = H.round(PRECISION)
-    
+
     GB = transform(B)
     Q = np.dot(np.dot(GB, H), GB.T)
     Q = Q.round(PRECISION)
     return Q
+
 
 def project_gradient(B, gx):
 
@@ -284,7 +279,7 @@ def hessian_project_onto_ics(
         verbose=False
     )
     omega = np.round(hess_qm_freq, PRECISION)
-    # omega_qm = omega
+
     if verbose:
         print("Ref Hessian Frequencies (cm-1):")
         print(omega)
@@ -300,6 +295,7 @@ def hessian_project_onto_ics(
     else:
         ics, B = B
         B = np.array(B)
+
     hess_qm_ic = project_ics(B, hess_qm)
 
     hess_qm_ic = np.array(np.diag(hess_qm_ic))
