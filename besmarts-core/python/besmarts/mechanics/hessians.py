@@ -311,7 +311,7 @@ def hessian_project_onto_ics(
     ic_qm_fcs = dict(zip(ics, hess_qm_ic))
 
     print("Projected MM Fcs")
-    pprint(ic_qm_fcs, sort_dicts=False)
+    pprint.pprint(ic_qm_fcs, sort_dicts=False)
 
     return assignments.graph_assignment(pos.smiles, ic_qm_fcs, pos.graph)
 

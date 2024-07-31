@@ -1336,7 +1336,7 @@ def bmatrix(
             for i, nid in enumerate(ic):
                 d = (nid-1)*3
                 for j in range(d, d+3):
-                    brow[j] += confs[conf][i][j]
+                    brow[j] += confs[conf][i][j-d]
             B.append(brow)
 
     return ics, B

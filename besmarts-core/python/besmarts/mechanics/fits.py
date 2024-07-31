@@ -404,7 +404,7 @@ class compute_config_position(compute_config):
                             ref=self.psys,
                             reuse=self.reuse
                         )
-                        
+
                         reapply = set()
                         for k, v in keyset.items():
                             mm.physical_system_set_value(psys, k, v)
@@ -428,8 +428,8 @@ class compute_config_position(compute_config):
                         # print(f"Initial xyz for EID {eid}:")
                         # print("\n".join(print_xyz(pos0)))
 
-                        # opt = optimizers_openmm.optimize_positions_openmm
-                        opt = optimizers_scipy.optimize_positions_scipy
+                        opt = optimizers_openmm.optimize_positions_openmm
+                        # opt = optimizers_scipy.optimize_positions_scipy
                         pos = opt(
                             csys,
                             psys,
@@ -594,8 +594,8 @@ class objective_config:
                                 rmse.append(arrays.array_inner_product(x, x))
                                 addr = f"    {eid:4d} {gid:2d} {rid:2d} "
                                 addr += f"{cid:2d} {ic[0]:3d}"
-                                out  = f" MM: {xyz1} QM: {xyz0} dP: {dxyz}"
-                                out.append(addr + out)
+                                out_str  = f" MM: {xyz1} QM: {xyz0} dP: {dxyz}"
+                                out.append(addr + out_str)
             if len(rmse):
                 rmse = (sum(rmse)/len(rmse))**.5
             else:
@@ -1874,7 +1874,7 @@ def ff_optimize(
     X0 = P0 + C0
     P = P0
     print(" ".join([
-        datetime.datetime.now(),
+        f"{datetime.datetime.now()}",
         f"Initial objective: X={P0+C0:13.6g} P={P0:13.6g} C={C0:13.6g}"
     ]))
     for k, v in kv.items():
@@ -2359,7 +2359,7 @@ def ff_optimize(
         procs = (
             os.cpu_count() if configs.processors is None else configs.processors
         )
-        
+
         print(f"Scoring and filtering {len(candidates)} candidates for operation={step.operation}")
         for t, tier in enumerate(tiers):
             print(f"Tier {t}: Scoring and filtering {len(candidates)} candidates for operation={step.operation}")
@@ -2399,15 +2399,18 @@ def ff_optimize(
 
             j = tuple(tier.objectives)
             iterable = {
-                # (i, j): ((S, Sj, step.operation, edits, [j]), {})
                 (i, j): ((S, Sj, step.operation, edits, j), {})
                 for i, (
                     (edits, _, p_j),
                     (S, Sj, step, _, _, _, _),
                 ) in enumerate(candidates.items(), 1)
-                # ) in enumerate(candidates.items(), 1) for j in tiers[0].objectives
             }
-            print(datetime.datetime.now(), f"Generated {len(candidates)} x {len(tiers[0].objectives)//len(j)} = {len(iterable)} candidate evalulation tasks")
+            print(
+                datetime.datetime.now(),
+                f"Generated {len(candidates)}",
+                f"x {len(tiers[0].objectives)//len(j)}",
+                f"= {len(iterable)} candidate evalulation tasks"
+            )
 
             chunksize = 10
 
