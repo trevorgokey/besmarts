@@ -51,3 +51,19 @@ __10. Vibrational frequencies of ethane with OpenMM (10_vibfreq.py)__
 Calculate the MM vibrational frequencies of ethane. Also shows how to calculate
 energies using the pure python implementation versus OpenMM. Compares between
 the SciPy and OpenMM backends for minimization.
+
+__11. Ab-Initio (valence) chemical perception (AICP) (11_aicp.py)
+
+Ab-Initio (valence) chemical perception (AICP)
+
+This is a full valence fit of parameters starting from a base, empty set of
+parameters. The initial parameters are first rapidly expanded by clustering
+bonds, angles, and torsions based on Hessian projection, followed by a BESMARTS
+parameter search which will refine the parameters to fit the objective. Here
+we fit on the geometry, gradient, and frequencies of a single molecule. The
+molecule is chemically diverse and has 25 atoms, so it presents a typical
+challenge in force field design.
+
+Warning: This is not a quick calculation. With 100-200 cores this completed in
+approximately one day.
+
