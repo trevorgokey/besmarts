@@ -20,40 +20,61 @@ import pickle
 import numpy as np
 import base64
 import tempfile
-from besmarts.mechanics import fits
-from besmarts.mechanics import smirnoff_models
+
+from besmarts.core import configs
 from besmarts.core import perception
 from besmarts.core import assignments
 from besmarts.cluster import cluster_objective
 from besmarts.cluster import cluster_optimization
-from besmarts.assign import hierarchy_assign_rdkit
+from besmarts.mechanics import fits
+from besmarts.mechanics import smirnoff_models
+
 from besmarts.codecs import codec_rdkit
-from besmarts.core import configs
+from besmarts.assign import hierarchy_assign_rdkit
 
 configs.processors = 16
-configs.remote_compute_enable = True
-# To use this, from a terminal run
+configs.remote_compute_enable = False
+# To use additional workers, from a terminal run (on the separate work machine)
 # python -m besmarts.worker <IP> 55555 np
-# where ip is your publically visible IP and np is the number of cores
-# to assign to the worker. Recommended value for this example is 4-10 with a
-# maximum number of 30 workers (due to tier acceptance).
+# where ip is your publically visible IP where this is being run and np is the
+# number of cores to assign to the worker. Recommended value for this example
+# is 4-10 with a maximum number of 30 workers (due to tier acceptance).
 configs.workqueue_port = 55555
+
+# Show a little more output during the longer distributed compute
+# to know it's doing something :)
+# Currently will show an update every 10% progress or 60 seconds, whichever
+# comes first.
+configs.compute_verbosity = 1
 
 # Known issue: if the command is abnormally terminated, some processes will
 # not be killed and will not free the port. This will prevent the script from
 # running again as it will try to bind the occupied port. To get around this
-# (on Linux), run
-# pkill -f 11_besmarts_fit_aicp.py
+# (on Linux), run the following in a terminal
+# pkill -f 11_aicp.py
 
+# Boring constants yet to find a home. Need because gradient and hessian
+# are in atomic units. Currently, we expect gradients to be in kJ/A, but
+# Hessians in kcal/A/A. This will change in the future.
 au2ang = 0.529177249
 hess2kcal = 627.51 / (0.529177249**2)
 au2kj = 627.51*4.184
 
 
 def mystrategy():
+
+    # The chemical perception strategy. Use a SMARTS search depth of up to 2
+    # bits, and do not look at neighboring atoms.
+
     splitter = configs.smarts_splitter_config(
         1, 2, 0, 0, 0, 0, True, True, 0, False, True, True, True
     )
+
+    # Disable general patterns like [!#6][!#8]. In general these will lead
+    # to a hierarchy with fewer parameters as it greatly widens the search
+    # space with almost no extra cost, but are harder to read and reason
+    # with by SMARTS non-experts. We prefer specific splits here, like
+    # [#6X4]-[#7]
     splitter.split_specific = True
     splitter.split_general = False
     extender = configs.smarts_extender_config(
@@ -62,11 +83,14 @@ def mystrategy():
     cfg = configs.smarts_perception_config(splitter, extender)
     strategy = cluster_optimization.optimization_strategy_default(cfg)
     strategy.overlaps = [0]
-    strategy.macro_accept_max_per_cluster = 1
-    strategy.micro_accept_max_per_cluster = 1
 
+    # Accept an unlimited number of parameters per iteration
     strategy.macro_accept_max_total = 0
     strategy.micro_accept_max_total = 0
+
+    # But only accept at most one split per iteration
+    strategy.macro_accept_max_per_cluster = 1
+    strategy.micro_accept_max_per_cluster = 1
 
     return strategy
 
@@ -74,6 +98,11 @@ def mystrategy():
 def pkl(self, fnm):
     with open(fnm, 'wb') as f:
         pickle.dump(self, f)
+
+
+def pkl_load(fnm):
+    with open(fnm, 'rb') as f:
+        return pickle.load(f)
 
 
 def load_xml(xml):
@@ -102,22 +131,26 @@ def configure_tiers(objs, penalties, fit_models, fit_symbols):
     initial.anneal = 0
 
     # line search in LBFGS
-    initial.maxls = 30
+    initial.maxls = 20
     initial.fit_models = fit_models
     initial.fit_symbols = fit_symbols
 
-    # Don't all bonds and angles to have negative k values. Mostly due to the
-    # fact that OpenMM refuses to take negative k values. If we ever get near
-    # 0, then the chemical perception model is quite poor.
+    # Don't allow bonds and angles to have negative k values. Mostly due to the
+    # fact that OpenMM refuses to take negative k values. Regardless, if any
+    # ever get near 0, then the chemical model and/or objective config is
+    # quite poor.
     initial.bounds[('k', 'b')] = (0, None)
     initial.bounds[('k', 'a')] = (0, None)
     initial.bounds[('k', 't')] = (None, None)
     initial.bounds[('k', 'i')] = (None, None)
 
-    # The fits use normalized parameter values; these are the normalization
-    # factors, or previously known expect widths of the distribution
+    # The fits use parameter values in z-score space; these are the scale
+    # factors, or previously know widths of the distribution. The parameters
+    # in z-score space are (p-p0)/prior, where p0 is the expected value of
+    # the parameter, but usually the initial value at the start of the
+    # optimization.
     initial.priors = {
-       "k": (None, 20), # 
+       "k": (None, 20),
        ("k", "b"): (None, 50),
        ("l", "b"): (None, .01),
        ("k", "a"): (None, 50),
@@ -132,10 +165,12 @@ def configure_tiers(objs, penalties, fit_models, fit_symbols):
 
     final.fit_models = fit_models
     final.fit_symbols = fit_symbols
+
     # There will be 10 (serial) iterations of full fits, each with a randomly
     # kicked set of parameters.
     final.anneal = 10
     final.maxls = 20
+
     final.bounds = initial.bounds
     final.priors = initial.priors
 
@@ -145,9 +180,9 @@ def configure_tiers(objs, penalties, fit_models, fit_symbols):
     # Only perform one optimization step before scoring
     tier.step_limit = 1
 
-    # Pass the best 30 candidates
-    tier.accept = 30
-    tier.maxls = 20
+    # Pass the best 5 candidates
+    tier.accept = 5
+    tier.maxls = 10
     tier.priors = final.priors
     tier.bounds = initial.bounds
     tier.fit_models = fit_models
@@ -166,7 +201,6 @@ def configure_chem_perception_strat(csys, split_models):
 
     strat = fits.forcefield_optimization_strategy_default(
         csys, models=split_models)
-
 
     strat.enable_split = 1
     strat.enable_merge = 1
@@ -201,12 +235,15 @@ def configure_chem_perception_strat(csys, split_models):
 
 def configure_objectives(opt_mols):
 
-    # Configure the geometry, gradient, and frequency objectives
-    # The scales were determined by examining the first step, and scaling such
+    # Configure the geometry, gradient, and frequency objectives. The scales
+    # were determined by examining the first step, and scaling such
     # that they are relatively similar in scale. In this example, we put
     # slightly more emphasis on frequencies.
-
     objs = {}
+
+    # Note that only one minimization step is performed. This is the slowest
+    # part of each iteration so increasing this will cause a marked reduction
+    # in speed.
     for eid in opt_mols:
         o = fits.objective_config_position(
                 assignments.graph_db_address(
@@ -214,7 +251,7 @@ def configure_objectives(opt_mols):
                 ),
                 scale=1
         )
-        o.step_limit = 1000
+        o.step_limit = 1
         o.tol = 1e-4
         objs[len(objs)] = o
 
@@ -245,7 +282,7 @@ def configure_objectives(opt_mols):
 def configure_penalties():
 
     # Examples of penalties. Since the parameters are reset each time,
-    # we forego setting any penalties
+    # we forego them.
     penalties = []
 
     # restrain equilibrium lengths of bonds and angles
@@ -282,7 +319,7 @@ def configure_penalties():
 def configure_molecule(csys, gdb: assignments.graph_db):
 
     # Load the molecule data and add to the graph_db object
-    gcd = csys.pcp.gcd
+    gcd = csys.perception.gcd
 
     smi = "[C:2]([S:6]1)([H:1])=[C:3]([C:16]([H:17])([H:18])[C:19](=[O:20])[O:21][C:22]([H:23])([H:24])[H:25])[N:4]=[C:5]1[N:7]([H:8])[S:9](=[O:10])(=[O:11])[C:12]([H:13])([H:14])[H:15]" 
     xyzdata, grad, hess = load_data()
@@ -311,15 +348,16 @@ def configure_molecule(csys, gdb: assignments.graph_db):
 
 def main():
 
+    prefix = "./11_aicp/"
+    if not os.path.exists(prefix):
+        os.mkdir(prefix)
+
     # build the dataset and input ff
     csys = load_xml(ai_offxml)
 
     # load the molecule
     gdb = assignments.graph_db()
     gdb = configure_molecule(csys, gdb)
-
-    # parameterize all molecules
-    psys = fits.gdb_to_physical_systems(gdb, csys)
 
     # Create the objectives for molecule. Here there will be 3 objectives:
     # geometry, gradients, and frequencies
@@ -351,7 +389,7 @@ def main():
 
     # The initial tier will be run before any parameter search to create a
     # reference score. The final will be run when no further modifications of
-    # the paramters were found.
+    # the parameters were found.
     # The difference between initial and final is that the final fit includes
     # 10 steps of stochastic optimization using basinhopping. This is
     # controlled by the final.anneal member (set to 10).
@@ -369,6 +407,12 @@ def main():
     # increases as more parameters are added
     co = fits.chemical_objective
 
+    # Estimate the force constants for all bonds, angles, and torsions.
+    # Furthermore, predict the periodicities up to n=6 and cap any k val to 
+    # 100. Periodicities are preferred where all cos(q) < alpha or
+    # cos(q) > -alpha, indicating all angles are in troughs of the
+    # periodicitiy. We choose 100 to highlight distinct chemistries, but in 
+    # the actual predicted values we cap to 5 kcal.
     sag_map = fits.smiles_assignment_force_constants(
         gdb,
         alpha=-.5,
@@ -378,140 +422,189 @@ def main():
 
     # Cluster bond lengths where a split is accepted if the mean difference
     # is greater than 0.025 A.
-    sag = assignments.smiles_assignment_group_bonds(sag_map["bond_l"])
-    sep = 0.025
-    objective = cluster_objective.clustering_objective_mean_separation(sep, sep)
-    csys = fits.chemical_system_cluster_data(
-        csys,
-        0,
-        sag,
-        objective,
-        strategy=mystrategy()
-    )
-    smirnoff_models.smirnoff_write_version_0p3(csys, "out.bond_l.offxml")
-    pkl(csys, "csys.bond_l.p")
+    if os.path.exists(prefix + "csys.bond_l.p"):
+        csys = pkl_load(prefix + "csys.bond_l.p")
+    else:
+        sag = assignments.smiles_assignment_group_bonds(sag_map["bond_l"])
+        sep = 0.025
+        obj = cluster_objective.clustering_objective_mean_separation(sep, sep)
+        csys = fits.chemical_system_cluster_data(
+            csys,
+            0,
+            sag,
+            obj,
+            strategy=mystrategy()
+        )
+        smirnoff_models.smirnoff_write_version_0p3(
+            csys,
+            prefix + "out.bond_l.offxml"
+        )
+        pkl(csys, prefix + "csys.bond_l.p")
 
     # Cluster bond force constants where a split is accepted if the mean
     # difference is greater than 10 kcal/A/A.
-    sag = assignments.smiles_assignment_group_bonds(sag_map["bond_k"])
-    sep = 10.0
-    objective = cluster_objective.clustering_objective_mean_separation(sep, sep)
-    csys = fits.chemical_system_cluster_data(
-        csys,
-        0,
-        sag,
-        objective,
-        strategy=mystrategy())
-    smirnoff_models.smirnoff_write_version_0p3(csys, "out.bond_k.offxml")
-    pkl(csys, "csys.bond_k.p")
+    if os.path.exists(prefix + "csys.bond_k.p"):
+        csys = pkl_load(prefix + "csys.bond_k.p")
+    else:
+        sag = assignments.smiles_assignment_group_bonds(sag_map["bond_k"])
+        sep = 10.0
+        obj = cluster_objective.clustering_objective_mean_separation(sep, sep)
+        csys = fits.chemical_system_cluster_data(
+            csys,
+            0,
+            sag,
+            obj,
+            strategy=mystrategy())
+        smirnoff_models.smirnoff_write_version_0p3(
+            csys,
+            prefix + "out.bond_k.offxml"
+        )
+        pkl(csys, prefix + "csys.bond_k.p")
 
     # Cluster angles where a split is accepted if the mean difference is
     # greater than 0.1 radians (5.7 degrees)
-    sag = assignments.smiles_assignment_group_angles(sag_map["angle_l"])
-    sep = 0.1
-    objective = cluster_objective.clustering_objective_mean_separation(sep, sep)
-    csys = fits.chemical_system_cluster_data(csys, 1, sag, objective, strategy=mystrategy())
-    smirnoff_models.smirnoff_write_version_0p3(csys, "out.angle_l.offxml")
-    pkl(csys, "csys.angle_l.p")
+    if os.path.exists(prefix + "csys.angle_l.p"):
+        csys = pkl_load(prefix + "csys.angle_l.p")
+    else:
+        sag = assignments.smiles_assignment_group_angles(sag_map["angle_l"])
+        sep = 0.1
+        obj = cluster_objective.clustering_objective_mean_separation(sep, sep)
+        csys = fits.chemical_system_cluster_data(
+            csys,
+            1,
+            sag,
+            obj,
+            strategy=mystrategy()
+        )
+        smirnoff_models.smirnoff_write_version_0p3(
+            csys,
+            prefix + "out.angle_l.offxml"
+        )
+        pkl(csys, prefix + "csys.angle_l.p")
 
     # Cluster angle force constants where a split is accepted if the mean
     # difference is greater than 5.0 kcal/rad/rad.
-    sag = assignments.smiles_assignment_group_angles(sag_map["angle_k"])
-    sep = 5.0
-    objective = cluster_objective.clustering_objective_mean_separation(sep, sep)
-    csys = fits.chemical_system_cluster_data(csys, 1, sag, objective, strategy=mystrategy())
-    smirnoff_models.smirnoff_write_version_0p3(csys, "out.angle_k.offxml")
-    pkl(csys, "csys.angle_k.p")
+    if os.path.exists(prefix + "csys.angle_k.p"):
+        csys = pkl_load(prefix + "csys.angle_k.p")
+    else:
+        sag = assignments.smiles_assignment_group_angles(sag_map["angle_k"])
+        sep = 5.0
+        obj = cluster_objective.clustering_objective_mean_separation(sep, sep)
+        csys = fits.chemical_system_cluster_data(
+            csys,
+            1,
+            sag,
+            obj,
+            strategy=mystrategy()
+        )
+        smirnoff_models.smirnoff_write_version_0p3(
+            csys, prefix + "out.angle_k.offxml"
+        )
+        pkl(csys, prefix + "csys.angle_k.p")
 
     # Split on predicted cosine series. Each torsion will have a set of
     # periodicities assigned. We then build a descrete label for the given
     # set, and try to cluster torsions that have the same label, or the same
     # set of predicted cosine terms.
-    assn = []
-    for sag_p, sag_n in zip(sag_map["torsion_p"], sag_map["torsion_n"]):
-        sel = {}
-        for ic, plist in sag_p.selections.items():
-            nlist = sag_n.selections[ic]
-            pstr = []
-            for ni in range(1, 7):
-                if ni in nlist:
-                    idx = nlist.index(ni)
-                    p = plist[idx]
-                    if p == 0.0:
-                        pstr.append("0")
-                    elif abs((p - 3.14159)) < .0001:
-                        pstr.append("1")
+    if os.path.exists(prefix + "csys.torsion_p.p"):
+        csys = pkl_load(prefix + "csys.torsion_p.p")
+    else:
+        assn = []
+        for sag_p, sag_n in zip(sag_map["torsion_p"], sag_map["torsion_n"]):
+            sel = {}
+            for ic, plist in sag_p.selections.items():
+                nlist = sag_n.selections[ic]
+                pstr = []
+                for ni in range(1, 7):
+                    if ni in nlist:
+                        idx = nlist.index(ni)
+                        p = plist[idx]
+                        if p == 0.0:
+                            pstr.append("0")
+                        elif abs((p - 3.14159)) < .0001:
+                            pstr.append("1")
+                        else:
+                            pstr.append("2")
                     else:
-                        pstr.append("2")
-                else:
-                    pstr.append("x")
-            sel[ic] = tuple(["".join(pstr)])
-        ga = assignments.graph_assignment(sag_p.smiles, sel, sag_p.graph)
-        assn.append(ga)
+                        pstr.append("x")
+                sel[ic] = tuple(["".join(pstr)])
+            ga = assignments.graph_assignment(sag_p.smiles, sel, sag_p.graph)
+            assn.append(ga)
 
-    sag = assignments.smiles_assignment_group_torsions(assn)
-    objective = cluster_objective.clustering_objective_classification()
+        sag = assignments.smiles_assignment_group_torsions(assn)
+        obj = cluster_objective.clustering_objective_classification()
 
-
-    strategy = mystrategy()
-    strategy.overlaps = [0]
-    csys = fits.chemical_system_cluster_data(
-        csys,
-        2,
-        sag,
-        objective,
-        strategy=strategy
-    )
-    smirnoff_models.smirnoff_write_version_0p3(csys, "out.torsion_p.offxml")
-    fits.print_chemical_system(csys)
-    pkl(csys, "csys.torsion_p.p")
+        strategy = mystrategy()
+        strategy.overlaps = [0]
+        csys = fits.chemical_system_cluster_data(
+            csys,
+            2,
+            sag,
+            obj,
+            strategy=strategy
+        )
+        smirnoff_models.smirnoff_write_version_0p3(
+            csys,
+            prefix + "out.torsion_p.offxml"
+        )
+        fits.print_chemical_system(csys)
+        pkl(csys, prefix + "csys.torsion_p.p")
 
     # Now that torsions are grouped as well as possible based on periodicities,
     # split further based on predicted k values. In this case, we translate
     # phases to zero, flipping signs of k when appropriate (when phase is pi).
     # We then split if the maximum difference in k values for any cosine term
     # is greater than 0.5.
-    assn = []
-    for sag_p, sag_n, sag_k in zip(
-            sag_map["torsion_p"],
-            sag_map["torsion_n"],
-            sag_map["torsion_k"]
-        ):
-        sel = {}
-        for ic, plist in sag_p.selections.items():
-            nlist = sag_n.selections[ic]
-            klist = sag_k.selections[ic]
-            k_vals = []
-            for ni in range(1, 7):
-                if ni in nlist:
-                    idx = nlist.index(ni)
-                    k = klist[idx]
-                    if abs((p - 3.14159)) < .0001:
-                        k_vals.append(-k)
+    if os.path.exists(prefix + "csys.torsion_k.p"):
+        csys = pkl_load(prefix + "csys.torsion_k.p")
+    else:
+        assn = []
+        for sag_p, sag_n, sag_k in zip(
+                sag_map["torsion_p"],
+                sag_map["torsion_n"],
+                sag_map["torsion_k"]
+            ):
+            sel = {}
+            for ic, plist in sag_p.selections.items():
+                nlist = sag_n.selections[ic]
+                klist = sag_k.selections[ic]
+                k_vals = []
+                for ni in range(1, 7):
+                    if ni in nlist:
+                        idx = nlist.index(ni)
+                        k = klist[idx]
+                        if abs((p - 3.14159)) < .0001:
+                            k_vals.append(-k)
+                        else:
+                            k_vals.append(k)
                     else:
-                        k_vals.append(k)
-                else:
-                    k_vals.append(0.0)
-            sel[ic] = tuple(k_vals)
-        ga = assignments.graph_assignment(sag_p.smiles, sel, sag_p.graph)
-        assn.append(ga)
+                        k_vals.append(0.0)
+                sel[ic] = tuple(k_vals)
+            ga = assignments.graph_assignment(sag_p.smiles, sel, sag_p.graph)
+            assn.append(ga)
 
-    sag = assignments.smiles_assignment_group_torsions(assn)
-    sep = .5
-    objective = cluster_objective.clustering_objective_mean_separation(sep, sep)
-    strategy = mystrategy()
-    strategy.overlaps = [0]
-    strategy.bounds.splitter.split_general = False
-    csys = fits.chemical_system_cluster_data(
-        csys,
-        2,
-        sag,
-        objective,
-        strategy=strategy
-    )
-    smirnoff_models.smirnoff_write_version_0p3(csys, "out.torsion_k.offxml")
-    fits.print_chemical_system(csys)
-    pkl(csys, "csys.torsion_k.p")
+        sag = assignments.smiles_assignment_group_torsions(assn)
+        sep = .5
+        obj = cluster_objective.clustering_objective_mean_separation(sep, sep)
+        strategy = mystrategy()
+        strategy.overlaps = [0]
+        strategy.bounds.splitter.split_general = False
+        csys = fits.chemical_system_cluster_data(
+            csys,
+            2,
+            sag,
+            obj,
+            strategy=strategy
+        )
+        smirnoff_models.smirnoff_write_version_0p3(
+            csys,
+            prefix + "out.torsion_k.offxml"
+        )
+        fits.print_chemical_system(csys)
+        pkl(csys, prefix + "csys.torsion_k.p")
+
+    # parameterize all molecules
+    psys = fits.gdb_to_physical_systems(gdb, csys)
 
     # Initial chemical perception is done. Perform a full reset of values
     # on each parameter. In this example, we split torsions using 6 cosine
@@ -532,7 +625,7 @@ def main():
     psys = fits.reset(reset_config, csys, gdb, psystems=psys, verbose=True)
     print("After resetting and initializing, the parameters are:")
     fits.print_chemical_system(csys)
-    smirnoff_models.smirnoff_write_version_0p3(csys, "out.offxml")
+    smirnoff_models.smirnoff_write_version_0p3(csys, prefix + "out.offxml")
 
     # Configure the strategy for the chemical perception
     strat = configure_chem_perception_strat(csys, split_models)
@@ -551,12 +644,11 @@ def main():
     )
     print(f"X {P+C:15.8g} P {P:15.8g} C {C:15.8g}")
 
-    smirnoff_models.smirnoff_write_version_0p3(newcsys, "final.offxml")
+    smirnoff_models.smirnoff_write_version_0p3(
+        newcsys,
+        prefix + "final.offxml"
+    )
     print("wrote final.offxml")
-
-
-if __name__ == "__main__":
-    main()
 
 
 def load_data():
@@ -567,15 +659,21 @@ def load_data():
 
     hx_b = base64.decodebytes(hess_bytes)
 
-    fd, fname = tempfile.mkstemp(suffix=".npy")
+    fd, hx_fname = tempfile.mkstemp(suffix=".npy")
     with open(fd, 'wb') as f:
         f.write(hx_b)
 
     cx = xyz_file
-    gx = np.loadtxt(grad_file)
-    hx = np.load(fname)
 
-    os.remove(fname)
+    fd, gx_fname = tempfile.mkstemp(suffix=".txt")
+    with open(fd, 'w') as f:
+        f.write(grad_file)
+
+    gx = np.loadtxt(gx_fname)
+    hx = np.load(hx_fname)
+
+    os.remove(hx_fname)
+    os.remove(gx_fname)
 
     return cx, gx, hx
 
@@ -669,7 +767,7 @@ ai_offxml = """<?xml version="1.0" encoding="utf-8"?>
             periodicity1="1"
             phase1="0.0 * degree"
             k1="0.0 * mole**-1 * kilocalorie"
-            idivf1="1.0
+            idivf1="1.0"
         ></Proper>
         <Proper
             id="t6"
@@ -1749,3 +1847,6 @@ hess_bytes = \
     b'fg6M8eDGhv4C7i7FTF5G/ms5tWqwZ\nmb9W+ft/LxaXv2tNh0ihroi/J8HqSC+Nqr'\
     b'8pU3d3WN2JP8KBKBqCpHQ/M0gK1NpXbj9+SWC3w9KA\nP0SP5Skyu3o/pdg+wa1Pb'\
     b'T9EcOmcdGSiPyMiKxckwJY/H/unTgnzsD8=\n'
+
+if __name__ == "__main__":
+    main()
