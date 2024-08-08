@@ -140,11 +140,6 @@ def new_gdb(f: Dict[str, List[Dict[int, str]]]) -> assignments.graph_db:
         g = gcd.smiles_decode(smi)
         gid = assignments.graph_db_add_graph(gdb, smi, g)
 
-        gdb.graphs[gid] = g
-        gdb.smiles[gid] = smi
-        gdb.selections[topology.index_of(topology.atom)] = {
-            gid: {k: v for k, v in enumerate(graphs.graph_atoms(g))}
-        }
         gde = assignments.graph_db_entry()
         gdb.entries[len(gdb.entries)] = gde
         for rid, rdata in enumerate(fn_dict):
