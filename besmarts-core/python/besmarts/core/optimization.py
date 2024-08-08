@@ -213,7 +213,7 @@ class optimization_strategy:
 
 def optimization_strategy_restart(os: optimization_strategy):
     os.repeat = False
-    os.cursor = -1
+    os.cursor = 0
     if not os.steps:
         os.build_steps()
     return os
