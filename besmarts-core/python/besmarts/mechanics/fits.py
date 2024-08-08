@@ -40,6 +40,7 @@ from besmarts.mechanics import hessians
 from besmarts.mechanics import vibration
 from besmarts.mechanics import molecular_models as mm
 
+import scipy.optimize
 eid_t = int
 
 PRECISION = configs.precision
@@ -60,6 +61,7 @@ class compute_config:
     def __init__(self, addr):
         self.addr = addr
         self.keys = []
+        self.enable_minimization = True
 
     def run(self) -> List[Dict[assignments.tid_t, assignments.graph_db_table]]:
 
@@ -294,6 +296,7 @@ class compute_config_hessian(compute_config):
             for eid, gde in gdb.entries.items():
                 tbl_hess = assignments.graph_db_table(topology.null)
                 tbl_grad = assignments.graph_db_table(topology.null)
+                tbl_pos = assignments.graph_db_table(topology.atom)
                 rids = assignments.graph_db_table_get_row_ids(gde[tid])
                 for rid in rids:
                     system = []
@@ -336,9 +339,11 @@ class compute_config_hessian(compute_config):
 
                     pos = psys.models[0].positions[0]
 
-                    args, keys = objectives.array_flatten_assignment(
-                        pos.selections
-                    )
+                    if self.enable_minimization:
+                        minpos = optimizers_openmm.optimize_positions_openmm(csys, psys, tol=1e-7)
+                        pos = minpos
+                        tbl_pos.values = minpos
+                        psys.models[0].positions[0] = minpos
 
                     hess_mm = optimizers_openmm.physical_system_hessian_openmm(
                         psys,
@@ -359,6 +364,7 @@ class compute_config_hessian(compute_config):
                     tbl_grad.values.extend(gx)
 
                 r = {
+                    POSITIONS: tbl_pos,
                     HESSIANS: tbl_hess,
                     GRADIENTS: tbl_grad
                 }
@@ -487,6 +493,7 @@ class objective_config:
         self.include = include
         self.cache = {}
         self.batch_size = None
+        self.enable_minimization = True
 
     def get_task(
         self,
@@ -610,6 +617,10 @@ class objective_config:
 
 class objective_config_gradient(objective_config):
 
+    def __init__(self, *args, **kwds):
+        super().__init__(*args, **kwds)
+        self.enable_minimization = False
+
     def get_task(
         self,
         GDB: assignments.graph_db,
@@ -718,7 +729,7 @@ class objective_config_gradient(objective_config):
             else:
                 rmse = 0
 
-            X2 = arrays.array_inner_product(X,X)
+            X2 = arrays.array_inner_product(X, X)
             out.append(" ".join([
                 f" Total Gradient SSE: {X2:10.5f} (kJ/mol/A)^2",
                 f"RMSE: {rmse:10.5f} kJ/mol/A"
@@ -727,6 +738,10 @@ class objective_config_gradient(objective_config):
 
 
 class objective_config_hessian(objective_config):
+
+    def __init__(self, *args, **kwds):
+        super().__init__(*args, **kwds)
+        self.enable_minimization = False
 
     def get_task(
         self,
@@ -746,6 +761,8 @@ class objective_config_hessian(objective_config):
         else:
             cc.keys.append({})
         cc.reuse = reuse
+        cc.enable_minimization = self.enable_minimization
+
         return cc
 
     def compute_gradient_2pt(self, ref, X0, E0, E1, h):
@@ -769,9 +786,36 @@ class objective_config_hessian(objective_config):
             grad0 = list(dtbls[GRADIENTS].values)
             x0 = hessians.hessian_frequencies(g, hess0, grad0, DL, ics, B, B2)
 
-            hess1 = etbls[HESSIANS].values
-            grad1 = list(etbls[GRADIENTS].values)
-            x1 = hessians.hessian_frequencies(g, hess1, grad1, DL, ics, B, B2)
+            hess_mm = etbls[HESSIANS].values
+
+            if self.enable_minimization:
+                pos1 = etbls[POSITIONS].values
+                xyz = list([x[0] for x in pos1.selections.values()])
+
+                sym = graphs.graph_symbols(g)
+                mass = [[vibration.mass_table[sym[n]]]*3 for n in sym]
+                sym = list(sym.values())
+
+                x1, mm_modes, mm_dl = vibration.hessian_modes(
+                    hess_mm,
+                    sym,
+                    xyz,
+                    mass,
+                    0,
+                    remove=0,
+                    stdtr=True,
+                    return_DL=True
+                )
+                cost = np.abs(np.dot(np.array(DL).T, mm_dl))
+                map_row, map_col = scipy.optimize.linear_sum_assignment(1-cost)
+                x1 = [x1[i] for i in map_row]
+                # x1 = list(x1)
+                # out.append(f"Cost for EID {self.addr.eid[0]} is total {cost[map_row, map_col].sum()} mean {cost[map_row, map_col].sum()/len(x1)} degrees {np.degrees(np.arccos(cost[map_row, map_col].sum()/len(x1)))}")
+            else:
+                grad_mm = list(etbls[GRADIENTS].values)
+                x1 = list(hessians.hessian_frequencies(
+                    g, hess_mm, grad_mm, DL, ics, B, B2)
+                )
 
             # keep this for when I want to try internal hess
             # x0 = array_numpy.dlcmatrix_project_gradients(pos, x0)
@@ -857,16 +901,40 @@ class objective_config_hessian(objective_config):
                     self.cache['IC:dl'] = DL
 
                 x0 = list(self.cache['IC:qm_freq'])
-
                 hess_mm = tbls[HESSIANS].values
                 grad_mm = list(tbls[GRADIENTS].values)
-                DL = self.cache['IC:dl']
-                (ics, B, B2) = self.cache['IC:b']
 
-                x1 = list(hessians.hessian_frequencies(
-                    g, hess_mm, grad_mm, DL, ics, B, B2)
-                )
+                # grad1 = list(tbls[GRADIENTS].values)
+                if self.enable_minimization:
+                    pos1 = tbls[POSITIONS].values
+                    xyz = list([x[0] for x in pos1.selections.values()])
 
+                    sym = graphs.graph_symbols(g)
+                    mass = [[vibration.mass_table[sym[n]]]*3 for n in sym]
+                    sym = list(sym.values())
+
+                    x1, mm_modes, mm_dl = vibration.hessian_modes(
+                        hess_mm,
+                        sym,
+                        xyz,
+                        mass,
+                        0,
+                        remove=0,
+                        stdtr=True,
+                        return_DL=True
+                    )
+                    cost = np.abs(np.dot(np.array(DL).T, mm_dl))
+                    map_row, map_col = scipy.optimize.linear_sum_assignment(1-cost)
+                    x1 = [x1[i] for i in map_row]
+                    # x1 = list(x1)
+                    out.append(f"Cost for EID {self.addr.eid[0]} is total {cost[map_row, map_col].sum()} mean {cost[map_row, map_col].sum()/len(x1)} degrees {np.degrees(np.arccos(cost[map_row, map_col].sum()/len(x1)))}")
+                else:
+                    DL = self.cache['IC:dl']
+                    (ics, B, B2) = self.cache['IC:b']
+
+                    x1 = list(hessians.hessian_frequencies(
+                        g, hess_mm, grad_mm, DL, ics, B, B2)
+                    )
 
             x = arrays.array_difference(x1, x0)
             N = len(x)
@@ -1906,6 +1974,7 @@ def ff_optimize(
                     )
 
     step_tracker = strategy.step_tracker
+    
 
     while True:
         if success:
@@ -1923,9 +1992,13 @@ def ff_optimize(
             if x.type == "parameter"
             and x.name in assigned_nodes
             # if strategy.cursor == -1
-            # or strategy.cursor >= step_tracker.get((x.category, x.name), 0)
+            and strategy.cursor >= step_tracker.get((x.category, x.name), -1)
             # and x.type == "parameter"
         ]
+        for n in nodes:
+            tkey = n.category, n.name
+            if tkey not in step_tracker:
+                step_tracker[tkey] = 0
         # remove any that are not in the models
 
         print(f"Targets for this macro step {strategy.cursor+1}:")
@@ -2015,11 +2088,13 @@ def ff_optimize(
             hidx = mm.chemical_system_get_node_hierarchy(csys, S)
             topo = hidx.topology
 
+            step_tracker[tkey] = strategy.cursor
+
             if S.type == 'parameter' and S.index not in hidx.subgraphs:
                 hidx.subgraphs[S.index] = gcd.smarts_decode(hidx.smarts[S.index])
             if type(hidx.subgraphs[S.index]) is str:
                 # could not parse smarts (e.g. recursive) so we skip
-                step_tracker[tkey] = strategy.cursor
+                # step_tracker[tkey] = strategy.cursor
                 continue
             S0 = graphs.subgraph_to_structure(hidx.subgraphs[S.index], topo)
 
@@ -2083,7 +2158,7 @@ def ff_optimize(
 
                 if not aa:
                     print("No matches.")
-                    step_tracker[tkey] = strategy.cursor
+                    # step_tracker[tkey] = strategy.cursor
                     continue
 
                 print(f"Matched N={len(aa)}")
@@ -2114,17 +2189,17 @@ def ff_optimize(
                 print()
                 if len(seen) < 2 and len(assn_s) < 100:
                     print(f"Skipping {S.name} since all graphs are the same")
-                    step_tracker[tkey] = strategy.cursor
+                    # step_tracker[tkey] = strategy.cursor
                     continue
 
                 if len(seen) < 2 and len(assn_s) < 100:
                     print(f"Skipping {S.name} since all graphs are the same")
-                    step_tracker[tkey] = strategy.cursor
+                    # step_tracker[tkey] = strategy.cursor
                     continue
 
                 if graphs.structure_max_depth(S0) > config.splitter.branch_depth_min:
                     print("This parameter exceeds current depth. Skipping")
-                    step_tracker[tkey] = strategy.cursor
+                    # step_tracker[tkey] = strategy.cursor
                     continue
 
                 # this is where I generate all candidates
@@ -2199,14 +2274,20 @@ def ff_optimize(
 
                     # here I need to get the graphs from the gdb
                     # where aa refers to the indices
-                    Q = mapper.union_list_parallel(
-                        G, aa, topo,
-                        # list(a.values()),
-                        reference=S0,
-                        max_depth=graphs.structure_max_depth(S0),
-                        icd=icd
-                        # icd=icd if len(a) > 100000 else None
-                    )
+                    if len(aa) < 100:
+                        Q = mapper.union_list_parallel(
+                            G, aa, topo,
+                            reference=S0,
+                            max_depth=graphs.structure_max_depth(S0),
+                            icd=icd
+                        )
+                    else:
+                        Q = mapper.union_list_distributed(
+                            G, aa, topo, wq,
+                            reference=S0,
+                            max_depth=graphs.structure_max_depth(S0),
+                            icd=icd
+                        )
 
                     t = datetime.datetime.now()
                     print(f"{t} Union is {gcd.smarts_encode(Q)}")
@@ -2996,7 +3077,7 @@ def ff_optimize(
                 # hent = Sj
                 visited.add(hent.name)
                 edits = step.overlap[0]
-                
+
                 hidx = mm.chemical_system_get_node_hierarchy(csys, S)
 
                 if step.operation == strategy.SPLIT:
@@ -3006,7 +3087,7 @@ def ff_optimize(
                     repeat.add(hent.name)
                     assigned_nodes.add(hent.name)
                     step_tracker[(hent.category, hent.name)] = 0
-
+                    step_tracker[(S.category, S.name)] = 0
 
                 elif step.operation == strategy.MERGE:
 
@@ -3014,6 +3095,7 @@ def ff_optimize(
                         step_tracker.pop((hent.category, hent.name))
                     else:
                         print("WARNING", hent.name, "missing from the tracker")
+                    step_tracker[(S.category, S.name)] = 0
 
                     visited.add((S.category, S.name))
                     if (hent.category, hent.name) in visited:
@@ -3029,8 +3111,7 @@ def ff_optimize(
                     added = True
 
                 elif step.operation == strategy.MODIFY:
-                    if (S.category, S.name) in step_tracker:
-                        step_tracker.pop((S.category, S.name))
+                    step_tracker[(S.category, S.name)] = 0
                     repeat.add((S.category, S.name))
                     visited.add((S.category, S.name))
                     success = True
@@ -3645,7 +3726,7 @@ def chemical_system_cluster_force_constants(csys, gdb, sep, topo):
 
 def chemical_system_cluster_geom(csys, gdb, sep, topo):
     sag = []
-    
+
     measure = None
     m = 0
     if topo == topology.bond:
@@ -3976,6 +4057,11 @@ def smiles_assignment_force_constants(gdb, alpha=-.25, guess_periodicity=True, m
             sel_p[angle_ic] = new_p
             sel_k[angle_ic] = new_k
 
+        for ic in graphs.graph_torsions(pos.graph):
+            if ic not in sel_k:
+                sel_k[ic] = []
+                sel_n[ic] = []
+                sel_p[ic] = []
         ga = assignments.graph_assignment(pos.smiles, sel_k, pos.graph)
         sag_map["torsion_k"].append(ga)
 
@@ -4177,8 +4263,8 @@ def reset(reset_config, csys, gdb, psystems=None, verbose=False, ws=None):
                         angles.extend([t for y in psys_angles.selections.values() for x in y for t in x])
                     print("idiv:", idiv)
                     idiv_expected = sum(idiv)/len(idiv)
-                    idiv_expected = 1
-                    print("Expected idiv (set to 1):", idiv_expected)
+                    # idiv_expected = 1
+                    # print("Expected idiv (set to 1):", idiv_expected)
                     # print(angles)
 
                     print("Reference npk0", npk0)
