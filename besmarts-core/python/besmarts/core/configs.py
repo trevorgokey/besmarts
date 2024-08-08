@@ -68,20 +68,6 @@ class smarts_extender_config:
         )
 
 
-class system_config:
-    __slots__ = (
-        "minimize",
-        "maxsteps",
-        "dt",
-        "barostat",
-        "thermostat",
-    )
-
-    def __init__():
-        self.minimize = True
-        self.maxsteps = 0
-
-
 class smarts_splitter_config:
     __slots__ = (
         "bit_search_min",
