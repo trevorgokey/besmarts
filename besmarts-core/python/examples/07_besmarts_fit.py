@@ -136,13 +136,14 @@ def new_gdb(f: Dict[str, List[Dict[int, str]]]) -> assignments.graph_db:
     gdb = assignments.graph_db()
 
     for smi, fn_dict in f.items():
+        # create a graph and add it to the graph_db
+        g: graphs.graph = gcd.smiles_decode(smi)
+        gid: int = assignments.graph_db_add_graph(gdb, smi, g)
 
-        g = gcd.smiles_decode(smi)
-        gid = assignments.graph_db_add_graph(gdb, smi, g)
-
+        # start empty graph_db_entry
         gde = assignments.graph_db_entry()
         gdb.entries[len(gdb.entries)] = gde
-        for rid, rdata in enumerate(fn_dict):
+        for rdata in fn_dict:
             tid = assignments.POSITIONS
             gdt = assignments.graph_db_table(topology.atom)
             gdg = assignments.graph_db_graph()
