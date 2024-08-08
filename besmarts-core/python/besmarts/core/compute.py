@@ -2861,39 +2861,43 @@ def workqueue_remove_workspace(wq: workqueue_local, ws: workspace_local):
             # print(f"Found workspace. Removed {address}")
 
 
-def workqueue_get_workspace(wq: workqueue_remote, addr, wq_port) -> workspace:
-    print("Getting workspace...")
+def workqueue_list_workspaces(wq: workqueue_remote) -> Dict:
+    print("Getting workspace list...")
     ws = None
     wss = wq.get_workspaces()
     wss = list(
         [x for x in wss.items() if type(x[0]) is tuple and len(x[0]) == 2]
     )
-    if wss:
-        for (address, port), v in sorted(wss, key=lambda x: x[1]):
-            if v != 0:
-                continue
-            ws = workspace_remote(addr, port)
-            if ws.is_connected:
-                wq.put_workspaces({addr: v + 1})
-                print(f"Received workspace {addr}:{port}")
-                # now I will have a fully copied shm in the remote ws
-                success = workspace_remote_shm_init(ws, timeout=TIMEOUT)
-                print(f"Initializing shared memory success {success}")
-                if not success:
-                    ws = None
-                else:
-                    print(f"Shared memory is {ws.shm}")
-                    print(
-                        f"Shared memory has members {list(ws.shm.__dict__.keys())}"
-                    )
-                    print(
-                        f"Requested processors per task is {ws.shm.procs_per_task}"
-                    )
-            else:
-                print(f"Unable to connect workspace")
-                ws = None
-    else:
+    if not wss:
         print("No workspaces")
+
+    return wss
+
+
+def workqueue_get_workspace(wq: workqueue_remote, addr, port) -> workspace:
+
+    print(f"Connecting to {addr}:{port}...")
+    ws = workspace_remote(addr, port)
+    if ws.is_connected:
+        # TODO: do the reference counting correctly
+        # wq.put_workspaces({addr: v + 1})
+        print(f"Received workspace {addr}:{port}")
+        # now I will have a fully copied shm in the remote ws
+        success = workspace_remote_shm_init(ws, timeout=TIMEOUT)
+        print(f"Initializing shared memory success {success}")
+        if not success:
+            ws = None
+        else:
+            print(f"Shared memory is {ws.shm}")
+            print(
+                f"Shared memory has members {list(ws.shm.__dict__.keys())}"
+            )
+            print(
+                f"Requested processors per task is {ws.shm.procs_per_task}"
+            )
+    else:
+        print(f"Unable to connect workspace")
+        ws = None
 
     return ws
 
@@ -3122,6 +3126,7 @@ def compute_remote(addr, port, processes=1, queue_size=1):
     success = False
     configs.processes = min(processes, os.cpu_count())
     process.current_process().name = "WS_" + str(int(random.random() * 1e6))
+
     while retry < retry_n:
         print(f"Connecting to workqueue {addr}:{port}")
         wq = workqueue_remote(addr, port)
@@ -3134,35 +3139,36 @@ def compute_remote(addr, port, processes=1, queue_size=1):
             )
             wq = None
 
-        try:
-            if success:
-                success = False
-                # workspaces hold global/shared space for the functions to operate
-                # In this case, I will need to setup the shared memory here first, but
-                # perhaps likely do this in the main process
-                ws: workspace_remote = workqueue_get_workspace(wq, addr, port)
-                # now this is supposed to copy the proxy objects appropriately
+        wss = workqueue_list_workspaces(wq)
 
-                if ws is not None:
+        for idx, ((_, ws_port), v) in enumerate(wss, 1):
+
+            # workspaces hold global/shared space for the functions to operate
+            # In this case, I will need to setup the shared memory here first, but
+            # perhaps likely do this in the main process
+            try:
+                print(f"Getting workspace {idx}/{len(wss)} {addr}:{ws_port}...")
+                ws: workspace_remote = workqueue_get_workspace(wq, addr, ws_port)
+                success = ws is not None
+
+                if success:
+                    success = False
+
                     ws.nproc = processes
                     success = ws.start(queue_size)
 
-                    # this needs to copy everything
                     if success:
                         print(
                             f"Starting remote compute from {addr} {port} with {processes} processes"
                         )
                         success = workspace_remote_compute(wq, ws)
                         print(f"compute_remote: success is {success}")
-                    # if not success:
-                    #     retry += 1
-                    # else:
-                    #     success = workqueue_is_active(wq)
+
                     ws.close()
-        except EOFError:
-            print("Disconnected from workspace.")
-        except Exception as e:
-            print(f"compute_remote: Exception. {e}")
+            except EOFError:
+                print("Disconnected from workspace.")
+            except Exception as e:
+                print(f"compute_remote: Exception. {e}")
 
         if success:
             retry = 0
