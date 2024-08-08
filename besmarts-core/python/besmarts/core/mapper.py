@@ -12,18 +12,17 @@ import multiprocessing
 
 from typing import Dict, Sequence, List, Tuple
 
-from besmarts.codecs import codec_native
 from besmarts.core import configs, chem, graphs, db, codecs
 from besmarts.core.graphs import structure
-from besmarts.core.primitives import primitive_key
-from besmarts.core import compute
 from besmarts.core import arrays
 from besmarts.core.logs import dprint, timestamp
+from besmarts.core import compute
 
 # TODO: remove this shim
 from besmarts.core.graphs import structure_extend as mapper_smarts_extend
 
 mapping = Dict[int, int]
+
 
 class mapped_type:
     """
@@ -1853,6 +1852,7 @@ def union_list(
 
     return graphs.structure_copy(ref)
 
+
 def intersection_list_dispatch(
     indices,
 ) -> graphs.structure:
@@ -1864,6 +1864,35 @@ def intersection_list_dispatch(
     return intersection_list(
         A, config, max_depth, reference, sort=True, executor=None, verbose=False
     )
+
+
+def union_list_dispatch_distributed(
+    indices: List[int],
+    shm=None
+) -> graphs.structure:
+
+    topo = shm.topology
+
+    reference = shm.reference
+    config = shm.config
+    max_depth = shm.max_depth
+
+    icd: codecs.intvec_codec = shm.icd
+    G, sel = shm.A
+
+    sel = [sel[i] for i in indices]
+
+    work = union_list_parallel(
+        G,
+        sel,
+        topo,
+        config=config,
+        max_depth=max_depth,
+        reference=reference,
+        icd=icd,
+        verbose=False
+    )
+    return icd.structure_encode(work)
 
 
 def union_list_dispatch(
@@ -1947,10 +1976,12 @@ def intersection_list_parallel(
 
     return work[0]
 
-def union_list_parallel(
+
+def union_list_distributed(
     G: Sequence[graphs.graph],
     selections,
     topo,
+    wq,
     config: configs.mapper_config = None,
     max_depth=None,
     reference=None,
@@ -1995,9 +2026,137 @@ def union_list_parallel(
     procs = min(os.cpu_count(), len(indices))
     procs = min(procs, configs.processors)
 
+    work = None
+
+
+    while len(indices) > 1:
+        # print(timestamp(), f"Initializing pool")
+
+        if len(indices) > 1000:
+            print(timestamp(), f"Distributed Union merging={len(indices)}")
+            shm = compute.shm_local(0, data={
+                "reference": reference,
+                "result": union_ctx.result,
+                "topology": topo,
+                "config": config,
+                "max_depth": max_depth,
+                "A": (G, selections),
+                "icd": icd
+            })
+            ws = compute.workqueue_new_workspace(
+                wq,
+                shm=shm
+            )
+            
+            chunk_n = max(2, len(indices) // procs)
+            chunk_n = min(chunk_n, 10000)
+
+            iterable = {
+                i: ((x,), {}) for i, x in enumerate(arrays.batched(indices, chunk_n))
+            }
+
+            chunksize = 1
+
+            work = compute.workspace_submit_and_flush(
+                ws,
+                union_list_dispatch_distributed,
+                iterable,
+                chunksize,
+                1,
+                len(iterable),
+                verbose=True
+            )
+            ws.close()
+            work = list(work.values())
+        else:
+            print(timestamp(), f"Parallel Union merging={len(indices)}")
+
+            with multiprocessing.pool.Pool(processes=procs) as pool:
+                # print(timestamp(), f"Generating batches")
+                chunk_n = max(2, len(indices) // procs)
+                chunk_n = min(chunk_n, 10000)
+
+                chunked = arrays.batched(indices, chunk_n)
+                # print(timestamp(), f"Submitting")
+                work = [
+                    pool.apply_async(union_list_dispatch, (chunk,))
+                    for chunk in chunked
+                ]
+                # print(timestamp(), f"Collecting")
+                work = [unit.get() for unit in work]
+
+        union_ctx.result = work
+
+        # print(timestamp(), f"Done")
+        indices = list(range(len(work)))
+        # print(timestamp(), f"Union merging={len(indices)}")
+        if len(indices) // procs < 2:
+            procs = max(1, procs // 2)
+    # print()
+    ans = work[0]
+    union_ctx.A = None
+    union_ctx.reference = None
+    union_ctx.config = None
+    union_ctx.max_depth = None
+    union_ctx.result = None
+    # if icd:
+    #     adb.remove()
+    return icd.structure_decode(ans)
+
+
+def union_list_parallel(
+    G: Sequence[graphs.graph],
+    selections,
+    topo,
+    config: configs.mapper_config = None,
+    max_depth=None,
+    reference=None,
+    sort=True,
+    executor=None,
+    icd = None,
+    verbose=True
+) -> graphs.structure:
+    procs = configs.processors
+
+
+    if len(selections) == 1:
+        # return graphs.structure_copy(A[0])
+        i = selections[0][0]
+        sel = selections[0][1]
+        if icd:
+            g = graphs.graph_to_structure(icd.graph_decode(G[i]), sel, topo)
+        else:
+            g = graphs.graph_to_structure(G[i], sel, topo)
+        return g
+
+    # icd = None
+
+    # if icd:
+    #     print(f"{datetime.datetime.now()} Writing structures to disk...")
+    #     adb = db.db_dict(icd, "A.db")
+    #     adb.write_structure({i:a for i, a in enumerate(A)})
+    #     union_ctx.A = adb
+    # else:
+    union_ctx.A = G, selections
+    union_ctx.icd = icd
+
+    if reference is None:
+        reference = graphs.graph_to_structure(icd.graph_decode(G[selections[0][0]]), selections[0][1], topo)
+        # union_ctx.reference = graphs.graph_to_structure(icd.graph_decode(G[selections[0]]))
+    union_ctx.reference = reference
+    union_ctx.result = None
+    union_ctx.topology = topo
+    union_ctx.config = config
+    union_ctx.max_depth = max_depth
+
+    indices = list(range(len(selections)))
+    procs = min(os.cpu_count(), len(indices))
+    procs = min(procs, configs.processors)
+
     work = []
 
-    print(timestamp(), f"Union merging={len(indices)}")
+    if verbose:
+        print(timestamp(), f"Union merging={len(indices)}")
     while len(indices) > 1:
         # print(timestamp(), f"Initializing pool")
         with multiprocessing.pool.Pool(processes=procs) as pool:
@@ -2018,7 +2177,8 @@ def union_list_parallel(
 
         # print(timestamp(), f"Done")
         indices = list(range(len(work)))
-        print(timestamp(), f"Union merging={len(indices)}")
+        if verbose:
+            print(timestamp(), f"Union merging={len(indices)}")
         if len(indices) // procs < 2:
             procs = max(1, procs // 2)
     # print()
