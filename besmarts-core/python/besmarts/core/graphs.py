@@ -310,7 +310,20 @@ def graph_copy(beg: graph) -> graph:
     return g
 
 def graph_same(g: graph, h: graph) -> bool:
+    """
+    Compare two graphs for equality.
 
+    This function compares the nodes and edges of two graphs for equality.
+    Nodes and edges must satisfy the following conditions:
+
+    1. The nodes and edges must have the same keys.
+    2. These keys must map to the same atom/edge primitives.
+
+    While the node indices must map to the same primitives,
+    and therefore the order of atoms in each graph must be the same,
+    the order of the node key itself in the ``graph`` structure can differ.
+
+    """
     if set(g.nodes).symmetric_difference(h.nodes):
         return False
     if set(g.edges).symmetric_difference(h.edges):
