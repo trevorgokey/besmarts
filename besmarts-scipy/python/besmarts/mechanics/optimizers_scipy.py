@@ -461,8 +461,8 @@ def run_objective(x, ref, results, h, verbose=False, shm=None):
 
     ret = x.compute_diff(ref, results[0], verbose=verbose)
     dx = ret.value
-    x2 = x.scale*arrays.array_inner_product(dx,dx)
-    
+    x2 = x.scale*arrays.array_inner_product(dx, dx)
+
     # if ret.out and verbose:
     #     logs.dprint(ret.out, on=verbose)
     # if ret.err:
@@ -497,8 +497,6 @@ def run_objective(x, ref, results, h, verbose=False, shm=None):
         else:
             grady[j] += dx2dp
 
-
-
     sym = ""
     if x.include:
         sym = "X2"
@@ -511,7 +509,12 @@ def run_objective(x, ref, results, h, verbose=False, shm=None):
         gnorm = arrays.array_inner_product(grady, grady)**.5
         hnorm = 0
 
-    output = f">> S= {x.scale: 14.6f} {sym}= {x2: 14.6e} |g|= {gnorm: 14.6e} |h|= {hnorm:14.6e}"
+    output = (
+        f">> S= {x.scale: 14.6f} " +
+        f"{sym}= {x2: 14.6e} " +
+        f"|g|= {gnorm: 14.6e} " +
+        f"|h|= {hnorm:14.6e}"
+    )
     ret.out.append(output)
     return returns.success((X, gradx, hessx, Y, grady), out=ret.out)
 
@@ -525,7 +528,20 @@ def fit_gdb(args, keys, csys, gdb, obj, psysref=None, reuse=None, ws=None):
 
     return X
 
-def fit_grad_gdb(args, keys, csys, gdb, obj, priors, penalties=None, history=None, psysref=None, reuse=None, ws=None, verbose=False):
+def fit_grad_gdb(
+    args,
+    keys,
+    csys,
+    gdb,
+    obj,
+    priors,
+    penalties=None,
+    history=None,
+    psysref=None,
+    reuse=None,
+    ws=None,
+    verbose=False
+):
 
     if history is None:
         history = []
