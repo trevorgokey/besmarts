@@ -496,7 +496,7 @@ def jacobian2_reshape_to_matrix(b2):
     """
     c2 = []
     for a in b2:
-        for i in range(3): 
+        for i in range(3):
             c2.append([x for xyz in a for x in xyz[3*i:3*i+3]])
     return c2
 
