@@ -582,10 +582,13 @@ def chemical_system_groupby_names(
             lbl = ic_terms['k']
             if names and lbl not in names:
                 continue
-            x = measure[ic][0]
-            if lbl not in kv:
-                kv[lbl] = []
-            kv[lbl].extend(x)
+            if ic not in measure:
+                print("Warning, key {ic} did not have data (linear torsion?). Skipping.")
+            else:
+                x = measure[ic][0]
+                if lbl not in kv:
+                    kv[lbl] = []
+                kv[lbl].extend(x)
     return kv
 
 
