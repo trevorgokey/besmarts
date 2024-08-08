@@ -2,14 +2,12 @@
 besmarts.core.splits
 
 Chemical perception in SMARTS. Functions to find numerical splits based on
-bit iteration, and analytical splits based on a predefined partitioning. 
+bit iteration, and analytical splits based on a predefined partitioning.
 """
 
 import array
-import pprint
-import time
+import os
 import itertools
-import threading
 import math
 from typing import List, Set, Tuple, Sequence
 import multiprocessing.pool
@@ -18,8 +16,6 @@ import datetime
 
 from besmarts.core.topology import structure_topology
 from besmarts.core.graphs import (
-    structure_remove_unselected,
-    graph,
     subgraph,
     structure,
 )
@@ -77,13 +73,6 @@ class process_split_ctx:
 
 
 def process_split_matches_distributed(Sj, indices, shm=None):
-    # A = shm.A
-    # matches = arrays.bitvec(maxbits=len(A))
-    # for i, ai in enumerate(A):
-    #     matches[i] = mapper.mapper_match(ai, Sj)
-    # return matches
-    # print(f"My indices are {indices} N={len(indices)} and A is {len(A)} elements")
-    # t0 = time.perf_counter()
 
     # try to send back the minimum amount of data
 
@@ -127,6 +116,29 @@ def split_all_partitions(
     Find a shard that induces the given partition in a sequence of fragments.
     Up to two shards can be found; one will match everything in the specified
     partition, and the other will match the fragments not in the partition.
+
+    Parameters
+    ----------
+    topology: structure_topology
+        The topology of the structures to split
+    perception: smarts_perception_config
+        The settings that control the search depth
+    fragments: List[subgraph]
+        The list of subgraphs that are the target of splitting
+    assignments: List[str]
+        The label for each subgraph. The function will try to create partitions
+        that group these labels together
+    gcd: graph_codec
+        A graph codec
+    maxmoves: int
+        The number of subgraphs that we can allow to move around to arrive at
+        a solution
+
+    Returns
+    -------
+    A return_value containing pairs of structures and indices of the subgraphs
+    that belong to the structures. The structures are the SMARTS that cluster
+    the subgraphs..
     """
 
     lbls = []
@@ -1474,7 +1486,7 @@ def split_subgraphs_distributed(
         offsets[i] = idx_offset
 
     addr = ("", 0)
-    if len(iterable) <= nproc*3:
+    if len(iterable) <= nproc:
         addr = ('127.0.0.1', 0)
         nproc = len(iterable)
 
@@ -1489,6 +1501,7 @@ def split_subgraphs_distributed(
     sma_visited = set()
     k = 0
     n = 0
+    chunksize = nproc
     while len(completed) < len(iterable):
         Bn = n_ops * (
             math.factorial(len(single_bits))
@@ -1502,7 +1515,7 @@ def split_subgraphs_distributed(
             if idx not in completed
         }
         for batch in arrays.batched(unfinished.items(), 100000):
-            for chunk in arrays.batched(batch, 100):
+            for chunk in arrays.batched(batch, 20):
                 tasks = {}
                 for idx, unit in chunk:
                     if idx % n_ops:
