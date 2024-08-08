@@ -358,7 +358,7 @@ def structure_hierarchy_add_hierarchy(
     rootB: trees.tree_node,
     index=None,
 ):
-    node = trees.tree_node(0, "", "", rootB.name)
+    node = trees.tree_node(0, rootB.category, rootB.type, rootB.name)
     # hent.key = rootB.key
     node = sA.index.node_add(rootA.index, node, index=index)
     sA.subgraphs[node.index] = graphs.subgraph_copy(sB.subgraphs[rootB.index])
@@ -371,7 +371,7 @@ def structure_hierarchy_add_hierarchy(
         up = mapping[sB.index.above[ei]]
 
         node = trees.tree_index_node_add(
-            sA.index, up, trees.tree_node(None, "", "", eb.name)
+            sA.index, up, trees.tree_node(None, eb.category, eb.type, eb.name)
         )
         ni = node.index
         sA.subgraphs[node.index] = graphs.subgraph_copy(sB.subgraphs[eb.index])
