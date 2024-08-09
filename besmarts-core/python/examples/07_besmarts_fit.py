@@ -107,7 +107,7 @@ def make() -> dict[str, list[dict[int, str]]]:
     The key is its SMILES string. The value is a list with one dictionary.
     The dictionary keys are essentially
     integer enum values for property types,
-    where the integer value represents the index of the property in a
+    where the integer value represents the table index (tid) of the property in a
     :class:`besmarts.core.assignments.graph_db_entry`.
     """
 
@@ -135,46 +135,62 @@ def new_gdb(f: Dict[str, List[Dict[int, str]]]) -> assignments.graph_db:
     gcd = codec_rdkit.graph_codec_rdkit()
     gdb = assignments.graph_db()
 
-    for smi, fn_dict in f.items():
+    for smi, fn_list_of_dicts in f.items():
         # create a graph and add it to the graph_db
         g: graphs.graph = gcd.smiles_decode(smi)
-        gid: int = assignments.graph_db_add_graph(gdb, smi, g)
+        # molecule_graph_id is the graph ID of the graph in the graph_db
+        molecule_graph_id: int = assignments.graph_db_add_graph(gdb, smi, g)
 
-        # start empty graph_db_entry
+        # start empty graph_db_entry that will contain
+        # positions, gradients, and energies
         gde = assignments.graph_db_entry()
         gdb.entries[len(gdb.entries)] = gde
-        for rdata in fn_dict:
-            tid = assignments.POSITIONS
-            gdt = assignments.graph_db_table(topology.atom)
-            gdg = assignments.graph_db_graph()
-            gdt.graphs[gid] = gdg
-            fn = rdata[tid]
-            # indices=dict(sorted([(j, x) for j, x in enumerate(g.nodes, 1)], key=lambda x: x[1]))
-            indices = None
-            gdr = load_xyz([fn], indices=indices)
-            gdg.rows[0] = gdr
-            gde.tables[tid] = gdt
-            tid = assignments.GRADIENTS
-            if tid in rdata:
-                gdt = assignments.graph_db_table(topology.atom)
-                gdg = assignments.graph_db_graph()
-                gdt.graphs[gid] = gdg
-                fn = rdata[tid]
-                # indices=dict(sorted([(j, x) for j, x in enumerate(g.nodes)], key=lambda x: x[1]))
-                gdr = load_xyz([fn], indices=indices)
-                gdg.rows[0] = gdr
-                gde.tables[tid] = gdt
-                gx = [x for y in gdr[0].selections.values() for x in y]
-                gdt.values.extend(gx)
-            tid = assignments.ENERGY
-            if tid in rdata:
-                gdt = assignments.graph_db_table(topology.null)
-                fn = rdata[tid]
-                ene = [*map(float,
-                    [x for x in open(fn).read().split('\n') if x]
-                )]
-                gdt.values.extend(ene)
-                gde.tables[tid] = gdt
+        for rdata_dict in fn_list_of_dicts:
+            # === first add positions ===
+            positions_index: int = assignments.POSITIONS  # the index of the POSITIONS property in a graph_db_entry
+            # create new empty data table
+            positions_gdt = assignments.graph_db_table(topology.atom)
+            # create empty graph_db_graph. This holds data associated with a set of graphs
+            positions_gdg = assignments.graph_db_graph()
+            # add the graph_db_graph to the table of positions data
+            positions_gdt.graphs[molecule_graph_id] = positions_gdg
+            # read the positions xyz data from the dictionary
+            positions_gdr: graphs.graph_db_row = load_xyz([rdata_dict[positions_index]])
+            # add the positions data to the graph_db_graph
+            positions_gdg.rows[0] = positions_gdr
+            # add the table to the graph_db_entry
+            gde.tables[positions_index] = positions_gdt
+            
+            # === check if gradient data is in the dictionary ===
+            gradient_index: int = assignments.GRADIENTS
+            if gradient_index in rdata_dict:
+                gradient_gdt = assignments.graph_db_table(topology.atom)
+                gradient_gdg = assignments.graph_db_graph()
+                gradient_gdt.graphs[molecule_graph_id] = gradient_gdg
+                gradient_gdr = load_xyz([rdata_dict[gradient_index]])
+                gradient_gdg.rows[0] = gradient_gdr
+                gde.tables[gradient_index] = gradient_gdt
+                gradient_graph_db_column = gradient_gdr[0]
+                flat_values: list[float] = [
+                    gradient
+                    for gradient_list in gradient_graph_db_column.selections.values()
+                    for gradient in gradient_list
+                ]
+                gradient_gdt.values.extend(flat_values)
+
+            # === check if energy data is in the dictionary ===
+            energy_index: int = assignments.ENERGY
+            if energy_index in rdata_dict:
+                energy_gdt = assignments.graph_db_table(topology.null)
+                energy_data_file = rdata_dict[energy_index]
+                # assume energy data is a file path
+                with open(energy_data_file, 'r') as f:
+                    energy_data = f.read().split("\n")
+                # assume energy data is a list of floats with one energy per line
+                energy_values = [*map(float, [x for x in energy_data if x])]
+                energy_gdt.values.extend(energy_values)
+                gde.tables[energy_index] = energy_gdt
+
     return gdb
 
 

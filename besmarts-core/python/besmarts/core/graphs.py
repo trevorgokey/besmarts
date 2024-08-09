@@ -45,7 +45,13 @@ class graph:
 
     def __hash__(self) -> int:
         """
-        Return the hash
+        Return the hash.
+        The hash is generated using the sorted
+        nodes and edges of the graph, so the hash should be invariant to
+        node and edge order.
+
+        After being initially generated, the hash is cached for future use.
+
 
         Parameters
         ----------
