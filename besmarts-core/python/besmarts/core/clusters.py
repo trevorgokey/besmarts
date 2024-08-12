@@ -207,7 +207,8 @@ def find_successful_candidates_distributed(S, Sj, operation, edits, shm=None):
         # print(datetime.datetime.now(), '*** 8')
         groups = clustering_build_ordinal_mappings(cst, sag, [S.name, hent.name])
         obj = 0.0
-        obj = objective.merge(groups[S.name], groups[hent.name], overlap=edits)
+        if S.name in groups and hent.name in groups:
+            obj = objective.merge(groups[S.name], groups[hent.name], overlap=edits)
         trees.tree_index_node_remove(hidx.index, Sj.index)
         # print(datetime.datetime.now(), '*** 9')
         new_assignments = labeler.assign(hidx, gcd, smiles, topo)
@@ -220,9 +221,14 @@ def find_successful_candidates_distributed(S, Sj, operation, edits, shm=None):
         # cst.hierarchy.subgraphs.pop(hent.index)
         # cst.hierarchy.smarts.pop(hent.index)
         # sma = Sj_sma[cnd_i-1]
-        keep = obj < 0 or len(groups[hent.name]) == 0
-
-        match_len = len(cst.mappings[S.name])
+        keep = (
+            obj < 0
+            or hent.name in groups and len(groups[hent.name]) == 0
+        )
+        if S.name in cst.mappings:
+            match_len = len(cst.mappings[S.name])
+        else:
+            keep = False
 
         return keep, X, obj, match_len
     else:
