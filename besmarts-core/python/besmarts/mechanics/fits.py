@@ -352,15 +352,15 @@ class compute_config_hessian(compute_config):
                     )
 
                     hx = []
-                    for row in hess_mm:
+                    for i, row in enumerate(hess_mm):
                         hx.append(arrays.array_scale(row, 1/4.184))
                     tbl_hess.values.extend(hx)
 
-                    grad_mm = optimizers_openmm.physical_system_gradient_openmm(
+                    gx = optimizers_openmm.physical_system_gradient_openmm(
                         psys,
                         csys
                     )
-                    gx = arrays.array_scale(grad_mm, 1/4.184)
+                    gx = arrays.array_scale(gx, 1/4.184)
                     tbl_grad.values.extend(gx)
 
                 r = {
@@ -368,6 +368,8 @@ class compute_config_hessian(compute_config):
                     HESSIANS: tbl_hess,
                     GRADIENTS: tbl_grad
                 }
+                if not self.enable_minimization:
+                    r.pop(POSITIONS)
 
                 results.append(r)
             all_results.append(results)
@@ -848,7 +850,7 @@ class objective_config_hessian(objective_config):
 
         out = []
         X = []
-        for gde, tbls  in zip(GDB.entries.values(), D):
+        for (eid, gde), tbls  in zip(GDB.entries.items(), D):
 
             gid = list(gde.tables[assignments.POSITIONS].graphs)[0]
             g = GDB.graphs[gid]
@@ -941,7 +943,7 @@ class objective_config_hessian(objective_config):
 
             nlines = len(out)
             mae = [abs(xi) for xi in x]
-            out.append("\nComputed Hessian Frequencies (cm-1):")
+            out.append(f"\nEID {eid} Computed Hessian Frequencies (cm-1):")
             for i, (f1, f0) in enumerate(zip(x1, x0), 1):
                 out.append(f"     {i:4d} MM: {f1: 8.1f} QM: {f0:8.1f} Diff: {f1-f0:8.1f}")
             out.append("          ----------------------------------------")
@@ -949,9 +951,9 @@ class objective_config_hessian(objective_config):
             out.append(f"     MAE  MM: {sum(x1)/N: 8.1f} QM: {sum(x0)/N:8.1f} Diff: {sum(mae)/N:8.1f}")
             out.append(f"Int. SAE  MM: {sum(x1[6:]): 8.1f} QM: {sum(x0):8.1f} Diff: {sum(mae):8.1f}")
             out.append(f"Int. MAE  MM: {sum(x1[6:])/(N-6): 8.1f} QM: {sum(x0[6:])/(N-6):8.1f} Diff: {sum(mae[6:])/(N-6):8.1f}")
-            if verbose:
-                for i in range(len(out) - nlines):
-                    print(out[i])
+            # if verbose:
+            #     for i in range(len(out) - nlines):
+            #         print(out[i])
             X.extend(x)
 
         return returns.success(arrays.array_round(X, PRECISION), out=out, err=[])
@@ -3861,7 +3863,7 @@ def chemical_system_cluster_angles(csys: mm.chemical_system, gdb, sep=0.01):
 def chemical_system_cluster_bonds(csys: mm.chemical_system, gdb, sep=0.001):
     return chemical_system_cluster_geom(csys, gdb, sep, topology.bond)
 
-def smiles_assignment_force_constants(gdb, alpha=-.25, guess_periodicity=True, max_n=3, min_dihedral_k=100, max_dihedral_k=100):
+def smiles_assignment_force_constants(gdb, alpha=-.25, guess_periodicity=True, max_n=3, min_dihedral_k=1e-3, max_dihedral_k=100):
 
     sag_map = {
         "bond_k": [],
@@ -4002,7 +4004,7 @@ def smiles_assignment_force_constants(gdb, alpha=-.25, guess_periodicity=True, m
                             row.append(x)
                         A.append(row)
                     new_k_lst = np.linalg.solve(A, b)
-                    # print("Calculated", new_k_lst)
+                    print("Calculated", new_k_lst)
                 else:
                     new_k_lst = [0 for _ in csys_n]
                 # at this point we have our new_n and new_p; project onto npk0
@@ -4056,6 +4058,7 @@ def smiles_assignment_force_constants(gdb, alpha=-.25, guess_periodicity=True, m
             sel_n[angle_ic] = new_n
             sel_p[angle_ic] = new_p
             sel_k[angle_ic] = new_k
+            print("Calculated final", new_n, new_k, new_p)
 
         for ic in graphs.graph_torsions(pos.graph):
             if ic not in sel_k:
