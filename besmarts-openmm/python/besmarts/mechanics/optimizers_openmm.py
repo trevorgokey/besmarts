@@ -159,9 +159,11 @@ def physical_system_gradient_openmm(psys, csys):
 
 def physical_system_hessian_openmm(psys, csys, h=1e-4):
 
+    # pos = optimize_positions_openmm(csys, psys, tol=1e-6)
+    pos = psys.models[0].positions[0]
+
     sim = physical_system_to_openmm_system(psys)
 
-    pos = psys.models[0].positions[0]
     atom_map = {i: j for j, i in enumerate(pos.graph.nodes)}
 
     xyz = []
@@ -253,7 +255,8 @@ def physical_system_hessian_openmm(psys, csys, h=1e-4):
 
             row[j] = round(e, 12)
 
-        hess.append(arrays.array_scale(row, scale))
+        row = list(arrays.array_scale(row, scale))
+        hess.append(row)
 
     for i in range(0, N):
         for j in range(i, N):
