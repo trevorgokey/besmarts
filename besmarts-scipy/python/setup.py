@@ -15,7 +15,11 @@ setuptools.setup(
     url='https://github.com/trevorgokey/besmarts',
     long_description=long_description,
     long_description_content_type="text/markdown",
-    packages=['besmarts'],
+    packages=[
+        'besmarts',
+        'besmarts.core',
+        'besmarts.mechanics',
+    ],
     install_requires=requirements,
     classifiers=[
         'Programming Language :: Python :: 3.6',
