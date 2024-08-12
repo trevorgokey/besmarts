@@ -58,7 +58,7 @@ xyz_grad = """11
 """
 
 
-def load_xyz(flist: list[str], indices=Optional[list[int]]) -> assignments.graph_db_row:
+def load_xyz(flist: list[str], indices: Optional[list[int]] = None) -> assignments.graph_db_row:
     """
     Convert a list of xyz strings into a graph_db_row.
     A graph_db_row is a collection of graph_db_columns, each of which
@@ -204,21 +204,53 @@ def run():
     """
 
     # 1 Build the dataset and FF
-    d = make()
-    csys = load_sage_csys()
-    gdb = new_gdb(d)
-    psys = fits.gdb_to_physical_systems(gdb, csys)
+    example_training_data: dict[str, list[dict]] = make()
+
+    # load the Sage SMIRNOFF force field into a
+    # ``molecular_mechanics.chemical_system``.
+    #  The ``chemical_system`` has the following models in order:
+    # bonds, angles, torsions, outofplanes, electrostatics, vdw.
+    # Each model is an instance of ``molecular_mechanics.chemical_model``.
+    csys: mm.chemical_system = load_sage_csys()
+    gdb: assignments.graph_db = new_gdb(example_training_data)
+
+    # set up the physical systems
+    # a molecular_mechanics.physical_system is a collection of
+    # ``molecular_mechanics.physical_model`` objects.
+    # A physical model is the functional form that can be evaluated
+    # as a function of positions
+    psys_dict: dict[int, mm.physical_system] = fits.gdb_to_physical_systems(
+        gdb, csys
+    )
 
     # 1 Configure the fitting strategy
+    # models should be a dictionary where the keys are the indices
+    # of each ``molecular_mechanics.chemical_model`` object
+    # in the ``csys``. Therefore,
+    # the 0 index here refers to the bond model.
+    # if we wanted to train an angle, we would need
+    # to set the key to 1.
     models = {0: ["b4"]}
-    strat = fits.forcefield_optimization_strategy_default(csys, models=models)
-    co = fits.chemical_objective
+
+    # this sets up the default optimization strategy for the fit.
+    # It uses the ``models`` dictionary to determine which models
+    # to fit in the ``csys.models`` list.
+    # default settings are also applied to splitting, extending, perception
+    # configs etc.
+    strategy = fits.forcefield_optimization_strategy_default(
+        csys, models=models
+    )
+    chemical_objective_function = fits.chemical_objective
 
     # 2. Configure the objective tiers
     final = fits.objective_tier()
+    # set the objectives for the final tier
+    # each value is an ``objective_config``
     final.objectives = {
         0: fits.objective_config_position(
                 assignments.graph_db_address(
+                    # eid stands for entry ID
+                    # here it's set to 0 for the first molecule
                     eid=[0],
                 ),
                 scale=1
@@ -231,48 +263,52 @@ def run():
         ),
     }
 
-    fit_models = [0]
+    fit_models = [0]  # 0 here indicates bonds
     final.fit_models = fit_models
-    final.fit_symbols = ["l"]
+    final.fit_symbols = ["l"]  # l indicates equilibrium length
 
     onestep = fits.objective_tier()
+    # set same objectives as final tier
     onestep.objectives = final.objectives
+    # only do two fitting steps
     onestep.step_limit = 2
+    # the top 3 candidates will be passed to the final tier
     onestep.accept = 3
 
+    # fit the same models, symbols as the final tier
     onestep.fit_models = fit_models
     onestep.fit_symbols = ["l"]
     tiers = [onestep]
 
     initial = final
 
-    kv0 = mm.chemical_system_iter_keys(csys)
+    # get a flat mapping of parameter keys and values
+    # this gets the original values we can compare to later
+    original_values: dict = mm.chemical_system_iter_keys(csys)
 
     # 4. Optimize
     newcsys, (P0, P), (C0, C) = fits.ff_optimize(
         csys,
         gdb,
-        psys,
-        strat,
-        co,
+        psys_dict,
+        strategy,
+        chemical_objective_function,
         initial,
         tiers,
         final
     )
 
-
-
     print("Modified parameters:")
-    kv = mm.chemical_system_iter_keys(newcsys)
-    for k, v in kv.items():
-        v0 = kv0.get(k)
+    new_values = mm.chemical_system_iter_keys(newcsys)
+    for k, v in new_values.items():
+        v0 = original_values.get(k)
         param_line = f"{str(k):20s} | New: {v:12.6g}"
-        if v0 is not None:
+        if v0 is not None: # if parameter is present in new FF, print difference
             dv = v-v0
             if abs(dv) < 1e-7:
-                continue
+                continue # if parameter hasn't changed, don't print
             line = param_line + f" Ref {v0:12.6g} Diff {dv:12.6g}"
-        else:
+        else: # if parameter has disappeared
             line = param_line
         print(line)
 
@@ -288,6 +324,11 @@ def run():
         f"Physical {100*(P-P0)/P0:14.2f}%",
         f"Chemical {100*(C-C0)/C0:14.2f}%"
     )
+
+    # write out the final force field
+    smirnoff_models.smirnoff_write_version_0p3(newcsys, "sage_2.1_refit.offxml")
+
+
 xml = """<?xml version="1.0" encoding="utf-8"?>
 <SMIRNOFF version="0.3" aromaticity_model="AROMATICITY_MDL">
     <Constraints version="0.3">
@@ -665,7 +706,7 @@ xml = """<?xml version="1.0" encoding="utf-8"?>
     <ToolkitAM1BCC version="0.3"></ToolkitAM1BCC>
 </SMIRNOFF>"""
 
-def load_sage_csys():
+def load_sage_csys() -> mm.chemical_system:
     """
     Load the OpenFF Sage 2.1 force field
     """

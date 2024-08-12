@@ -459,7 +459,30 @@ class forcefield:
         self.perception: perception.perception_model = pcp_model
 
 
-def chemical_system_iter_keys(csys):
+def chemical_system_iter_keys(
+    csys: chemical_system
+) -> dict[tuple[int, str, int], Any]:
+    """
+    Generate a flat mapping of keys and values of the system terms
+    in the chemical system.
+
+    Parameters
+    ----------
+    csys: :class:`chemical_system`
+
+    Returns
+    -------
+    dict[tuple[int, str, int], system_term]
+        The mapping of keys to system terms.
+        Each key is a tuple of three elements:
+        the model index (integer),
+        the term symbol (string),
+        the value index (integer).
+        Each value is the actual value of the term.
+        The type of each value can be found by looking up the
+        term in csys with
+        `csys.models[model_index].system_terms[term_symbol].cast`.
+    """
     kv = {}
     for m, cm in enumerate(csys.models):
         for t in cm.system_terms:
