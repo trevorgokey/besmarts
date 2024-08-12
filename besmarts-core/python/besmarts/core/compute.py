@@ -435,139 +435,30 @@ class Server(managers.Server):
         idx = 0
         while True:
             # threads = [x for x in threads if x.is_alive()]
-            if True:
-                try:
-                    # print("LISTENING")
-                    # t0 = time.perf_counter()
-                    c = self.listener.accept()
-                    # t = time.perf_counter()
-                    # print(f"CONNECTION RECV time {t-t0:.6f}")
-                except OSError as e:
-                    # except Exception as e:
-                    # print(f"acceptor exception {type(e)} {e}")
-                    # print(
-                    #     f"Warning, there are {len(threads)} active connections, "
-                    #     f"waiting 10 seconds before accepting new connections."
-                    # )
-                    # time.sleep(10.0)
-                    continue
-                # if len(threads) > 600:
-                #     print(f"there are {len(threads)} active connections, waiting 2")
-                #     time.sleep(2)
-                # if len(threads) > 700:
-                #     print(f"there are {len(threads)} active connections, waiting 3")
-                #     time.sleep(3)
-                # if len(threads) > 800:
-                #     print(f"there are {len(threads)} active connections, waiting 4")
-                #     time.sleep(4)
-                # if len(threads) > 900:
-                #     print(f"there are {len(threads)} active connections, waiting 5")
-                #     time.sleep(5)
-                # self.handle_request(c)
-                t = threading.Thread(target=self.handle_request, args=(c,))
-                # pool.apply_async(self.handle_request, (c,))
-                t.daemon = True
-                try:
-                    t.start()
-                except RuntimeError:
-                    # possible on large jobs with many threads?
-                    continue
+            try:
+                # print("LISTENING")
+                # t0 = time.perf_counter()
+                c = self.listener.accept()
+                # t = time.perf_counter()
+                # print(f"CONNECTION RECV time {t-t0:.6f}")
+            except OSError as e:
+                # except Exception as e:
+                # print(f"acceptor exception {type(e)} {e}")
+                # print(
+                #     f"Warning, there are {len(threads)} active connections, "
+                #     f"waiting 10 seconds before accepting new connections."
+                # )
+                # time.sleep(10.0)
+                continue
 
-            else:
-                if len(recvs) < 32:
-                    new_out = []
-                    new_err = []
-                    new_conn = []
-                    new_t = threading.Thread(
-                        target=self.recv_request,
-                        args=(new_conn, new_out, new_err),
-                        name=f"recv_{idx}",
-                    )
-                    new_t.daemon = True
-                    new_t.start()
-                    recvs[idx] = (new_conn, new_t, new_out, new_err)
-                    idx += 1
+            t = threading.Thread(target=self.handle_request, args=(c,))
+            t.daemon = True
 
-                for i, (c, tr, out, err) in list(recvs.items()):
-                    if tr.is_alive():
-                        continue
-
-                    if not c:
-                        tr.join()
-                        del recvs[i]
-                        continue
-
-                    if err and not out:
-                        t = threading.Thread(
-                            target=self.send_request,
-                            args=(c[0], err[0]),
-                            name=f"senderr_{i}",
-                        )
-                        t.daemon = True
-                        t.start()
-                        sends[i] = (c, t, None, None)
-                    elif out:
-                        msg = []
-                        fn = out[0][0], out[0][1]
-
-                        new_pt = threading.Thread(
-                            target=self.run_request,
-                            args=(c[0], out[0], msg),
-                            name=f"run_{i}",
-                        )
-                        new_pt.daemon = True
-
-                        if fn not in procs:
-                            procs[fn] = []
-
-                        if len(procs[fn]) == 0:
-                            # print(f"STARTED RUN THREAD {i}")
-                            new_pt.start()
-                        else:
-                            new_pt.start()
-
-                        # print(f"APPEND RUN THREAD {i}")
-                        procs[fn].append((i, c, new_pt, msg))
-
-                        # t = threading.Thread(target=self.send_request, args=(c[0], out, []))
-                        # t.daemon = True
-                        # t.start()
-                    tr.join()
-                    del recvs[i]
-
-                for fn in procs:
-                    if len(procs[fn]) > 0:
-                        j, pc, pt, pmsg = procs[fn][0]
-                        # print(f"CHECKING RUN THREAD {j}, this fn has len={len(procs[fn])}")
-                        if not pt.is_alive():
-                            pt.join()
-                            procs[fn].pop(0)
-                            if pmsg:
-                                st = threading.Thread(
-                                    target=self.send_request,
-                                    args=(pc[0], pmsg[0]),
-                                    name=f"send_{j}",
-                                )
-                                st.daemon = True
-                                st.start()
-                                sends[j] = (pc, st, None, None)
-
-                            # if len(procs[fn]) > 0:
-                            #     procs[fn][0][2].start()
-
-                for i, (c, t, _, _) in list(sends.items()):
-                    if not t.is_alive():
-                        t.join()
-                        del sends[i]
-
-            # t = threading.Thread(target=self.handle_request, args=(c, out, err))
-            # pool.apply_async(self.handle_request, (c,))
-            # t.daemon = True
-            # print("TRYING TO JOIN....")
-            # t.start()
-            # threads.append(t)
-            # t.join(timeout=None)
-            # print("JOINED")
+            try:
+                t.start()
+            except RuntimeError:
+                # possible on large jobs with many threads?
+                continue
 
     def recv_request(self, conn, out, err):
         try:
@@ -1694,10 +1585,19 @@ class workspace_local(workspace):
         self.oqueue = myqueue()
         self.holding_remote = {}
         self.holding_remote_lock = threading.Lock()
+
+        self.remote_oqueue_size = 0
+        self.remote_oqueue_size_lock = threading.Lock()
+        self.remote_iqueue_size = 0
+        self.remote_iqueue_size_lock = threading.Lock()
+
         self.finished = 0
         self.finished_remote = 0
         self.mgr.register("get_iqueue", lambda: self.iqueue)
         self.mgr.register("get_oqueue", lambda: self.oqueue)
+
+        self.mgr.register("clear_iqueue", lambda: self.clear_iqueue)
+        self.mgr.register("clear_oqueue", lambda: self.clear_oqueue)
 
         self.mgr.register("get_state", lambda: self.state)
 
@@ -1771,29 +1671,48 @@ class workspace_local(workspace):
         register_process(self._mgr._process.pid)
 
     def reset(self):
+
+        self.gather_stop.set()
+        self.loadbalance_stop.set()
+        self.run_stop.set()
+
+        if self.loadbalance_thread:
+            self.loadbalance_thread.join()
+            self.loadbalance_thread = None
+        if self.gather_thread:
+            self.gather_thread.join()
+            self.gather_thread = None
+        if self.run_thread:
+            self.run_thread.join()
+            self.run_thread = None
+
         self.done.clear()
         self.gather_stop.clear()
         self.loadbalance_stop.clear()
         self.run_stop.clear()
 
-        self.iqueue = myqueue()
-        self.oqueue = myqueue()
+        self.iqueue.queue.clear()
+        self.oqueue.queue.clear()
 
         # print("Starting iqueue reference")
         self.remote_iqueue = self.mgr.get_iqueue()
+        self.mgr.clear_iqueue()
         # self.remote_iqueue._Client = Client
         # print("Starting oqueue reference")
         self.remote_oqueue = self.mgr.get_oqueue()
+        self.mgr.clear_oqueue()
         # self.remote_oqueue._Client = Client
 
         self.remote_oqueue_size = 0
-        self.remote_oqueue_size_lock = threading.Lock()
+        # self.remote_oqueue_size_lock = threading.Lock()
         self.remote_iqueue_size = 0
-        self.remote_iqueue_size_lock = threading.Lock()
+        # self.remote_iqueue_size_lock = threading.Lock()
 
         self.remote_state = self.mgr.get_state()
+        # self.set_status(workspace_status.RUNNING)
 
         if self.pool:
+            # self.pool._cache.clear()
             self.pool.close()
             self.pool.terminate()
             for p in self.pool._pool:
@@ -1835,10 +1754,6 @@ class workspace_local(workspace):
             # print("Starting loadbalance thread...")
             self.loadbalance_thread.start()
 
-    def close(self):
-        t = threading.Thread(target=self.close_thread)
-        t.start()
-        return t
 
     def close(self):
         try:
@@ -1886,8 +1801,14 @@ class workspace_local(workspace):
     def get_iqueue(self):
         return self.iqueue
 
+    def clear_iqueue(self):
+        self.iqueue.queue.clear()
+
     def get_oqueue(self):
         return self.oqueue
+
+    def clear_oqueue(self):
+        self.oqueue.queue.clear()
 
     def get_state(self):
         return self.state
@@ -2384,6 +2305,8 @@ def workqueue_push_workspace(wq: workqueue_local, ws: workspace):
 def workspace_local_run_thread(ws: workspace_local):
     thread_name_set("run")
 
+    # import tracemalloc
+
     verbose = False
     functions = {}
     put_back = {}
@@ -2402,12 +2325,13 @@ def workspace_local_run_thread(ws: workspace_local):
     if ws.shm.procs_per_task > 0:
         ntasks = max(1, ws.nproc // ws.shm.procs_per_task)
 
+    # pool = ws.pool
 
-    pool = ws.pool
-
-    if pool is None:
+    if ws.pool is None:
         print("WARNING POOL IS NONE")
         return
+
+    # snap1 = tracemalloc.take_snapshot()
 
     logs.dprint("workspace_local_run_thread: Entering run loop", on=verbose)
     try:
@@ -2430,7 +2354,7 @@ def workspace_local_run_thread(ws: workspace_local):
             except queue.Empty:
                 # print(f"\nworkspace_local_run_thread: LOCAL EMPTY")
                 pass
-            except Exception:
+            except Exception as e:
                 # qsize can fail
                 print(f"\nworkspace_local_run_thread: Exception {type(e)} {e}")
                 continue
@@ -2499,7 +2423,7 @@ def workspace_local_run_thread(ws: workspace_local):
                         # print("local_n = ", local_n, "remote_n:", remote_n)
                         # print("LOCAL SUBMIT?", local_submit)
                         if local_submit and idx not in ws.holding:
-                            # print(f"{datetime.now()} Pushing job {idx} to local q")
+                            logs.dprint(f"{datetime.now()} Pushing job {idx} to local q", on=verbose)
                             ws.holding.add(idx)
                             # work.append(
                             #     (
@@ -2511,7 +2435,9 @@ def workspace_local_run_thread(ws: workspace_local):
                             # )
                             new_idx[idx] = distfun, ws.mgr.address
                     if new_idx:
-                        work.append((tuple(new_idx), pool.starmap_async(workspace_run, new_idx.values())))
+                        work.append((tuple(new_idx), ws.pool.starmap_async(workspace_run, new_idx.values())))
+                        for idx in new_idx:
+                            functions.pop(idx)
 
                 else:
                     remote_put = {
@@ -2541,7 +2467,7 @@ def workspace_local_run_thread(ws: workspace_local):
                                         work.append(
                                             (
                                                 idx,
-                                                pool.apply_async(
+                                                ws.pool.apply_async(
                                                     workspace_run,
                                                     (distfun,),
                                                     {"workspace_address": ws.mgr.address},
@@ -2549,7 +2475,6 @@ def workspace_local_run_thread(ws: workspace_local):
                                             )
                                         )
                                         ws.holding.add(idx)
-
             if work:
                 drop.clear()
                 finished = 0
@@ -2573,6 +2498,9 @@ def workspace_local_run_thread(ws: workspace_local):
                                     ws.holding_remote.pop(idxi)
                             ws.oqueue.put({idxi: res}, block=False)
                             # print(f"Unit {idxi} is done")
+                        result = None
+                        unit = None
+                        idx = None
 
                 working = [x for i, x in enumerate(work) if i not in drop]
                 ws.finished += finished
@@ -2588,6 +2516,13 @@ def workspace_local_run_thread(ws: workspace_local):
             dt = t1 - t0
             if dt < 0.1:
                 time.sleep(0.1 - dt)
+            # snap2 = tracemalloc.take_snapshot()
+            # stats = snap2.compare_to(snap1, 'traceback')
+            # print("After one iter of thread run")
+            # for stat in stats[:1]:
+            #     print(stat)
+                # for line in stat.traceback[1:]:
+                #     print("   ", line)
 
     except BrokenPipeError as e:
         print(f"Warning, BrokenPipeError {e}")
@@ -2601,7 +2536,6 @@ def workspace_local_run(ws: workspace_local):
     Take jobs from the input queue and distribute to the processing queues,
     which can be a (low latency) local pool or a (high latency) manager
     """
-    ws.set_status(workspace_status.RUNNING)
     t = threading.Thread(target=workspace_local_run_thread, args=(ws,))
     t.start()
     return t
@@ -2652,7 +2586,7 @@ def workspace_submit_and_flush(
     return results
 
 
-def workspace_flush(ws: workspace_local, indices, timeout: float = TIMEOUT, verbose=True):
+def workspace_flush(ws: workspace_local, indices, timeout: float = TIMEOUT, maxwait=None, verbose=True):
     if len(indices) == 0:
         return {}
     results = {}
@@ -2761,7 +2695,7 @@ def workspace_flush(ws: workspace_local, indices, timeout: float = TIMEOUT, verb
         if len(indices.difference(results)) == 0:
             break
 
-        packets = queue_get_nowait(oq, timeout=5.0, n=1000)
+        packets = queue_get_nowait(oq, timeout=1.0, n=100)
         if (packets is None or len(packets) == 0) and not (
             ws.holding or iqsize or oqsize
         ):
@@ -2780,6 +2714,8 @@ def workspace_flush(ws: workspace_local, indices, timeout: float = TIMEOUT, verb
             for packet in packets:
                 # print(f"    packet is type {type(packet)}")
                 results.update({k: v for k, v in packet.items() if k in indices})
+                # otherwork = {k: v for k, v in packet.items() if k not in indices}
+                # ws.oqueue.put(otherwork, block=True)
                 for idx in packet:
                     at_least_one = True
                     waited = False
@@ -2788,6 +2724,9 @@ def workspace_flush(ws: workspace_local, indices, timeout: float = TIMEOUT, verb
                     with ws.holding_remote_lock:
                         if idx in ws.holding_remote:
                             ws.holding_remote.pop(idx)
+
+        if maxwait is not None and time.monotonic() - t0 >= maxwait:
+            break
 
         t01 = time.perf_counter()
         dt = t01 - t00
