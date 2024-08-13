@@ -23,6 +23,7 @@ from besmarts.mechanics import optimizers_openmm
 from besmarts.core import assignments
 from besmarts.perception import perception_rdkit
 
+# Load the RDKit perception model
 pcp = perception_rdkit.perception_model_rdkit()
 
 # The molecule definition
@@ -40,7 +41,7 @@ H   2.86486  0.65667  0.76142"""
 
 # The force field
 xml = """<?xml version="1.0" encoding="utf-8"?>
-<SMIRNOFF version="0.3" aromaticity_model="MDL">
+<SMIRNOFF version="0.3" aromaticity_model="AROMATICITY_MDL">
     <Bonds version="0.4" potential="harmonic" fractional_bondorder_method="AM1-Wiberg" fractional_bondorder_interpolation="linear">
         <Bond smirks="[#6X4:1]-[#6X4:2]" id="b1" length="1.527940216866 * angstrom" k="419.9869268191 * angstrom**-2 * mole**-1 * kilocalorie"></Bond>
         <Bond smirks="[#6X4:1]-[#1:2]" id="b84" length="1.090139506109 * angstrom" k="719.6424928981 * angstrom**-2 * mole**-1 * kilocalorie"></Bond>
@@ -79,6 +80,7 @@ psys = mm.chemical_system_to_physical_system(csys, [pos])
 
 # optimize
 t = time.perf_counter_ns()
+# Set this to 1 to use OpenMM
 if 0:
     print("Minimizing ethane with SciPy")
     minpos = optimizers_scipy.optimize_positions_scipy(csys, psys)
@@ -91,8 +93,8 @@ t = time.perf_counter_ns() - t
 
 print(f"Energy: {energy:.8f} kJ/mol. Elapsed: {t*1e-9:.4f} sec")
 
-# quick way to update the psys with the new positions
-# reuse everything so that all existing parameters are kept and not reprocessed
+# A quick way to update the psys with the new positions.
+# Reuse everything so that all existing parameters are kept and not reprocessed
 psys = mm.chemical_system_to_physical_system(
     csys,
     [minpos],
@@ -102,30 +104,32 @@ psys = mm.chemical_system_to_physical_system(
 
 
 def freq(hess, pos):
+
     hess = np.array(hess) / 4.184
     syms = graphs.graph_symbols(pos.graph)
     xyzs = np.vstack([*pos.selections.values()])
     mass = [3*[vibration.mass_table[syms[s]]] for s in syms]
 
     # set to verbose=True to get all vibrational modes saved to xyz files
-    # the zero is a number to make the files unique
-    f, vib = vibration.hessian_modes(hess, syms, xyzs, mass, 0)
+    # The zero is a number to make the files unique
+    f, vib = vibration.hessian_modes(hess, syms, xyzs, mass, 0, verbose=False)
+
     return f
 
 
 # Hessian using pure python to evaluate energy
 t = time.perf_counter_ns()
-hess_bes = objectives.physical_system_hessian(psys, csys, h=1e-3)
+hess_bes = objectives.physical_system_hessian(psys, csys, h=1e-4)
 t = time.perf_counter_ns() - t
 print(f"Hessian in pure Python time: {t*1e-9:.4f} sec")
 fb = freq(hess_bes, minpos)
 
 # Hessian using OpenMM to evalulate energy
 t = time.perf_counter_ns()
-hess_omm = optimizers_openmm.physical_system_hessian_openmm(psys, csys, h=1e-3)
+hess_omm = optimizers_openmm.physical_system_hessian_openmm(psys, csys, h=1e-4)
 t = time.perf_counter_ns() - t
 print(f"Hessian in OpenMM time:      {t*1e-9:.4f} sec")
-fo = freq(hess_bes, minpos)
+fo = freq(hess_omm, minpos)
 
 print("\n")
 print("       Frequencies (cm-1)       ")
