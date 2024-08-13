@@ -11,8 +11,7 @@ we fit on the geometry, gradient, and frequencies of a single molecule. The
 molecule is chemically diverse and has 25 atoms, so it presents a typical
 challenge in force field design.
 
-Warning: This is not a quick calculation. With 100-200 cores this completed in
-approximately one day.
+Warning: Estimated time to complete is 1 hour.
 """
 
 import os
@@ -32,8 +31,8 @@ from besmarts.mechanics import smirnoff_models
 from besmarts.codecs import codec_rdkit
 from besmarts.assign import hierarchy_assign_rdkit
 
-configs.processors = 16
-configs.remote_compute_enable = False
+configs.processors = os.cpu_count()
+configs.remote_compute_enable = True
 # To use additional workers, from a terminal run (on the separate work machine)
 # python -m besmarts.worker <IP> 55555 np
 # where ip is your publically visible IP where this is being run and np is the
@@ -177,8 +176,8 @@ def configure_tiers(objs, penalties, fit_models, fit_symbols):
     tier = fits.objective_tier()
     tier.objectives = final.objectives
 
-    # Only perform one optimization step before scoring
-    tier.step_limit = 1
+    # Only perform two optimization steps before scoring
+    tier.step_limit = 2
 
     # Pass the best 5 candidates
     tier.accept = 5
@@ -263,7 +262,7 @@ def configure_objectives(opt_mols):
                 scale=1e-9,
                 include=True
         )
-        objs[len(objs)] = o
+        # objs[len(objs)] = o
 
     for eid in opt_mols:
         o = fits.objective_config_hessian(
@@ -274,7 +273,7 @@ def configure_objectives(opt_mols):
                 include=True
         )
         o.batch_size = 1
-        objs[len(objs)] = o
+        # objs[len(objs)] = o
 
     return objs
 
@@ -285,7 +284,8 @@ def configure_penalties():
     # we forego them.
     penalties = []
 
-    # restrain equilibrium lengths of bonds and angles
+    # restrain equilibrium lengths of bonds and angles to the starting
+    # values at the beginning of a fit
     # penalties.append(fits.objective_config_penalty(
     #     keys={
     #         (0, 'l', None, None): None,
@@ -642,7 +642,18 @@ def main():
         tiers,
         final
     )
-    print(f"X {P+C:15.8g} P {P:15.8g} C {C:15.8g}")
+    print("Initial objectives:")
+    X0 = P0 + C0
+    X = P + C
+    print(f"Total= {X0:15.8g} Physical {P0:15.8g} Chemical {C0:15.8g}")
+    print("Final objectives:")
+    print(f"Total= {X:15.8g} Physical {P:15.8g} Chemical {C:15.8g}")
+    print("Differences:")
+    print(
+        f"Total= {100*(X-X0)/X0:14.2f}%",
+        f"Physical {100*(P-P0)/P0:14.2f}%",
+        f"Chemical {100*(C-C0)/C0:14.2f}%"
+    )
 
     smirnoff_models.smirnoff_write_version_0p3(
         newcsys,

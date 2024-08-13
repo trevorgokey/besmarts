@@ -1,87 +1,64 @@
 
 """
+examples/09_minimize.py
 
+Perform a standard geometry minimization
 """
 
-import sys
 import os
-import pickle
 import tempfile
-from typing import Dict, List, Tuple
 from besmarts.mechanics import smirnoff_models
 from besmarts.mechanics import optimizers_scipy
 from besmarts.mechanics import fits
-from besmarts.core import graphs
-from besmarts.core import topology
 from besmarts.core import perception
-from besmarts.core import arrays
 from besmarts.core import assignments
-from besmarts.core import primitives
 from besmarts.assign import hierarchy_assign_rdkit
 from besmarts.codecs import codec_rdkit
 
-def graph_db_insert_sdf_files(gdb, gcd, fname_pos, fname_grad=None, fname_hessian=None, energy=None):
-
-    pos = None
-    gx = None
-    hx = None
-
-    pos, extras = gcd.sdf_decode(fname_pos)
-    smi = pos.smiles
-
-    ene = extras.get('qm_energy (kcal/mol)')
-    if ene is not None and energy is None:
-        energy = ene * 4.184
-
-    if fname_grad:
-        with open(fname_grad) as f:
-            xyzdata = f.read()
-        sym, xyz = assignments.parse_xyz(xyzdata)
-        gx = assignments.xyz_to_graph_assignment(gcd, smi, xyz)
-
-    if fname_hessian:
-        with open(fname_grad) as f:
-            xyzdata = f.read()
-        sym, xyz = assignments.parse_xyz(xyzdata)
-        gx = assignments.xyz_to_graph_assignment(gcd, smi, xyz)
-
-    eid, gid = assignments.graph_db_add_single_molecule_state(gdb, pos, gradients=gx, hessian=hx, energy=energy)
-    return eid, gid
-
-def print_xyz(pos, comment="") -> List[str]:
-    lines = []
-    lines.append(str(len(pos.selections)))
-    lines.append(comment)
-    for ic, xyz in pos.selections.items():
-        n = pos.graph.nodes[ic[0]]
-        sym = primitives.element_tr[str(n.primitives['element'].on()[0])]
-        x, y, z = xyz[0][:3]
-        lines.append(f"{sym:8s} {x:.6f} {y:.6f} {z:.6f}")
-    return lines
 
 def run(ff_fname, sdf_fname):
-    # build the dataset and input ff
-    gdb = assignments.graph_db()
-    gcd = codec_rdkit.graph_codec_rdkit()
 
+    # == Configure the perception model == #
+    gcd = codec_rdkit.graph_codec_rdkit()
     labeler = hierarchy_assign_rdkit.smarts_hierarchy_assignment_rdkit()
+
+    # Configure a custom perception model. This is the same as the RDKit
+    # perception model in besmarts.perception_rdkit.
     pcp = perception.perception_model(gcd, labeler)
     csys = smirnoff_models.smirnoff_load(ff_fname, pcp)
 
-    
-    eid, gid = graph_db_insert_sdf_files(gdb, gcd, sdf_fname)
+    # == Configure the dataset == #
+    gdb = assignments.graph_db()
 
+    # Return the entry ID and graph ID that the inserted SDF has in the graph
+    # db. Aux is a dictionary containing any arbitrary data that was present
+    # in the SDF file
+    eid, gid, aux = assignments.graph_db_insert_sdf_file(gdb, gcd, sdf_fname)
+
+    # Parameterize everything in the graph db then immediately access
+    # the physical system for our molecule
     psys = fits.gdb_to_physical_systems(gdb, csys)[eid]
 
-    print("\n".join(print_xyz(psys.models[0].positions[0])))
+    # Get the positions and print them out in xyz; should be the same as the
+    # SDF
+    pos = psys.models[0].positions[0]
+    xyz_fmt = assignments.graph_assignment_to_format_xyz(pos)
+    print("\n".join(xyz_fmt))
 
+    # == Run the optimization == #
+    # Optimize the positions and print to xyz. Since the only output of this
+    # script is the xyz frames, the output can be piped into an xyz file
+    # and visualized with e.g VMD.
     pos = optimizers_scipy.optimize_positions_scipy(csys, psys)
-
-    print("\n".join(print_xyz(pos)))
+    xyz_fmt = assignments.graph_assignment_to_format_xyz(pos)
+    print("\n".join(xyz_fmt))
 
 
 def load():
-    
+    """
+    Return temporary filenames of the data in this example
+    """
+
     fd, ff = tempfile.mkstemp(suffix=".offxml")
     with os.fdopen(fd, 'w') as f:
         f.write(xml)
