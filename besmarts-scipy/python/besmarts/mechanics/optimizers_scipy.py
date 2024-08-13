@@ -549,7 +549,7 @@ def objective_gradient_gdb(args, keys, csys, gdb, objlst, priors, penalties=None
                 # results[i] = task.run()
                 new_results= {i: task.run()}
 
-                ready, full_results = collect(gdb, objlst, full_results, {i: task.run()}, batch_map, hp, verbose=verbose)
+                ready, full_results = collect(gdb, objlst, full_results, new_results, batch_map, hp, verbose=verbose)
                 new_results.clear()
                 for oit, obj_task in ready.items():
                     ret = run_objective(*obj_task[0], **obj_task[1])
@@ -1160,7 +1160,7 @@ def run_objective(x, ref, results, h, verbose=False, shm=None):
     dx = ret.value
     x2 = x.scale*arrays.array_inner_product(dx, dx)
 
-    N = len(dx)
+    N = len(h)
     gradx = list([0.0] * N)
     hessx = list([0.0] * N)
     grady = list([0.0] * N)
@@ -1174,8 +1174,7 @@ def run_objective(x, ref, results, h, verbose=False, shm=None):
 
     # if it is 1 then we are not doing gradients
     if len(results) > 1:
-        for j in range((len(results)-1)//2):
-            # dxb = results[(n, (i,j))]
+        for j in range(N):
             dxa = results[2*j+1]
             dxb = results[2*j+2]
             # print("DXA", dxa[0][0].graphs[0].rows[0].columns[0].selections)
