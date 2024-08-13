@@ -1795,7 +1795,11 @@ def ff_optimize(
     initial_objective: objective_tier,
     tiers: List[objective_tier],
     final_objective: objective_tier,
-) -> mm.chemical_system:
+) -> tuple[
+        mm.chemical_system,
+        tuple[float, float],
+        tuple[float, float]
+    ]:
     """
     The toplevel function to run a full BESMARTS force field fit.
 
@@ -1810,6 +1814,15 @@ def ff_optimize(
     tiers: The tiers that will score each parameter candidate
     final_objective: The objective_tier that will score the remaining
     candidates passed by the tiers
+
+    Returns
+    -------
+    csys: mm.chemical_system
+        The final chemical system
+    physical_objectives: tuple[float, float]
+        The initial and final physical objectives
+    chemical_objectives: tuple[float, float]
+        The initial and final chemical objectives
     """
 
     started = datetime.datetime.now()

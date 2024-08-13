@@ -251,14 +251,14 @@ def pair_topology() -> structure_topology:
 
 
 # Singletons
-null = null_topology()
-atom = atom_topology()
-bond = bond_topology()
-angle = angle_topology()
-torsion = torsion_topology()
-outofplane = outofplane_topology()
-pair = n_body_topology(2)
-triplet = n_body_topology(3)
+null: structure_topology = null_topology()
+atom: structure_topology = atom_topology()
+bond: structure_topology = bond_topology()
+angle: structure_topology = angle_topology()
+torsion: structure_topology = torsion_topology()
+outofplane: structure_topology = outofplane_topology()
+pair: structure_topology = n_body_topology(2)
+triplet: structure_topology = n_body_topology(3)
 
 atom_to_atom = transcode_topology(
     atom,
