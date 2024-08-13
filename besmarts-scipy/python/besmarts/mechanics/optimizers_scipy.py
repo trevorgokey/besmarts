@@ -534,13 +534,7 @@ def objective_gradient_gdb(args, keys, csys, gdb, objlst, priors, penalties=None
                 else:
                     out.extend(retout)
 
-
-                # this should be empty now
-                if full_results:
-                    breakpoint()
-                    print("EHHHH")
                 assert not full_results
-
 
         else:
             results = {}
@@ -729,12 +723,6 @@ def objective_gradient_gdb(args, keys, csys, gdb, objlst, priors, penalties=None
                 print(line)
             out.append(line)
 
-    for k, g in zip(keys, grad):
-        line = f"{k} {g}"
-        out.append(line)
-        if verbose:
-            print(line)
-
     gnorm = arrays.array_inner_product(grad, grad)**.5
     hnorm = arrays.array_inner_product(hess, hess)**.5
     if verbose:
@@ -745,12 +733,17 @@ def objective_gradient_gdb(args, keys, csys, gdb, objlst, priors, penalties=None
         out.append(f">>> {datetime.datetime.now()} Step= {len(history)+1:3d} X2= {X: 14.6e} |g|= {gnorm: 14.6e} |h|= {hnorm: 14.6e} DX2= {dX: 14.6e} Y2= {Y: 14.6e} |gy|={gnormy: 14.6e}")
         if verbose:
             print(out[-1])
+    out.append(f"{logs.timestamp()} Done.")
+    if verbose:
+        print(out[-1])
     out.append("Total Parameter Grad:")
     if verbose:
         print(out[-1])
-    out.append(f"{logs.timestamp()} Done. {len(tasks)} tasks complete")
-    if verbose:
-        print(out[-1])
+    for k, g in zip(keys, grad):
+        line = f"{k} {g}"
+        out.append(line)
+        if verbose:
+            print(line)
     history.append((X, grad, args, hess, out))
     return X, grad
 
@@ -1126,12 +1119,6 @@ def objective_gdb(args, keys, csys, gdb, objlst, priors, penalties=None, history
                 print(line)
             out.append(line)
 
-    for k, g in zip(keys, grad):
-        line = f"{k} {g}"
-        out.append(line)
-        if verbose:
-            print(line)
-
     gnorm = arrays.array_inner_product(grad, grad)**.5
     hnorm = arrays.array_inner_product(hess, hess)**.5
     if verbose:
@@ -1142,10 +1129,7 @@ def objective_gdb(args, keys, csys, gdb, objlst, priors, penalties=None, history
         out.append(f">>> {datetime.datetime.now()} Step= {len(history)+1:3d} X2= {X: 14.6e} |g|= {gnorm: 14.6e} |h|= {hnorm: 14.6e} DX2= {dX: 14.6e} Y2= {Y: 14.6e} |gy|={gnormy: 14.6e}")
         if verbose:
             print(out[-1])
-    out.append("Total Parameter Grad:")
-    if verbose:
-        print(out[-1])
-    out.append(f"{logs.timestamp()} Done. {len(tasks)} tasks complete")
+    out.append(f"{logs.timestamp()} Done")
     if verbose:
         print(out[-1])
     history.append((X, grad, args, hess, out))
