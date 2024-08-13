@@ -1174,7 +1174,7 @@ def run_objective(x, ref, results, h, verbose=False, shm=None):
 
     # if it is 1 then we are not doing gradients
     if len(results) > 1:
-        for j in range(N):
+        for j in range((len(results)-1)//2):
             # dxb = results[(n, (i,j))]
             dxa = results[2*j+1]
             dxb = results[2*j+2]
