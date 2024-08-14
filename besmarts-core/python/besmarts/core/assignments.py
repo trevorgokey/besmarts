@@ -210,7 +210,7 @@ class graph_db:
     The structures have a corresponding member to traverse deeper; however,
     the simple array notation is supported. This means that rather than
 
-    gdb.entries[eid].tables[tid].graphs[gid].rows[rid].columns[cid].selections.[sid].data[xid]
+    gdb.entries[eid].tables[tid].graphs[gid].rows[rid].columns[cid].selections[sid].data[xid]
 
     one can simply write
 
