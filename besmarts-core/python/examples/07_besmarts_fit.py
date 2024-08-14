@@ -63,9 +63,7 @@ def new_gdb() -> assignments.graph_db:
     gcd = codec_rdkit.graph_codec_rdkit()
     gdb = assignments.graph_db()
 
-    xyzdata = assignments.parse_xyz(xyz_positions)
     pos = assignments.xyz_to_graph_assignment(gcd, smi, xyz_positions)
-    xyzdata = assignments.parse_xyz(xyz_grad)
     gx = assignments.xyz_to_graph_assignment(gcd, smi, xyz_grad)
 
     eid, gid = assignments.graph_db_add_single_molecule_state(
