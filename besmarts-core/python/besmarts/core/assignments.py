@@ -1028,6 +1028,7 @@ def graph_assignment_to_graph_db_row(ga) -> graph_db_row:
             if i not in gdr.columns:
                 gdr.columns[i] = graph_db_column()
             gdr.columns[i].selections[ic] = xyzdata[i]
+
     return gdr
 
 
@@ -1080,7 +1081,7 @@ def graph_db_add_single_molecule_state(
 
         tid = GRADIENTS
         gde.tables[tid] = gdt
-        gdt.values.extend([x for y in gradients.selections.values() for x in y])
+        gdt.values.extend([z for y in gradients.selections.values() for x in y for z in x])
 
     if hessian is not None:
         gdt = graph_db_table(topology.null)
