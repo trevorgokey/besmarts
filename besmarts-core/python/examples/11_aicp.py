@@ -327,7 +327,7 @@ def configure_molecule(csys, gdb: assignments.graph_db):
     pos = assignments.xyz_to_graph_assignment(gcd, smi, xyzdata)
 
     grad *= au2kj/au2ang
-    sel = {(i,): x for i, x in enumerate(grad, 1)}
+    sel = {(i,): [x] for i, x in enumerate(grad, 1)}
 
     gx = assignments.graph_assignment(smi, sel, pos.graph)
 
