@@ -11,7 +11,7 @@ we fit on the geometry, gradient, and frequencies of a single molecule. The
 molecule is chemically diverse and has 25 atoms, so it presents a typical
 challenge in force field design.
 
-Warning: Estimated time to complete is 1 hour.
+Estimated time to complete is 1 hour.
 """
 
 import os

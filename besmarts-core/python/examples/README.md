@@ -63,6 +63,4 @@ we fit on the geometry, gradient, and frequencies of a single molecule. The
 molecule is chemically diverse and has 25 atoms, so it presents a typical
 challenge in force field design.
 
-Warning: This is not a quick calculation. With 100-200 cores this completed in
-approximately one day.
-
+Estimated time to complete is 1 hour.
