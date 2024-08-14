@@ -1,5 +1,7 @@
 """
 examples/init_bonds_angles.py
+
+Resetting FF bonds and angles according to a molecule geometry
 """
 
 import os
@@ -8,7 +10,38 @@ from besmarts.mechanics import molecular_models as mm
 from besmarts.mechanics import smirnoff_models
 from besmarts.perception import perception_rdkit
 
-pcp = perception_rdkit.perception_model_rdkit()
+
+def run():
+
+    pcp = perception_rdkit.perception_model_rdkit()
+
+    # == Load the force field == #
+    fd, ff_fname = tempfile.mkstemp(suffix=".offxml", text=True)
+    with os.fdopen(fd, 'w') as f:
+        f.write(FF)
+    csys = smirnoff_models.smirnoff_load(ff_fname, pcp)
+    os.remove(ff_fname)
+
+    # == Load the molecule in SDF format == #
+    fd, sdf_fname = tempfile.mkstemp(suffix=".sdf", text=True)
+    with os.fdopen(fd, 'w') as f:
+        f.write(sdf)
+    pos, extras = pcp.gcd.sdf_decode(sdf_fname)
+    os.remove(sdf_fname)
+
+    # == Parameterize the molecule == #
+    psys = mm.chemical_system_to_physical_system(csys, [pos])
+
+    # == Reset the bonds and angles of the matching parameters == #
+    # Note that these operations change csys
+    angles = mm.chemical_system_reset_angles(csys, [psys])
+    bonds = mm.chemical_system_reset_bond_lengths(csys, [psys])
+
+    show = set((k[2] for k in list(bonds) + list(angles)))
+    # Print the force field, only showing the parameters that changed
+    # Angles are in radians
+    mm.chemical_system_print(csys, show_parameters=show)
+
 
 FF = """
 <SMIRNOFF version="0.3" aromaticity_model="OEAroModel_MDL">
@@ -104,12 +137,6 @@ FF = """
     <ToolkitAM1BCC version="0.3"></ToolkitAM1BCC>
 </SMIRNOFF>"""
 
-fd, ff_fname = tempfile.mkstemp(suffix=".offxml", text=True)
-with os.fdopen(fd, 'w') as f:
-    f.write(FF)
-csys = smirnoff_models.smirnoff_load(ff_fname, pcp)
-os.remove(ff_fname)
-
 sdf = """
   -OEChem-04032417453D
 
@@ -163,18 +190,5 @@ M  END
 
 $$$$"""
 
-fd, sdf_fname = tempfile.mkstemp(suffix=".sdf", text=True)
-with os.fdopen(fd, 'w') as f:
-    f.write(sdf)
-
-pos, extras = pcp.gcd.sdf_decode(sdf_fname)
-os.remove(sdf_fname)
-
-psys = mm.chemical_system_to_physical_system(csys, [pos])
-
-angles = mm.chemical_system_reset_angles(csys, [psys])
-bonds = mm.chemical_system_reset_bond_lengths(csys, [psys])
-
-show = set((k[2] for k in list(bonds) + list(angles)))
-# Angles are in radians
-mm.chemical_system_print(csys, show_parameters=show)
+if __name__ == "__main__":
+    run()
