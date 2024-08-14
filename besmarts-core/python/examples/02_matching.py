@@ -1,6 +1,9 @@
 
 """
 examples/matching.py
+
+This example loads a target SMARTS and performs a few queries on it using a
+native BESMARTS function.
 """
 
 from besmarts.core import primitives
