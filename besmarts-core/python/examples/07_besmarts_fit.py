@@ -1,5 +1,5 @@
 """
-examples/besmarts_fit.py
+examples/07_besmarts_fit.py
 
 This performs automated chemical perception starting from OpenFF Sage 2.1. For
 expedience, only b4 is targeted and only the lengths are fit. The resulting
@@ -8,14 +8,10 @@ force field was fit on positions and gradients of a single molecule.
 
 import tempfile
 import os
-from typing import Dict, List
 from besmarts.mechanics import fits
 from besmarts.mechanics import smirnoff_models
 from besmarts.mechanics import molecular_models as mm
-from besmarts.core import graphs
-from besmarts.core import topology
 from besmarts.core import perception
-from besmarts.core import arrays
 from besmarts.core import assignments
 from besmarts.assign import hierarchy_assign_rdkit
 from besmarts.codecs import codec_rdkit
@@ -61,6 +57,7 @@ xyz_grad = """11
 def new_gdb() -> assignments.graph_db:
 
     gcd = codec_rdkit.graph_codec_rdkit()
+
     gdb = assignments.graph_db()
 
     pos = assignments.xyz_to_graph_assignment(gcd, smi, xyz_positions)
