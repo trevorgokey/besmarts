@@ -21,7 +21,7 @@ from besmarts.assign import hierarchy_assign_rdkit
 from besmarts.codecs import codec_rdkit
 from besmarts.core import configs
 
-configs.processors = 4
+configs.processors = 1
 configs.remote_compute_enable = False
 configs.workqueue_port = 54321
 
@@ -58,96 +58,22 @@ xyz_grad = """11
 """
 
 
-def load_xyz(flist, indices=None) -> assignments.graph_db_row:
-    s = 0
-    N = None
-    gdr = assignments.graph_db_row()
-    for f in flist:
-        lines = f.split('\n')
-        if N is None:
-            N = int(lines[0].split()[0])
-        if indices is None:
-            indices = [*range(1,N+1)]
-        assert N == int(lines[0].split()[0])
-        for chunk in arrays.batched(lines, N+2):
-            if chunk and chunk[0]:
-                sel = {}
-                for i, line in enumerate(chunk, -2):
-                    if i >= 0:
-                        sym, x, y, z = line.split()[:4]
-                        sel[indices[i],] = list(map(float, (x, y, z)))
+def new_gdb() -> assignments.graph_db:
 
-                gdc = assignments.graph_db_column()
-                gdc.selections.update(sel)
-                gdr.columns[s] = gdc
-                s += 1
-    return gdr
-
-def make():
-    global smi
-    global xyz_positions
-    global xyz_grad
-    s = xyz_positions
-    g = xyz_grad
-    d  = {
-        smi: [
-            {
-                assignments.POSITIONS: s,
-                assignments.GRADIENTS: g,
-            },
-        ],
-    }
-    return d
-
-
-def new_gdb(f: Dict[str, List[str]]) -> assignments.graph_db:
     gcd = codec_rdkit.graph_codec_rdkit()
     gdb = assignments.graph_db()
 
-    for smi, fn_dict in f.items():
+    xyzdata = assignments.parse_xyz(xyz_positions)
+    pos = assignments.xyz_to_graph_assignment(gcd, smi, xyz_positions)
+    xyzdata = assignments.parse_xyz(xyz_grad)
+    gx = assignments.xyz_to_graph_assignment(gcd, smi, xyz_grad)
 
-        g = gcd.smiles_decode(smi)
-        gid = assignments.graph_db_add_graph(gdb, smi, g)
+    eid, gid = assignments.graph_db_add_single_molecule_state(
+        gdb,
+        pos,
+        gradients=gx
+    )
 
-        gdb.graphs[gid] = g
-        gdb.smiles[gid] = smi
-        gdb.selections[topology.index_of(topology.atom)] = {
-            gid: {k: v for k, v in enumerate(graphs.graph_atoms(g))}
-        }
-        gde = assignments.graph_db_entry()
-        gdb.entries[len(gdb.entries)] = gde
-        for rid, rdata in enumerate(fn_dict):
-            tid = assignments.POSITIONS
-            gdt = assignments.graph_db_table(topology.atom)
-            gdg = assignments.graph_db_graph()
-            gdt.graphs[gid] = gdg
-            fn = rdata[tid]
-            # indices=dict(sorted([(j, x) for j, x in enumerate(g.nodes, 1)], key=lambda x: x[1]))
-            indices = None
-            gdr = load_xyz([fn], indices=indices)
-            gdg.rows[0] = gdr
-            gde.tables[tid] = gdt
-            tid = assignments.GRADIENTS
-            if tid in rdata:
-                gdt = assignments.graph_db_table(topology.atom)
-                gdg = assignments.graph_db_graph()
-                gdt.graphs[gid] = gdg
-                fn = rdata[tid]
-                # indices=dict(sorted([(j, x) for j, x in enumerate(g.nodes)], key=lambda x: x[1]))
-                gdr = load_xyz([fn], indices=indices)
-                gdg.rows[0] = gdr
-                gde.tables[tid] = gdt
-                gx = [x for y in gdr[0].selections.values() for x in y]
-                gdt.values.extend(gx)
-            tid = assignments.ENERGY
-            if tid in rdata:
-                gdt = assignments.graph_db_table(topology.null)
-                fn = rdata[tid]
-                ene = [*map(float,
-                    [x for x in open(fn).read().split('\n') if x]
-                )]
-                gdt.values.extend(ene)
-                gde.tables[tid] = gdt
     return gdb
 
 
@@ -160,52 +86,68 @@ def run():
         4. Optimize
     """
 
-    # 1 Build the dataset and FF
-    d = make()
+    # == 1. Build the dataset and FF == #
+    gdb = new_gdb()
+
     csys = load_sage_csys()
-    gdb = new_gdb(d)
+
+    # Parameterize everything in the graph db
     psys = fits.gdb_to_physical_systems(gdb, csys)
 
-    # 1 Configure the fitting strategy
+    # == 2. Configure the fitting strategy == #
+
+    # Split on model 0, only b4
     models = {0: ["b4"]}
     strat = fits.forcefield_optimization_strategy_default(csys, models=models)
     co = fits.chemical_objective
 
-    # 2. Configure the objective tiers
+    # == 3. Configure the objective tiers == #
     final = fits.objective_tier()
     final.objectives = {
+        # A position objective for EID 0 (ethane). Performs a geometry
+        # optimization and calculates the sum of squared error (SSE). The root
+        # of the mean SSE is the RMSD
         0: fits.objective_config_position(
                 assignments.graph_db_address(
                     eid=[0],
                 ),
                 scale=1
         ),
+
+        # A gradient objective for EID 0 (ethane). The geometry is held fixed
+        # at the reference, and calculates the objective as the SSE of the
+        # difference in QM/MM forces
         1: fits.objective_config_gradient(
                 assignments.graph_db_address(
                     eid=[0],
                 ),
-                scale=1
+                scale=1e-9
         ),
     }
 
+    # We optimize parameters only model 0 (bonds).
     fit_models = [0]
     final.fit_models = fit_models
+    # We optimize only on lengths (of model 0)
     final.fit_symbols = ["l"]
 
-    onestep = fits.objective_tier()
-    onestep.objectives = final.objectives
-    onestep.step_limit = 2
-    onestep.accept = 3
+    tier = fits.objective_tier()
+    tier.objectives = final.objectives
+    # For the scoring tier, perform 2 FF optimization steps
+    tier.step_limit = 2
+    # Pass the 3 best candidates to be scored by the next tier. In this
+    # example, the next tier is the "real" fitting objective final
+    tier.accept = 3
 
-    onestep.fit_models = fit_models
-    onestep.fit_symbols = ["l"]
-    tiers = [onestep]
+    tier.fit_models = fit_models
+    tier.fit_symbols = final.fit_symbols
+    tiers = [tier]
 
     initial = final
 
     kv0 = mm.chemical_system_iter_keys(csys)
 
-    # 4. Optimize
+    # == 4. Optimize == #
     newcsys, (P0, P), (C0, C) = fits.ff_optimize(
         csys,
         gdb,
@@ -217,8 +159,7 @@ def run():
         final
     )
 
-
-
+    # == Done. Print out the parameter values
     print("Modified parameters:")
     kv = mm.chemical_system_iter_keys(newcsys)
     for k, v in kv.items():
@@ -233,7 +174,10 @@ def run():
             line = param_line
         print(line)
 
+    # Show the objectives, before and after
     print("Initial objectives:")
+    # P is the physical objective (positions, gradients), C is the chemical
+    # objective (SMARTS complexity, number of SMARTS)
     X0 = P0 + C0
     X = P + C
     print(f"Total= {X0:15.8g} Physical {P0:15.8g} Chemical {C0:15.8g}")
@@ -245,6 +189,8 @@ def run():
         f"Physical {100*(P-P0)/P0:14.2f}%",
         f"Chemical {100*(C-C0)/C0:14.2f}%"
     )
+
+
 xml = """<?xml version="1.0" encoding="utf-8"?>
 <SMIRNOFF version="0.3" aromaticity_model="AROMATICITY_MDL">
     <Constraints version="0.3">
