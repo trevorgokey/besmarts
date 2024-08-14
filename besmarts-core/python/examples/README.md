@@ -20,10 +20,9 @@ __4. Initializing FF parameters (04_init_bonds_angles.py)__
 
 Resetting FF bonds and angles according to a molecule geometry
 
-__5. Perform a force field fit on ethane (05_forcefield_fit.py)__
+__5. Build a force field for ethane (05_forcefield_build.py)__
 
-This example builds a force field and fits the parameters to ethane. No
-parameter search or chemical perception is performed.
+This example builds a force field with parameters specific to ethane.
 
 __6. Cluster bond lengths (06_smarts_cluster_bond_lengths.py)__
 
@@ -52,7 +51,7 @@ Calculate the MM vibrational frequencies of ethane. Also shows how to calculate
 energies using the pure python implementation versus OpenMM. Compares between
 the SciPy and OpenMM backends for minimization.
 
-__11. Ab-Initio (valence) chemical perception (AICP) (11_aicp.py)
+__11. Ab-Initio (valence) chemical perception (AICP) (11_aicp.py)__
 
 Ab-Initio (valence) chemical perception (AICP)
 

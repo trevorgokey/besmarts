@@ -1,5 +1,8 @@
 """
 examples/forcefield_fit.py
+
+This example builds a force field and fits the parameters to ethane. No
+parameter search or chemical perception is performed.
 """
 
 from typing import List
@@ -33,6 +36,7 @@ from besmarts.assign import hierarchy_assign_rdkit
 # from besmarts.codecs import codec_native
 from besmarts.assign import hierarchy_assign_native
 
+from besmarts.perception import perception_rdkit
 # configs.processors = 1
 
 def make_ethane(n_confs=1):
@@ -42,7 +46,7 @@ def make_ethane(n_confs=1):
     # 0,4.107396125793457,0.15501700341701508,40.698150634765625,0.273992121219635,45.23455588519573
     # LJ is 0.3149093985557556
     # QQ is 3.7924864292144775
-    # using the chem sys below. should be sage 2.0 with oe am1bcc 
+    # using the chem sys below. should be sage 2.0 with oe am1bcc
 
     smi = "[C:1]([H:3])([H:4])([H:5])[C:2]([H:6])([H:7])([H:8])"
     sel = {
@@ -57,6 +61,7 @@ def make_ethane(n_confs=1):
     }
     pos = assignments.smiles_assignment_float(smi, sel)
     return pos
+
 
 def make_bond_model_ethane():
 
@@ -81,11 +86,12 @@ def make_bond_model_ethane():
     i.name = "b2"
     proc.smarts_hierarchies[0].smarts[i.index] = "[#6:1]~[#1:2]"
     proc.topology_parameters[(0, i.name)] = {"k": i.name, "l": i.name}
-    cm.topology_terms["k"].values[i.name] = [740.0934137725] # shake is on
+    cm.topology_terms["k"].values[i.name] = [740.0934137725] #  shake is on
     cm.topology_terms["l"].values[i.name] = [1.093899492634]
 
     cm.procedures.append(proc)
     return cm
+
 
 def make_angle_model_ethane():
 
@@ -116,6 +122,7 @@ def make_angle_model_ethane():
     cm.procedures.append(proc)
 
     return cm
+
 
 def make_torsion_model_ethane():
 
@@ -182,6 +189,7 @@ def make_outofplane_model_ethane():
 
     return cm
 
+
 def make_electrostatic_model_ethane():
 
     pcp = make_pcp()
@@ -216,7 +224,6 @@ def make_electrostatic_model_ethane():
     cm.topology_terms["q"].values[i.name] = [.03128999937325716]
 
     cm.procedures.append(proc)
-
 
     # add the scaling
     proc = mm.chemical_model_procedure_smarts_assignment(pcp, cm.topology_terms)
@@ -361,10 +368,14 @@ def make_vdw_model_ethane():
     return cm
 
 
+def make_pcp():
+    return perception_rdkit.perception_model_rdkit()
+
+
 def make_chemical_system_ethane():
 
     csys = mm.chemical_system(
-        make_pcp(), 
+        perception_rdkit.perception_model_rdkit(),
         [
             make_bond_model_ethane(),
             make_angle_model_ethane(),
@@ -372,43 +383,13 @@ def make_chemical_system_ethane():
             make_outofplane_model_ethane(),
             make_electrostatic_model_ethane(),
             make_vdw_model_ethane(),
-            # masses.chemical_model_mass_smarts(make_pcp()),
         ]
     )
     return csys
 
 
-def make_pcp():
-    gcd = codec_rdkit.graph_codec_rdkit()
-
-
-    # gcd = codec_native.graph_codec_native(codecs, atoms, bonds)
-    # labeler = hierarchy_assign_rdkit.smarts_hierarchy_assignment_rdkit()
-    labeler = hierarchy_assign_native.smarts_hierarchy_assignment_native()
-    pcp = perception.perception_model(gcd, labeler)
-    return pcp
-
-n_confs = 1
-pcp = make_pcp()
-pos = make_ethane(n_confs)
-
-pos = assignments.smiles_assignment_to_graph_assignment(pos, pcp.gcd)
-csys = make_chemical_system_ethane()
-
-pos = [pos]
-# print("Parameterizing...")
-# psys = mm.chemical_system_to_physical_system(csys, pos)
-
-ref = copy.deepcopy(csys)
-# perturb the bond length of b1 and let the optimizer fit
-dx = .1
-csys.models[0].topology_terms["l"].values["b1"][0] += dx
-
-kv = optimizers_scipy.optimize_forcefield_scipy(csys, pos)
-# pprint(kv)
-
-print("Final values (in Ang:Rad:kcal)")
-for k, v in kv.items():
-    v0 = mm.chemical_system_get_value(ref, k)
-    print(f"{k} New: {v:15.8g} Ref: {v0:15.8g} Diff: {v - v0:15.8g}")
-
+if __name__ == "__main__":
+    pos = make_ethane(1)
+    csys = make_chemical_system_ethane()
+    # Optionally write out the file
+    # smirnoff_models.smirnoff_write_version_0p3(csys, "05_forcefield.offxml")
