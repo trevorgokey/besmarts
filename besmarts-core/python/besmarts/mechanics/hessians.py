@@ -339,7 +339,7 @@ def hessian_frequencies(g, hess_mm, grad_mm, DL, ics, B, B2):
     #                     b2ab = b2[0][3*ai + i][3*bi + j]
     #                     hgx[3*a + i][3*b + j] += ic_grad[ic] * b2ab
 
-    hess_mm_au = vibration.hessian_transform_mass_weighted(hess_mm + hgx, mass)
+    hess_mm_au = vibration.hessian_transform_mass_weighted(hess_mm - hgx, mass)
     hess_mm_freq = np.diag(np.dot(np.dot(DL.T, hess_mm_au), DL))
     hess_mm_freq = vibration.converteig(hess_mm_freq)
     hess_mm_freq = np.round(hess_mm_freq, 12)
