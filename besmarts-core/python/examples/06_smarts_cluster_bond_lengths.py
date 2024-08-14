@@ -6,6 +6,7 @@ from besmarts.codecs.codec_rdkit import graph_codec_rdkit
 from besmarts.assign import hierarchy_assign_rdkit
 from besmarts.core import configs
 
+configs.processors = 1
 configs.remote_compute_enable = False
 configs.workqueue_port = 59321
 
