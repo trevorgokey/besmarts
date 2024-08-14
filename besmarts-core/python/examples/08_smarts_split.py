@@ -20,6 +20,9 @@ configs.processors = 4
 configs.remote_compute_enable = False
 wq = compute.workqueue_local("127.0.0.1", 63210)
 
+# Use only element, hydrogen count, and bond order in the graphs. Because
+# we are supplying this to the graph codec, only these primitives will be
+# available in the graphs. 
 prims = (
     (primitive_key.ELEMENT, primitive_key.HYDROGEN),
     (primitive_key.BOND_ORDER,)
@@ -71,10 +74,12 @@ splitter = configs.smarts_splitter_config(
     unique_complements_prefer_min=True,
 )
 
-# for this to work, we need to extend our graphs to at least the depth of S0
+# for this to work, we need to extend our graphs to at least the depth of
+# of the SMARTS that the subgraphs matched to
 extender = configs.smarts_extender_config(branch_depth, branch_depth, True)
 graphs.structure_extend(extender, ic_list)
 
+# S0 is the SMARTS that we match the subgraphs to
 S0 = gcd.smarts_decode("[*:1]~[*:2]")
 S0 = graphs.subgraph_to_structure_bond(S0)
 
@@ -84,33 +89,19 @@ for i, f in enumerate(ic_list):
 
 # The function that does the actual work
 results: splits.split_return_type = splits.split_structures_distributed(
-    splitter, S0, G, selections, wq, icd)
+    splitter,
+    S0,
+    G,
+    selections,
+    wq,
+    icd
+)
 
-# Custom processing of results as an example to use the results
-
-seen = {}
-keep = {}
-
+# == Custom processing of results as an example to use the results == #
 print("Results:", len(results.splits))
-for j, (Sj, matches, bj) in enumerate(
-    zip(results.splits, results.matched_idx, results.shards), 1
-):
-    Sj = graphs.subgraph_as_structure(Sj, results.topology)
-    atoms, bits = len(Sj.select), graphs.graph_bits(Sj, maxbits=True)
-    matches = tuple(sorted(matches))
-    unmatches = tuple(
-        sorted([i for i in range(len(ic_list)) if i not in matches])
-    )
-    entry = tuple(sorted([matches, unmatches]))
-    if len(matches) > 0 and len(ic_list) != len(matches):
-        if entry in seen:
-            if (atoms, bits) < seen[entry]:
-                seen[entry] = (atoms, bits)
-                keep[entry] = j
-        else:
-            seen[entry] = (atoms, bits)
-            keep[entry] = j
 
+# This loop groups splits by the partition they induce so they can be displayed
+# together
 unique = {}
 found = 0
 for j, (Sj, matches, bj) in enumerate(
@@ -122,9 +113,12 @@ for j, (Sj, matches, bj) in enumerate(
     l.append((Sj, bj))
     unique[matches] = l
 
+# Go through each of the unique partitions and print the correspond split
+# information
 for j, (matches, params) in enumerate(unique.items(), 1):
     matches = tuple(matches)
     found += 1
+
     if splitter.return_matches:
         print(
             f"{found:4d}",
@@ -140,10 +134,9 @@ for j, (matches, params) in enumerate(unique.items(), 1):
             f"{j:4d}",
         )
     for k, (Sj, bj) in enumerate(params, 1):
-
         Sj = graphs.subgraph_as_structure(Sj, results.topology)
         print(f"   {k:2d} Sj:", gcd.smarts_encode(Sj))
-        # print(f"   {k:2d} Sj:    ", Sj.nodes)
+
     if splitter.return_matches:
         print("      ", matches)
         for i, f in enumerate(ic_list):
