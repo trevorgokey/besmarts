@@ -31,9 +31,10 @@ def run(ff_fname, sdf_fname):
     gdb = assignments.graph_db()
 
     # Return the entry ID and graph ID that the inserted SDF has in the graph
-    # db. Aux is a dictionary containing any arbitrary data that was present
+    # db. Extras is a dictionary containing any arbitrary data that was present
     # in the SDF file
-    eid, gid, aux = assignments.graph_db_insert_sdf_file(gdb, gcd, sdf_fname)
+    pos, extras = gcd.sdf_decode(sdf_fname)
+    eid, gid = assignments.graph_db_add_single_molecule_state(gdb, pos)
 
     # Parameterize everything in the graph db then immediately access
     # the physical system for our molecule
