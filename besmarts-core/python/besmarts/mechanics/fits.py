@@ -39,6 +39,7 @@ from besmarts.mechanics import objectives
 from besmarts.mechanics import hessians
 from besmarts.mechanics import vibration
 from besmarts.mechanics import molecular_models as mm
+from besmarts.mechanics import smirnoff_models
 
 import scipy.optimize
 eid_t = int
@@ -48,6 +49,9 @@ PRECISION = configs.precision
 POSITIONS = assignments.POSITIONS
 HESSIANS = assignments.HESSIANS
 GRADIENTS = assignments.GRADIENTS
+
+au2kcal = 627.51
+kj2kcal = 1/4.184
 
 
 class compute_config:
@@ -62,6 +66,8 @@ class compute_config:
         self.addr = addr
         self.keys = []
         self.enable_minimization = True
+        self.fc_reset_config = None
+        self.method_vib_modes = "min"
 
     def run(self) -> List[Dict[assignments.tid_t, assignments.graph_db_table]]:
 
@@ -184,6 +190,21 @@ class compute_config_energy(compute_config):
                                     }
                                 )
 
+                    if self.fc_reset_config:
+                        if self.fc_reset_config.get("unique", False):
+                            psys = reset_unique(
+                                self.fc_reset_config,
+                                gde,
+                                psys
+                            )
+                        else:
+                            psys = reset(
+                                self.fc_reset_config,
+                                csys,
+                                assignments.graph_db_get_entries(gdb, eid),
+                                psystems={eid: psys}
+                            )[eid].value
+
                     ene = objectives.physical_system_energy(psys, csys)
 
                     tbl.values.append(ene)
@@ -258,6 +279,20 @@ class compute_config_gradient(compute_config):
                                         if k[0] == m
                                     }
                                 )
+                    if self.fc_reset_config:
+                        if self.fc_reset_config.get("unique", False):
+                            psys = reset_unique(
+                                self.fc_reset_config,
+                                gde,
+                                psys
+                            )
+                        else:
+                            psys = reset(
+                                self.fc_reset_config,
+                                csys,
+                                assignments.graph_db_get_entries(gdb, eid),
+                                psystems={eid: psys}
+                            )[eid].value
 
                     gx = optimizers_openmm.physical_system_gradient_openmm(
                         psys,
@@ -339,11 +374,31 @@ class compute_config_hessian(compute_config):
 
                     pos = psys.models[0].positions[0]
 
-                    if self.enable_minimization:
+                    if self.fc_reset_config:
+                        if self.fc_reset_config.get("unique", False):
+                            psys = reset_unique(
+                                self.fc_reset_config,
+                                gde,
+                                psys
+                            )
+                        else:
+                            psys = reset(
+                                self.fc_reset_config,
+                                csys,
+                                assignments.graph_db_get_entries(gdb, eid),
+                                psystems={eid: psys}
+                            )[eid].value
+
+                    if self.enable_minimization or self.method_vib_modes == "min":
                         minpos = optimizers_openmm.optimize_positions_openmm(csys, psys, tol=1e-7)
                         pos = minpos
                         tbl_pos.values = minpos
                         psys.models[0].positions[0] = minpos
+
+                    # for m, pm in enumerate(psys.models):
+                    #     print(m)
+                    #     for ic, terms in pm.values[0].items():
+                    #         print(m, ic, terms)
 
                     hess_mm = optimizers_openmm.physical_system_hessian_openmm(
                         psys,
@@ -432,6 +487,21 @@ class compute_config_position(compute_config):
                                             if k[0] == m
                                         }
                                     )
+                        if self.fc_reset_config:
+                            if self.fc_reset_config.get("unique", False):
+                                psys = reset_unique(
+                                    self.fc_reset_config,
+                                    gde,
+                                    psys
+                                )
+                            else:
+                                psys = reset(
+                                    self.fc_reset_config,
+                                    csys,
+                                    assignments.graph_db_get_entries(gdb, eid),
+                                    psystems={eid: psys}
+                                )[eid].value
+
 
                         # print(f"Initial xyz for EID {eid}:")
                         # print("\n".join(print_xyz(pos0)))
@@ -496,6 +566,9 @@ class objective_config:
         self.cache = {}
         self.batch_size = None
         self.enable_minimization = True
+        self.fc_reset_config = None
+        self.method_vib_modes = "min"
+        self.verbose = 0
 
     def get_task(
         self,
@@ -519,6 +592,7 @@ class objective_config:
             cc.keys.append({})
         cc.psys = psys
         cc.reuse = reuse
+        cc.fc_reset_config = self.fc_reset_config
         return cc
 
 
@@ -579,7 +653,8 @@ class objective_config:
         out = []
         for (eid, gde), tbls in zip(GDB.entries.items(), D):
             rmse = []
-            out.append(f"EID {eid} Position objective:")
+            if self.verbose > 1:
+                out.append(f"EID {eid} Position objective:")
             for tid, tbl in tbls.items():
                 tbl0 = gde.tables[tid]
                 for gid, gdg in tbl.graphs.items():
@@ -597,23 +672,25 @@ class objective_config:
                                 x = arrays.array_difference(x1, x0)
                                 x = arrays.array_round(x, PRECISION)
                                 obj.extend(x)
-                                xyz1 = " ".join([f"{xi:8.4f}" for xi in x1])
-                                xyz0 = " ".join([f"{xi:8.4f}" for xi in x0])
-                                dxyz = " ".join([f"{xi:8.4f}" for xi in  x])
                                 rmse.append(arrays.array_inner_product(x, x))
-                                addr = f"    {eid:4d} {gid:2d} {rid:2d} "
-                                addr += f"{cid:2d} {ic[0]:3d}"
-                                out_str  = f" MM: {xyz1} QM: {xyz0} dP: {dxyz}"
-                                out.append(addr + out_str)
+                                if self.verbose > 1:
+                                    xyz1 = " ".join([f"{xi:8.4f}" for xi in x1])
+                                    xyz0 = " ".join([f"{xi:8.4f}" for xi in x0])
+                                    dxyz = " ".join([f"{xi:8.4f}" for xi in  x])
+                                    addr = f"    {eid:4d} {gid:2d} {rid:2d} "
+                                    addr += f"{cid:2d} {ic[0]:3d}"
+                                    out_str  = f" MM: {xyz1} QM: {xyz0} dP: {dxyz}"
+                                    out.append(addr + out_str)
             if len(rmse):
                 rmse = (sum(rmse)/len(rmse))**.5
             else:
                 rmse = 0
             X2 = arrays.array_inner_product(obj, obj)
-            out.append(" ".join([
-                f"Total Position SSE: {X2:10.5f} A^2",
-                f"RMSE: {rmse:10.5f} A"
-            ]))
+            if self.verbose > 0:
+                out.append(" ".join([
+                    f"Total Position SSE: {X2:10.5f} A^2",
+                    f"RMSE: {rmse:10.5f} A"
+                ]))
         return returns.success(arrays.array_round(obj, PRECISION), out=out, err=[])
 
 
@@ -642,6 +719,7 @@ class objective_config_gradient(objective_config):
         else:
             cc.keys.append({})
         cc.reuse = reuse
+        cc.fc_reset_config = self.fc_reset_config
         return cc
 
     def compute_gradient_2pt(self, ref, X0, E0, E1, h):
@@ -714,17 +792,29 @@ class objective_config_gradient(objective_config):
 
                 x = arrays.array_difference(x1, x0)
                 nlines = len(out)
-                out.append(f" EID {eid} Gradient objective:")
-                for i in range(len(x1)//3):
-                    xx = x[3*i:3*i+3]
-                    xyz1 = " ".join([f"{xi:12.4e}" for xi in x1[3*i:3*i+3]])
-                    xyz0 = " ".join([f"{xi:12.4e}" for xi in x0[3*i:3*i+3]])
-                    dxyz = " ".join([f"{xi:12.4e}" for xi in xx])
-                    out.append(f"   {i+1:4d} MM: {xyz1} QM: {xyz0} dG: {dxyz}")
-                    rmse.append(arrays.array_inner_product(xx, xx))
-                if verbose:
-                    for i in range(len(out) - nlines):
-                        print(out[i])
+                if self.verbose > 1:
+                    out.append(f" EID {eid} Gradient objective:")
+                    totalx0 = [0.0, 0.0, 0.0]
+                    totalx1 = [0.0, 0.0, 0.0]
+                    totalxx = [0.0, 0.0, 0.0]
+                    for i in range(len(x1)//3):
+                        xx = x[3*i:3*i+3]
+                        totalx0 = arrays.array_add(totalx0, x0[3*i:3*i+3])
+                        totalx1 = arrays.array_add(totalx1, x1[3*i:3*i+3])
+                        totalxx = arrays.array_add(totalxx, xx)
+                        xyz1 = " ".join([f"{xi:12.4e}" for xi in x1[3*i:3*i+3]])
+                        xyz0 = " ".join([f"{xi:12.4e}" for xi in x0[3*i:3*i+3]])
+                        dxyz = " ".join([f"{xi:12.4e}" for xi in xx])
+                        out.append(f"   {i+1:4d} MM: {xyz1} QM: {xyz0} dG: {dxyz}")
+                        rmse.append(arrays.array_inner_product(xx, xx))
+                    xyz1 = " ".join([f"{xi:12.4e}" for xi in totalx1])
+                    xyz0 = " ".join([f"{xi:12.4e}" for xi in totalx0])
+                    dxyz = " ".join([f"{xi:12.4e}" for xi in totalxx])
+                    out.append(f"   Sum: MM: {xyz1} QM: {xyz0} dG: {dxyz}")
+
+                    if verbose:
+                        for i in range(len(out) - nlines):
+                            print(out[i])
                 X.extend(x)
             if rmse:
                 rmse = (sum(rmse)/len(rmse))**.5
@@ -732,10 +822,11 @@ class objective_config_gradient(objective_config):
                 rmse = 0
 
             X2 = arrays.array_inner_product(X, X)
-            out.append(" ".join([
-                f" Total Gradient SSE: {X2:10.5f} (kJ/mol/A)^2",
-                f"RMSE: {rmse:10.5f} kJ/mol/A"
-            ]))
+            if self.verbose > 0:
+                out.append(" ".join([
+                    f" Total Gradient SSE: {X2:10.5f} (kJ/mol/A)^2",
+                    f"RMSE: {rmse:10.5f} kJ/mol/A"
+                ]))
         return returns.success(arrays.array_round(X, PRECISION), out=out, err=[])
 
 
@@ -743,7 +834,10 @@ class objective_config_hessian(objective_config):
 
     def __init__(self, *args, **kwds):
         super().__init__(*args, **kwds)
-        self.enable_minimization = False
+        self.enable_minimization = kwds.get("enable_minimization", False)
+        self.method_vib_modes = kwds.get("method_vib_modes", "min")
+        if self.method_vib_modes == "min":
+            self.enable_minimization = True
 
     def get_task(
         self,
@@ -764,6 +858,8 @@ class objective_config_hessian(objective_config):
             cc.keys.append({})
         cc.reuse = reuse
         cc.enable_minimization = self.enable_minimization
+        cc.method_vib_modes = self.method_vib_modes
+        cc.fc_reset_config = self.fc_reset_config
 
         return cc
 
@@ -790,13 +886,18 @@ class objective_config_hessian(objective_config):
 
             hess_mm = etbls[HESSIANS].values
 
-            if self.enable_minimization:
+            if self.enable_minimization or self.method_vib_modes == "min":
                 pos1 = etbls[POSITIONS].values
                 xyz = list([x[0] for x in pos1.selections.values()])
 
+            if self.method_vib_modes in ["min", "mm"]:
                 sym = graphs.graph_symbols(g)
                 mass = [[vibration.mass_table[sym[n]]]*3 for n in sym]
                 sym = list(sym.values())
+
+                remove = 0
+                if self.method_vib_modes == "mm":
+                    remove = 0
 
                 x1, mm_modes, mm_dl = vibration.hessian_modes(
                     hess_mm,
@@ -804,16 +905,16 @@ class objective_config_hessian(objective_config):
                     xyz,
                     mass,
                     0,
-                    remove=0,
+                    remove=remove,
                     stdtr=True,
                     return_DL=True
                 )
                 cost = np.abs(np.dot(np.array(DL).T, mm_dl))
-                map_row, map_col = scipy.optimize.linear_sum_assignment(1-cost)
-                x1 = [x1[i] for i in map_row]
+                s_row, s_col = scipy.optimize.linear_sum_assignment(1 - cost)
+                x1 = [x1[i] for i in s_row]
                 # x1 = list(x1)
-                # out.append(f"Cost for EID {self.addr.eid[0]} is total {cost[map_row, map_col].sum()} mean {cost[map_row, map_col].sum()/len(x1)} degrees {np.degrees(np.arccos(cost[map_row, map_col].sum()/len(x1)))}")
-            else:
+
+            elif self.method_vib_modes == "qm":
                 grad_mm = list(etbls[GRADIENTS].values)
                 x1 = list(hessians.hessian_frequencies(
                     g, hess_mm, grad_mm, DL, ics, B, B2)
@@ -850,7 +951,7 @@ class objective_config_hessian(objective_config):
 
         out = []
         X = []
-        for (eid, gde), tbls  in zip(GDB.entries.items(), D):
+        for (eid, gde), tbls in zip(GDB.entries.items(), D):
 
             gid = list(gde.tables[assignments.POSITIONS].graphs)[0]
             g = GDB.graphs[gid]
@@ -895,7 +996,8 @@ class objective_config_hessian(objective_config):
                         0,
                         remove=0,
                         stdtr=True,
-                        return_DL=True
+                        return_DL=True,
+                        verbose=False
                     )
 
                     self.cache['IC:qm_freq'] = hess_qm_freq
@@ -907,30 +1009,85 @@ class objective_config_hessian(objective_config):
                 grad_mm = list(tbls[GRADIENTS].values)
 
                 # grad1 = list(tbls[GRADIENTS].values)
-                if self.enable_minimization:
+                if self.enable_minimization or self.method_vib_modes == "min":
                     pos1 = tbls[POSITIONS].values
                     xyz = list([x[0] for x in pos1.selections.values()])
 
+                if self.verbose > 2:
+                    out.append(
+                        f"EID {self.addr.eid[0]} "
+                        f"FC reset mode is {self.fc_reset_config}"
+                    )
+                if self.method_vib_modes in ["min", "mm"]:
                     sym = graphs.graph_symbols(g)
                     mass = [[vibration.mass_table[sym[n]]]*3 for n in sym]
                     sym = list(sym.values())
+
+                    remove = 0
+                    if self.method_vib_modes == "mm":
+                        remove = 0
 
                     x1, mm_modes, mm_dl = vibration.hessian_modes(
                         hess_mm,
                         sym,
                         xyz,
                         mass,
-                        0,
-                        remove=0,
+                        1,
+                        remove=remove,
                         stdtr=True,
-                        return_DL=True
+                        return_DL=True,
+                        verbose=False
                     )
-                    cost = np.abs(np.dot(np.array(DL).T, mm_dl))
-                    map_row, map_col = scipy.optimize.linear_sum_assignment(1-cost)
-                    x1 = [x1[i] for i in map_row]
+                    cost = 1 - np.abs(np.dot(np.array(DL).T, mm_dl))
+                    costheta = np.degrees(np.arccos(np.dot(np.array(DL).T, mm_dl)))
+                    costheta[costheta > 90] -= 180
+                    s_row, s_col = scipy.optimize.linear_sum_assignment(cost)
+                    x1 = [x1[i] for i in s_col]
                     # x1 = list(x1)
-                    out.append(f"Cost for EID {self.addr.eid[0]} is total {cost[map_row, map_col].sum()} mean {cost[map_row, map_col].sum()/len(x1)} degrees {np.degrees(np.arccos(cost[map_row, map_col].sum()/len(x1)))}")
-                else:
+                    angle = np.arccos(
+                        np.abs(cost[s_row, s_col]).sum()/len(cost)
+                    )
+                    if self.verbose > 2:
+                        out.append(
+                            f"Cost for EID {self.addr.eid[0]} "
+                            f"is total {cost[s_row, s_col].sum()} "
+                            f"mean {angle} "
+                            f"degrees {np.degrees(angle)}"
+                        )
+                        for i, j in zip(s_row, s_col):
+                            out.append(
+                                f"Vib. assignment {i} -> {j} "
+                                f"cost {cost[i][j]}"
+                                f"angle {costheta[i][j]}"
+                            )
+                        print("\n".join(out))
+
+                    d = np.abs(np.array(x1) - np.array(x0))
+
+                    cost = np.log(np.outer(d, d)) * np.abs(np.dot((np.array(DL)).T, mm_dl))
+                    s_row, s_col = scipy.optimize.linear_sum_assignment(cost)
+                    x2 = [x1[i] for i in s_col]
+                    # x1 = list(x1)
+                    angle = np.arccos(
+                        np.abs(cost[s_row, s_col]).sum()/len(cost)
+                    )
+                    if self.verbose > 2:
+                        out.append(
+                            f"Cost for EID {self.addr.eid[0]} "
+                            f"is total {cost[s_row, s_col].sum()} "
+                            f"mean {angle} "
+                            f"degrees {np.degrees(angle)}"
+                        )
+                        for i, j in zip(s_row, s_col):
+                            out.append(
+                                f"Vib. assignment {i} -> {j} "
+                                f"cost {cost[i][j]} "
+                                f"angle {costheta[i][j]}"
+                            )
+                        print("\n".join(out))
+
+
+                elif self.method_vib_modes == "qm":
                     DL = self.cache['IC:dl']
                     (ics, B, B2) = self.cache['IC:b']
 
@@ -943,14 +1100,17 @@ class objective_config_hessian(objective_config):
 
             nlines = len(out)
             mae = [abs(xi) for xi in x]
-            out.append(f"\nEID {eid} Computed Hessian Frequencies (cm-1):")
-            for i, (f1, f0) in enumerate(zip(x1, x0), 1):
-                out.append(f"     {i:4d} MM: {f1: 8.1f} QM: {f0:8.1f} Diff: {f1-f0:8.1f}")
-            out.append("          ----------------------------------------")
-            out.append(f"     SAE  MM: {sum(x1): 8.1f} QM: {sum(x0):8.1f} Diff: {sum(mae):8.1f}")
-            out.append(f"     MAE  MM: {sum(x1)/N: 8.1f} QM: {sum(x0)/N:8.1f} Diff: {sum(mae)/N:8.1f}")
-            out.append(f"Int. SAE  MM: {sum(x1[6:]): 8.1f} QM: {sum(x0):8.1f} Diff: {sum(mae):8.1f}")
-            out.append(f"Int. MAE  MM: {sum(x1[6:])/(N-6): 8.1f} QM: {sum(x0[6:])/(N-6):8.1f} Diff: {sum(mae[6:])/(N-6):8.1f}")
+            if self.verbose > 0:
+                out.append(f"\nEID {eid} Computed Hessian Frequencies (cm-1):")
+            if self.verbose > 1:
+                for i, (f1, f0) in enumerate(zip(x1, x0), 1):
+                    out.append(f"     {i:4d} MM: {f1: 8.1f} QM: {f0:8.1f} Diff: {f1-f0:8.1f}")
+                out.append("          ----------------------------------------")
+            if self.verbose > 0:
+                out.append(f"     SAE  MM: {sum(x1): 8.1f} QM: {sum(x0):8.1f} Diff: {sum(mae):8.1f}")
+                out.append(f"     MAE  MM: {sum(x1)/N: 8.1f} QM: {sum(x0)/N:8.1f} Diff: {sum(mae)/N:8.1f}")
+                out.append(f"Int. SAE  MM: {sum(x1[6:]): 8.1f} QM: {sum(x0):8.1f} Diff: {sum(mae):8.1f}")
+                out.append(f"Int. MAE  MM: {sum(x1[6:])/(N-6): 8.1f} QM: {sum(x0[6:])/(N-6):8.1f} Diff: {sum(mae[6:])/(N-6):8.1f}")
             # if verbose:
             #     for i in range(len(out) - nlines):
             #         print(out[i])
@@ -978,6 +1138,7 @@ class objective_config_energy(objective_config):
             cc.keys.append({})
         cc.psys = psys
         cc.reuse = reuse
+        cc.fc_reset_config = self.fc_reset_config
         return cc
 
 
@@ -1002,6 +1163,7 @@ class objective_config_position(objective_config):
         cc.reuse = reuse
         cc.step_limit = self.step_limit
         cc.tol = self.tol
+        cc.fc_reset_config = self.fc_reset_config
         return cc
 
 class objective_config_penalty(objective_config):
@@ -1179,7 +1341,11 @@ def gdb_to_physical_systems(gdb, csys, ref=None, reuse=None):
         rid = 0
         pos = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
         try:
-            psysref[eid] = mm.chemical_system_to_physical_system(csys, [pos], ref=ref, reuse=reuse)
+            if type(ref) is dict:
+                ref0 = ref[eid]
+            else:
+                ref0 = ref
+            psysref[eid] = mm.chemical_system_to_physical_system(csys, [pos], ref=ref0, reuse=reuse)
         except Exception as e:
             print(f"\n\nWarning: could not parameterize {eid}, skipping.")
             print(f"SMILES: {pos.smiles}")
@@ -1320,9 +1486,11 @@ def objective_tier_run(
 
     result, y0, y1, gx = ret.value
 
+
     ret.out.append(f">>> Initial Objective {y0:10.5g}")
     ret.out.append(f">>> Final Objective   {y1:10.5g}")
-    ret.out.append(f">>> Percent change    {(y1-y0)/y0*100:10.5g}%")
+    if y0 > 0.0:
+        ret.out.append(f">>> Percent change    {(y1-y0)/y0*100:10.5g}%")
 
     if verbose:
         for i in [-3, -2, -1]:
@@ -1562,7 +1730,7 @@ def forcefield_optimization_strategy_build_macro_iterations(
         for branches in range(bounds.branch_limit, bounds.branch_limit + 1):
             bits = bounds.bit_search_min - 1
             while bits < bounds.bit_search_limit:
-                bits = bounds.bit_search_limit
+                bits += 1
 
                 search_cursor += 1
                 if search_cursor < strat.cursor:
@@ -1686,7 +1854,7 @@ def forcefield_optimization_strategy_build_macro_iterations(
 
                         mbounds: configs.smarts_perception_config
 
-                        if mbounds.splitter.bit_search_limit < bits:
+                        if mbounds.splitter.bit_search_limit + 1 < bits:
                             continue
                         if mbounds.splitter.bit_search_min > bits:
                             continue
@@ -1712,7 +1880,7 @@ def forcefield_optimization_strategy_build_macro_iterations(
                         s.operation = strat.SPLIT
 
                         splitter = configs.smarts_splitter_config(
-                            mbounds.splitter.bit_search_min,
+                            bits,
                             bits,
                             0,
                             branches,
@@ -1773,6 +1941,7 @@ def fit(csys, gdb, objective, psystems, nodes, wq=None, verbose=False):
     fitting_models = set((k[0] for k in fitkeys))
     reuse0 = [k for k, _ in enumerate(csys.models) if k not in fitting_models]
 
+    print("REUSE IS", reuse0)
     ret = objective_tier_run(
         objective,
         gdb,
@@ -1866,7 +2035,7 @@ def ff_optimize(
     wq = compute.workqueue_local('0.0.0.0', configs.workqueue_port)
 
     ws = compute.workqueue_new_workspace(wq)
-    psystems = reset(
+    ret = reset(
         reset_config,
         csys0,
         gdb,
@@ -1874,6 +2043,8 @@ def ff_optimize(
         verbose=True,
         ws=ws
     )
+    psystems = ret.value
+    print("\n".join(ret.out))
     ws.close()
 
     csys = copy.deepcopy(csys0)
@@ -1892,11 +2063,12 @@ def ff_optimize(
     keys = [k for k in keys if initial_objective.key_filter(k)]
 
     assigned_nodes = sorted(set([
-        (m, l) for psys in psystems.values()
-            for m, pm in enumerate(psys.models)
-                for proc in pm.labels
-                    for glbl in proc.values()
-                        for t, l in glbl.items()
+        (m, l)
+        for psys in psystems.values()
+        for m, pm in enumerate(psys.models)
+        for proc in pm.labels
+        for glbl in proc.values()
+        for t, l in glbl.items()
     ]))
 
     print("Initial parameter assignments of dataset:")
@@ -1952,6 +2124,8 @@ def ff_optimize(
         mm.chemical_system_set_value(csys, k, v)
         print(f"{str(k):20s} | New: {v:12.6g} Ref {v0:12.6g} Diff {v-v0:12.6g}")
 
+    smirnoff_models.smirnoff_write_version_0p3(csys, "csys.initial.offxml")
+
     for psys in psystems.values():
         reapply = set()
 
@@ -1976,7 +2150,6 @@ def ff_optimize(
                     )
 
     step_tracker = strategy.step_tracker
-    
 
     while True:
         if success:
@@ -2082,6 +2255,7 @@ def ff_optimize(
             step: optimization.optimization_step = (
                 optimization.optimization_iteration_next(macro)
             )
+            # step_tracker[tkey] = strategy.cursor
 
             n_micro = len(macro.steps)
             config: configs.smarts_perception_config = step.pcp
@@ -2090,13 +2264,12 @@ def ff_optimize(
             hidx = mm.chemical_system_get_node_hierarchy(csys, S)
             topo = hidx.topology
 
-            step_tracker[tkey] = strategy.cursor
 
             if S.type == 'parameter' and S.index not in hidx.subgraphs:
                 hidx.subgraphs[S.index] = gcd.smarts_decode(hidx.smarts[S.index])
             if type(hidx.subgraphs[S.index]) is str:
                 # could not parse smarts (e.g. recursive) so we skip
-                # step_tracker[tkey] = strategy.cursor
+                step_tracker[tkey] = strategy.cursor
                 continue
             S0 = graphs.subgraph_to_structure(hidx.subgraphs[S.index], topo)
 
@@ -2115,19 +2288,21 @@ def ff_optimize(
 
             selected_ics = []
             selected_graphs = set()
+            aa = []
             for eid, ps in psystems.items():
                 gids = [*gdb.entries[eid].tables[assignments.POSITIONS].graphs]
                 glbls = ps.models[int(S.category[0])].labels
-                for gid, lbls in zip(gids, glbls):
-                    for ic, term_lbls in lbls.items():
-                        if S.name in term_lbls.values():
-                            selected_ics.append((gid, ic))
-                            selected_graphs.add(gid)
+                for gid, lbls in dict(zip(gids, glbls)).items():
+                    if gid not in selected_graphs:
+                        for ic, term_lbls in lbls.items():
+                            if S.name in term_lbls.values():
+                                selected_ics.append((gid, ic))
+                                selected_graphs.add(gid)
 
-            aa = selected_ics
             G = {k: v for k, v in G0.items() if k in selected_graphs}
             del selected_graphs
 
+            aa = selected_ics
             assn_s = aa
 
             iteration += 1
@@ -2160,7 +2335,7 @@ def ff_optimize(
 
                 if not aa:
                     print("No matches.")
-                    # step_tracker[tkey] = strategy.cursor
+                    step_tracker[tkey] = strategy.cursor
                     continue
 
                 print(f"Matched N={len(aa)}")
@@ -2191,17 +2366,17 @@ def ff_optimize(
                 print()
                 if len(seen) < 2 and len(assn_s) < 100:
                     print(f"Skipping {S.name} since all graphs are the same")
-                    # step_tracker[tkey] = strategy.cursor
+                    step_tracker[tkey] = strategy.cursor
                     continue
 
                 if len(seen) < 2 and len(assn_s) < 100:
                     print(f"Skipping {S.name} since all graphs are the same")
-                    # step_tracker[tkey] = strategy.cursor
+                    step_tracker[tkey] = strategy.cursor
                     continue
 
                 if graphs.structure_max_depth(S0) > config.splitter.branch_depth_min:
                     print("This parameter exceeds current depth. Skipping")
-                    # step_tracker[tkey] = strategy.cursor
+                    step_tracker[tkey] = strategy.cursor
                     continue
 
                 # this is where I generate all candidates
@@ -2487,6 +2662,7 @@ def ff_optimize(
                     (edits, _, p_j),
                     (S, Sj, step, _, _, _, _),
                 ) in enumerate(candidates.items(), 1)
+                if mm.chemical_system_get_node_hierarchy(csys, S) is not None
             }
             print(
                 datetime.datetime.now(),
@@ -2519,7 +2695,8 @@ def ff_optimize(
                 for k, v in iterable.items():
                     r = calc_tier_distributed(*v[0], **v[1], verbose=True, shm=shm)
                     work[k] = r
-            elif len(tier.objectives) < 500 and len(candidates) > 1 and configs.remote_compute_enable:
+            # elif len(tier.objectives) < 500 and len(candidates) > 1 and configs.remote_compute_enable:
+            elif configs.remote_compute_enable:
                 print(logs.timestamp(), f"Each worker will compute a full candidate N={len(iterable)}")
                 ws = compute.workqueue_new_workspace(wq, address=addr, nproc=procs, shm=shm)
                 # # this modifies the csys, relabels and computes objective
@@ -2530,7 +2707,7 @@ def ff_optimize(
                     calc_tier_distributed,
                     iterable,
                     chunksize,
-                    math.log(len(iterable)//10, 10),
+                    0, #math.log(len(iterable)//10, 10),
                     len(iterable),
                     verbose=True
                 )
@@ -2692,6 +2869,7 @@ def ff_optimize(
                     (edits, _, p_j),
                     (S, Sj, step, _, _, _, _),
                 ) in enumerate(candidates.items(), 1)
+                if mm.chemical_system_get_node_hierarchy(csys, S) is not None
                 # ) in enumerate(candidates.items(), 1) for j in tiers[0].objectives
             }
             print(datetime.datetime.now(), f"Generated {len(candidates)} x {len(initial_objective.objectives)//len(j)} = {len(iterable)} candidate evalulation tasks")
@@ -2742,7 +2920,7 @@ def ff_optimize(
                     for k, v in iterable.items():
                         r = calc_tier_distributed(*v[0], **v[1], verbose=True, shm=shm)
                         work[k] = r
-                elif len(initial_objective.objectives) < 500 and len(candidates) > 1 and configs.remote_compute_enable:
+                elif configs.remote_compute_enable:
                     # this means each candidate has relatively few targets to compute, so we can let each worker handle one candidate
                     print(logs.timestamp(), f"Each worker will compute a full candidate N={len(iterable)}")
                     ws = compute.workqueue_new_workspace(wq, address=addr, nproc=procs, shm=shm)
@@ -2756,7 +2934,7 @@ def ff_optimize(
                         chunksize,
                         0.0,
                         len(iterable),
-                        verbose=True,
+                        verbose=False,
                     )
                     ws.close()
                     ws = None
@@ -2873,6 +3051,11 @@ def ff_optimize(
                 cout_key = (-int(keep), cX, match_len, cnd_i, S.name)
                 cout[cout_key] = cout_line
 
+                # if this was valid but not accepted, we allow it to be
+                # reconsidered if we repeat the step
+                # if keep:
+                #     step_tracker[(S.category, S.name)] = max(0, strategy.cursor - 1)
+
                 # use these below to determine the best ones to keep
                 heapq.heappush(cout_sorted_keys, cout_key)
                 cnd_kv[cout_key] = kv
@@ -2968,6 +3151,10 @@ def ff_optimize(
                 csys = csys_ref
                 continue
 
+
+            print("The resulting hierarchy is")
+            print_chemical_system(csys)
+
             success = False
             added = False
             if len(cnd_keep) == 1 and len(nodes) == 1:
@@ -2994,12 +3181,10 @@ def ff_optimize(
                         reuse=reuse0
                     ) for i in psystems
                 }
+                S = list(nodes.values())[0]
+                step_tracker[(S.category, S.name)] = 0
 
             else:
-
-
-                # print("*just force testing this code path")
-
                 psysref = {
                     i: mm.chemical_system_to_physical_system(
                         csys,
@@ -3012,7 +3197,7 @@ def ff_optimize(
                 ws = None
                 if wq:
                     ws = compute.workqueue_new_workspace(wq)
-                psysref = reset(reset_config, csys, gdb, psysref, verbose=True, ws=ws)
+                psysref = reset(reset_config, csys, gdb, psysref, verbose=True, ws=ws).value
                 if ws:
                     ws.close()
                 print("Multiple modifications, doing another fit with all accepted*")
@@ -3058,6 +3243,7 @@ def ff_optimize(
                         macro_count[sname] -= 1
                         micro_added -= 1
                         n_added -= 1
+
                     continue
 
                 for k, v in kv.items():
@@ -3072,6 +3258,20 @@ def ff_optimize(
                 key = keys[cnd_i]
 
                 (S, Sj, step, _, _, _, _) = candidates[key]
+
+                hidx = mm.chemical_system_get_node_hierarchy(csys, S)
+                if hidx is None:
+                    if S.name in repeat:
+                        repeat.remove(S.name)
+                    if S.name in assigned_nodes:
+                        assigned_nodes.remove(S.name)
+                    if (S.category, S.name) in step_tracker:
+                        step_tracker.pop((S.category, S.name))
+                    if S.name in visited:
+                        visited.remove(S.name)
+                    print("Warning, could not find node {S.name} in the hierarchy. Skipping")
+                    continue
+
                 repeat.add(S.name)
                 sma = Sj_sma[cnd_i-1]
                 kept.add(cnd_i)
@@ -3079,8 +3279,6 @@ def ff_optimize(
                 # hent = Sj
                 visited.add(hent.name)
                 edits = step.overlap[0]
-
-                hidx = mm.chemical_system_get_node_hierarchy(csys, S)
 
                 if step.operation == strategy.SPLIT:
 
@@ -3129,7 +3327,22 @@ def ff_optimize(
             psystems = psysref
 
 
-        if strategy.macro_accept_max_total > 0 and n_added > 0:
+        if n_added > 0:
+
+            # because we added/modified, we consider the candidates that
+            # weren't accepted since they might perform better after the
+            # new parameters were added
+            # for cnd in candidates.values():
+            #     S = cnd[0]
+            #     Sj = cnd[1]
+            #     k = (S.category, S.name)
+            #     if k in step_tracker and step_tracker[k] == strategy.cursor:
+            #         step_tracker[k] -= 1
+            #     if step.operation == strategy.MERGE:
+            #         k = (Sj.category, Sj.name)
+            #         if k in step_tracker and step_tracker[k] == strategy.cursor:
+            #             step_tracker[k] -= 1
+
             strategy.repeat_step()
 
         print(f"There were {n_added} successful operations")
@@ -3149,28 +3362,19 @@ def ff_optimize(
 
     if final_objective and (initial_objective or tiers):
 
-        if strategy.enable_dihedral_periodicity_reset:
-            print("Resetting torsion periodicities")
-            psystems = reset_project_torsions(
-                csys,
-                gdb,
-                psystems,
-                max_n=strategy.dihedral_periodicity_reset_max_n,
-                alpha=strategy.dihedral_periodicity_reset_alpha,
-                m=2,
-                verbose=True
-            )
 
         print(f"{datetime.datetime.now()} Computing final fit")
 
-        if configs.processors == 1:
-            psystems = reset(reset_config, csys, gdb, psystems, verbose=True, ws=None)
-            kv, _, P, gp = fit(csys, gdb, final_objective, psystems, assigned_nodes, wq=None, verbose=True).value
-        else:
+        ws = None
+        if configs.processors > 1:
             ws = compute.workqueue_new_workspace(wq)
-            psystems = reset(reset_config, csys, gdb, psystems, verbose=True, ws=ws)
+        ret = reset(reset_config, csys, gdb, psystems, verbose=True, ws=ws)
+        psystems = ret.value
+        print("\n".join(ret.out))
+        kv, _, P, gp = fit(csys, gdb, final_objective, psystems, assigned_nodes, wq=wq, verbose=True).value
+        if ws:
             ws.close()
-            kv, _, P, gp = fit(csys, gdb, final_objective, psystems, assigned_nodes, wq=wq, verbose=True).value
+            ws = None
 
         C = chemical_objective(csys, P0=len(G0), C0=CX0)
         print(f"{datetime.datetime.now()} C0={C0}")
@@ -3236,13 +3440,13 @@ def calc_tier_distributed(S, Sj, operation, edits, oid, verbose=False, wq=None, 
 
     reuse = shm.reuse
     gdb = assignments.graph_db_get_entries(shm.gdb, [*set((e for o in oid for e in objective.objectives[o].addr.eid))])
-    
+
     psysref = None
     if shm.psysref:
         psysref = {eid: shm.psysref[eid] for eid in gdb.entries}
     else:
         psysref = gdb_to_physical_systems(gdb, csys)
-    
+
     keep = True
     kv, y0, P, gx, C = {}, 0, 0, [], 0
     # need to perform the operation and then add to keys
@@ -3303,7 +3507,9 @@ def calc_tier_distributed(S, Sj, operation, edits, oid, verbose=False, wq=None, 
         ws = compute.workqueue_new_workspace(wq, shm={})
     elif configs.processors > 1 and len(objective.objectives) > 5:
         ws = compute.workspace_local('127.0.0.1', 0, shm={})
-    psysref = reset(shm.reset_config, csys, gdb, psysref, verbose=True, ws=ws)
+    ret = reset(shm.reset_config, csys, gdb, psysref, verbose=True, ws=ws)
+    psystems = ret.value
+    print("\n".join(ret.out))
     if ws:
         ws.close()
 
@@ -3399,7 +3605,6 @@ def perform_operations(
         Sj_sma,
     ):
 
-
     nodes = {}
     ignore = set()
     for cnd_i, key in keys.items():
@@ -3418,6 +3623,7 @@ def perform_operations(
                 breakpoint()
                 print(f"Invalid node for operation: {S.name}")
                 continue
+
             topo = hidx.topology
             # param_name = "p" + str(group_number)
             node = mm.chemical_model_smarts_hierarchy_copy_node(cm, pid, uid, S, None)
@@ -3427,6 +3633,7 @@ def perform_operations(
             Sj = graphs.subgraph_relabel_nodes(
                 Sj, {n: i for i, n in enumerate(Sj.select, 1)}
             )
+            print(f" ::: Splitting {S.name} :::")
             # Sj = graphs.subgraph_to_structure(Sj, topo)
 
             hidx.subgraphs[node.index] = graphs.subgraph_copy(Sj)
@@ -3435,21 +3642,19 @@ def perform_operations(
             nodes[cnd_i] = node
 
         elif step.operation == optimization.optimization_strategy.MERGE:
+
             # S might have been deleted previously
             # and Sj is a graph in splitting
             if Sj.name in ignore:
                 continue
+
             hidx = mm.chemical_system_get_node_hierarchy(csys, Sj)
             if hidx is None:
                 breakpoint()
                 print(f"Invalid node for operation: {Sj.name}")
                 continue
-            topo = hidx.topology
-            if Sj.index in hidx.subgraphs:
-                hidx.subgraphs.pop(Sj.index)
-            if Sj.index in hidx.smarts:
-                hidx.smarts.pop(Sj.index)
 
+            print(f" ::: Removing {Sj.name} from parent {S.name} :::")
             mm.chemical_model_smarts_hierarchy_remove_node(cm, cid, pid, uid, Sj)
             ignore.add(Sj.name)
             nodes[cnd_i] = Sj
@@ -4076,9 +4281,282 @@ def smiles_assignment_force_constants(gdb, alpha=-.25, guess_periodicity=True, m
 
     return sag_map
 
-def reset(reset_config, csys, gdb, psystems=None, verbose=False, ws=None):
+
+def reset_project_dihedrals(
+    csys,
+    psystems,
+    psys_hess,
+    vals,
+    psys_grad,
+    eid_grad,
+    gvals,
+    m,
+    lbl,
+    guess_periodicity=True,
+    max_n=3,
+    max_k=10,
+    alpha=-.5,
+    min_k=1e-3,
+    verbose=False
+):
+
+    out = []
+
+    csys_n0 = mm.chemical_system_get_value_list(csys, (m, 'n', lbl))
+    csys_p0 = mm.chemical_system_get_value_list(csys, (m, 'p', lbl))
+    csys_k0 = mm.chemical_system_get_value_list(csys, (m, 'k', lbl))
+    npk0 = csys_n0, csys_p0, csys_k0
+
+    # go into the psys and get the angles
+    grad_angles = []
+    grad_gq = []
+    angles = []
+    idiv = []
+    for psys in psys_hess:
+        pos = psys.models[m].positions[0]
+        indices = [
+            ic for ic, terms in psys.models[m].labels[0].items()
+            if lbl in terms.values()
+        ]
+        inner_bonds = [geometry.bond(ic[1:3]) for ic in indices]
+        idiv.extend([(
+            (max(1, len(graphs.graph_connection(pos.graph, a))-1)) *
+            (max(1, len(graphs.graph_connection(pos.graph, b))-1)))
+            for a, b in inner_bonds
+        ])
+        if m == 2:
+            psys_angles = assignments.smiles_assignment_geometry_torsions_nonlinear(pos, indices=indices)
+        elif m == 3:
+            psys_angles = assignments.smiles_assignment_geometry_outofplanes(pos, indices=indices)
+        psys_angles = [
+            t for y in psys_angles.selections.values()
+            for x in y for t in x
+        ]
+        angles.extend(psys_angles)
+    if gvals[m][lbl]:
+        grad_gq = gvals[m][lbl]
+    for i, eid in enumerate(eid_grad, 1):
+        psys = psystems[eid]
+        pos = psys.models[m].positions[0]
+        indices = [
+            ic for ic, terms in psys.models[m].labels[0].items()
+            if lbl in terms.values()
+        ]
+        # inner_bonds = [geometry.bond(ic[1:3]) for ic in indices]
+        # idiv.extend([(
+        #     (max(1, len(graphs.graph_connection(pos.graph, a))-1)) *
+        #     (max(1, len(graphs.graph_connection(pos.graph, b))-1)))
+        #     for a, b in inner_bonds
+        # ])
+        if m == 2:
+            psys_angles_sel = assignments.smiles_assignment_geometry_torsions_nonlinear(pos, indices=indices)
+        elif m == 3:
+            psys_angles_sel = assignments.smiles_assignment_geometry_outofplanes(pos, indices=indices)
+        psys_angles = [
+            t for y in psys_angles_sel.selections.values()
+            for x in y for t in x
+        ]
+        grad_angles.extend(psys_angles)
+    #     icb, B = assignments.bmatrix(pos, **bmat_config)
+    #     gx = arrays.array_scale(gdb.entries[eid].tables[GRADIENTS].values, 1/4.184)
+    #     gq = dict(zip(icb, hessians.project_gradient(B, gx)))
+
+    #     # grad_angle and grad_gq are (should be) in order
+    #     for ic in indices:
+    #         v = gq.get(ic)
+    #         if v is not None:
+    #             # grad_gq.append(v * au2kcal)
+    #             grad_gq.append(v * kj2kcal)
+    #             # ang = psys_angles_sel.selections.get(ic)
+    #             # if ang is None:
+    #             #     continue
+    #             # ang = ang[0][0]
+    #             # indicator = "  "
+    #             # if eid in eid_hess:
+    #             #     indicator = "G0"
+    #             # else:
+    #             #     indicator = "G "
+    #             # line = (
+    #             #     f"{lbl:6s} {eid:5d} "
+    #             #     f"{'-'.join(map(str, ic)):12s} "
+    #             #     f"{ang:12.6f} {indicator} {v:12.6f}"
+    #             #     "\n"
+    #             # )
+    #             # data_file.write(line)
+    #             # data_file.flush()
+
+    idiv_expected = sum(idiv)/len(idiv)
+    line = f"idiv unique: {set(idiv)}"
+    out.append(line)
+
+    # idiv_expected = 1
+    line = f"Expected idiv: {idiv_expected}"
+    out.append(line)
+    # print("Expected idiv:", idiv_expected)
+    # print(angles)
+
+
+    # line = f"Expected idiv: {idiv_expected}"
+    line = f"Reference npk0 {npk0}"
+    out.append(line)
+
+    if guess_periodicity:
+        csys_n = []
+        csys_p = []
+        for i in [*range(1, max_n+1)]:
+            if (
+                all(math.cos(i*t) < alpha for t in angles) or
+                all(math.cos(i*t) > -alpha for t in angles)
+            ):
+                csys_n.append(i)
+                csys_p.append(0)
+                break
+                # print(f"Consider {i}")
+    else:
+        csys_n = [n for n in csys_n0]
+        csys_p = [n for n in csys_p0]
+
+    # csys_n = [*range(1,121)]
+    # csys_p = [*[0]*120]
+    new_k_lst = []
+    # new_k = sum(vals)/len(vals)
+    deriv = [math.cos, math.sin, math.cos, math.sin]
+    sign = [1, -1, -1, 1]
+    hq = sum(vals) / len(vals)
+
+    gq = None
+    if grad_gq:
+        gq = sum(grad_gq)/len(grad_gq)
+    line = f"Expected gq: {gq:.6g} kcal/mol/rad"
+    out.append(line)
+    if gq:
+        gq_err = arrays.array_translate(grad_gq, -gq)
+        gq_sse = arrays.array_inner_product(gq_err, gq_err)
+        gq_err = None
+        line = f"Expected gq var: {gq_sse/len(grad_gq):.6g} (kcal/mol/rad)^2"
+        out.append(line)
+        line = f"Expected gq minmax: {min(grad_gq):.6g}, {max(grad_gq):.6g}"
+        out.append(line)
+
+    if not csys_n:
+        line = f"Could not find any appropriate periodicities for label={lbl} max_n={max_n} alpha={alpha}"
+        out.append(line)
+        csys_n = [n for n in range(1, max_n+1)]
+        csys_p = [0 for n in range(1, max_n+1)]
+        line = "First 10 Angles:"
+        out.append(line)
+        line = " ".join(map("{:6g}".format, angles[:10]))
+        out.append(line)
+        line = "Cosines:"
+        out.append(line)
+        for i in range(1, max_n+1):
+            line = f"{i} " + " ".join(
+                map(lambda t: f"{math.cos(i*t):6g}", angles[:10])
+            )
+            out.append(line)
+            # print(i, [*(math.cos(i*t) for t in angles[:10])])
+
+    changed = True
+    while changed:
+        A = []
+        b = []
+        changed = False
+
+        if angles:
+            if grad_gq:
+                b.append(gq)
+                row = []
+                for n, p in zip(csys_n, csys_p):
+                    i = -1
+                    x = [sign[(i+2)%4] * n**(i+2)*deriv[(i+2) % 4](n*t - p) for t in grad_angles]
+                    x = sum(x) / len(x) / idiv_expected
+                    row.append(x)
+                A.append(row)
+            for i in range(len(csys_n)-len(A)):
+                if i == 0:
+                    b.append(hq)
+                else:
+                    b.append(0)
+                row = []
+                for n, p in zip(csys_n, csys_p):
+                    x = [sign[(i+2)%4] * n**(i+2)*deriv[(i+2) % 4](n*t - p) for t in angles]
+                    x = sum(x) / len(x) / idiv_expected
+                    row.append(x)
+                A.append(row)
+            new_k_lst = np.linalg.solve(A, b)
+            line = "Calculated " + " ".join(map("{:12.5f}".format, new_k_lst))
+            out.append(line)
+        else:
+            new_k_lst = [0 for _ in csys_n]
+        # at this point we have our new_n and new_p; project onto npk0
+
+        if guess_periodicity:
+            # new_k_lst = project_torsions(npk0, (csys_n, csys_p), angles)
+            new_k = []
+            new_p = []
+            new_n = []
+            changed = False
+            # max_k = 5
+            # min_k = 1e-3
+            for n,p,k in zip(csys_n, csys_p, new_k_lst):
+                if abs(k) > min_k and abs(k) < max_k:
+                    new_n.append(n)
+                    new_p.append(p)
+                    new_k.append(k)
+                    line = "Added n= {n:d} {p:.2f} {k:12.5f}"
+                    out.append(line)
+
+            if not new_n:
+                line = "Warning, all fitted values were out of range"
+                out.append(line)
+                i = arrays.argmin([abs(x) for x in new_k_lst])
+                new_n.append(csys_n[i])
+                new_p.append(csys_p[i])
+                k = new_k_lst[i]
+                if k < -max_k:
+                    k = -max_k
+                elif k > max_k:
+                    k = max_k
+                new_k.append(k)
+            if set(new_n).symmetric_difference(csys_n):
+                changed = True
+            # if changed:
+            csys_n = new_n
+            csys_p = new_p
+            new_k_lst = new_k
+        else:
+            new_k = []
+            for k in new_k_lst:
+                if k < -max_k:
+                    k = -max_k
+                elif k > max_k:
+                    k = max_k
+                new_k.append(k)
+            new_k_lst = new_k
+
+    if guess_periodicity:
+
+        mm.chemical_system_set_value_list(csys, (m, 'n', lbl), new_n)
+        line = (
+            f"Setting {lbl} N_g= {len(grad_gq):5d} n "
+            f"from {npk0[0]} to {new_n}"
+        )
+        out.append(line)
+
+        mm.chemical_system_set_value_list(csys, (m, 'p', lbl), new_p)
+        line = (
+            f"Setting {lbl} N_g= {len(grad_gq):5d} p "
+            f"from {npk0[1]} to {new_p}"
+        )
+        out.append(line)
+
+    return returns.success(new_k_lst, out=out)
+
+
+def reset(reset_config, csys, gdb, psystems=None, verbose=False, ws=None, shm=None):
 
     assert type(reset_config) is dict
+    out = []
 
     reset_bond_k = reset_config.get("bond_k", False)
     reset_bond_l = reset_config.get("bond_l", False)
@@ -4104,8 +4582,13 @@ def reset(reset_config, csys, gdb, psystems=None, verbose=False, ws=None):
     ]):
         return psystems
 
+    if ws:
+        ws.reset()
+
     eid_hess = [eid for eid, e in gdb.entries.items() if HESSIANS in e.tables]
+    eid_grad = [eid for eid, e in gdb.entries.items() if GRADIENTS in e.tables]
     psys_hess = [psystems[eid] for eid in eid_hess]
+    psys_grad = [psystems[eid] for eid in eid_grad if eid not in eid_hess]
 
     reset = set()
     if reset_bond_l:
@@ -4118,31 +4601,83 @@ def reset(reset_config, csys, gdb, psystems=None, verbose=False, ws=None):
         if verbose:
             print_chemical_system(csys, show_parameters=[x[2] for x in mod])
         reset.add(1)
+    if reset_torsion_k:
+        names = [x.name for x in csys.models[2].procedures[0].smarts_hierarchies[0].index.nodes.values()]
+        print_chemical_system(csys, show_parameters=names)
+        reset.add(2)
+    if reset_outofplane_k:
+        names = [x.name for x in csys.models[3].procedures[0].smarts_hierarchies[0].index.nodes.values()]
+        print_chemical_system(csys, show_parameters=names)
+        reset.add(3)
 
-
+    bmat_config = dict(
+        torsions=reset_torsion_k,
+        outofplanes=reset_outofplane_k,
+        pairs=False,
+        remove1_3=True
+    )
     t = None
     hvals = {}
     psys_hic_all = {}
+
+    gvals = {}
+    psys_gic_all = {}
     if reset_bond_k or reset_angle_k or reset_torsion_k or reset_outofplane_k:
         psys_hic = {}
         if ws:
             iterable = {}
+            bmats = {}
             for eid in eid_hess:
-                icb, B = assignments.bmatrix(psystems[eid].models[0].positions[0], torsions=reset_torsion_k, outofplanes=reset_outofplane_k, pairs=False ,remove1_3=True)
-                labeled_ic = [x for model in psystems[eid].models for x in model.labels[0]]
-                B = {ic:x for ic, x in zip(icb, B) if ic in labeled_ic}
-                B = list(B.keys()), list(B.values())
+                pos = psystems[eid].models[0].positions[0]
+                if eid in bmats:
+                    B = bmats[eid]
+                else:
+                    icb, B = assignments.bmatrix(pos, **bmat_config)
+                    labeled_ic = [x for model in psystems[eid].models for x in model.labels[0]]
+                    B = {ic:x for ic, x in zip(icb, B) if ic in labeled_ic}
+                    B = list(B.keys()), list(B.values())
+                    bmats[eid] = B
 
-                iterable[eid] = [[csys, psystems[eid],gdb.entries[eid].tables[HESSIANS].values], {"B": B}]
-            results =  compute.workspace_submit_and_flush(ws, hessians.hessian_project_onto_ics, iterable, verbose=True)
-            psys_hic_all.update(results)
+                iterable[(eid, "hess")] = [[csys, psystems[eid],gdb.entries[eid].tables[HESSIANS].values], {"B": B}]
+            results = compute.workspace_submit_and_flush(ws, hessians.hessian_project_onto_ics, iterable, verbose=True, chunksize=100)
+            psys_hic_all.update({k[0]: v for k, v in results.items() if k[1] == "hess"})
+            iterable.clear()
+            results.clear()
+            for eid in eid_grad:
+                pos = psystems[eid].models[0].positions[0]
+                if eid in bmats:
+                    B = bmats[eid]
+                else:
+                    icb, B = assignments.bmatrix(pos, **bmat_config)
+                    labeled_ic = [x for model in psystems[eid].models for x in model.labels[0]]
+                    B = {ic:x for ic, x in zip(icb, B) if ic in labeled_ic}
+                    B = list(B.keys()), list(B.values())
+                    bmats[eid] = B
+
+                gx = arrays.array_scale(gdb.entries[eid].tables[GRADIENTS].values, kj2kcal)
+                iterable[(eid, "grad")] = [[B[1], gx], {}]
+            results = compute.workspace_submit_and_flush(ws, hessians.project_gradient, iterable, verbose=True, chunksize=100)
+            iterable.clear()
+            for eid in eid_grad:
+                pos = psystems[eid].models[0].positions[0]
+                icb = bmats[eid][0]
+                sel = dict(zip(icb, results[(eid, "grad")]))
+                psys_gic_all[eid] = assignments.graph_assignment(pos.smiles, sel, pos.graph)
+            results.clear()
+            bmats.clear()
         else:
             for i, eid in enumerate(eid_hess, 1):
+                pos = psystems[eid].models[0].positions[0]
                 psys = psystems[eid]
                 hessian = gdb.entries[eid].tables[HESSIANS].values
-                if verbose:
-                    print(f"Projecting hessian for EID {eid} {i:8d}/{len(eid_hess)} {psys.models[0].positions[0].smiles}")
-                icb, B = assignments.bmatrix(psystems[eid].models[0].positions[0], torsions=reset_torsion_k, outofplanes=reset_outofplane_k, pairs=False ,remove1_3=True)
+                line = (
+                    f"Projecting hessian for EID {eid} "
+                    f"{i:8d}/{len(eid_hess)} "
+                    f"{psys.models[0].positions[0].smiles}"
+                )
+                out.append(line)
+                pos = psystems[eid].models[0].positions[0]
+                icb, B = assignments.bmatrix(pos, **bmat_config)
 
                 labeled_ic = [x for model in psystems[eid].models for x in model.labels[0]]
                 B = {ic:x for ic, x in zip(icb, B) if ic in labeled_ic}
@@ -4150,6 +4685,29 @@ def reset(reset_config, csys, gdb, psystems=None, verbose=False, ws=None):
 
                 hic = hessians.hessian_project_onto_ics(csys, psys, hessian, verbose=verbose, B=B)
                 psys_hic_all[eid] = hic
+            for i, eid in enumerate(eid_grad, 1):
+                pos = psystems[eid].models[0].positions[0]
+                psys = psystems[eid]
+                gx = arrays.array_scale(gdb.entries[eid].tables[GRADIENTS].values, 1/4.184)
+                line = (
+                    f"Projecting gradient for EID {eid} "
+                    f"{i:8d}/{len(eid_hess)} "
+                    f"{psys.models[0].positions[0].smiles}"
+                )
+                out.append(line)
+                pos = psystems[eid].models[0].positions[0]
+                icb, B = assignments.bmatrix(pos, **bmat_config)
+
+                labeled_ic = [x for model in psystems[eid].models for x in model.labels[0]]
+                B = [x for ic, x in zip(icb, B) if ic in labeled_ic]
+                # B = list(B.keys()), list(B.values())
+                gq = hessians.project_gradient(B, gx)
+                sel = dict(zip(icb, gq))
+                psys_gic_all[eid] = assignments.graph_assignment(
+                    pos.smiles,
+                    sel,
+                    pos.graph
+                )
 
     if reset_bond_k:
         psys_hics = []
@@ -4157,7 +4715,11 @@ def reset(reset_config, csys, gdb, psystems=None, verbose=False, ws=None):
         for eid in eid_hess:
             psys = psystems[eid]
             hic = psys_hic_all[eid]
-            psys_hics.append({k: [[hic.selections[k]]] for k in graphs.graph_bonds(hic.graph) if k in hic.selections})
+            psys_hics.append({
+                k: [[hic.selections[k]]]
+                for k in graphs.graph_bonds(hic.graph)
+                if k in hic.selections
+            })
             psyss.append(psys)
 
         hvals[0] = mm.chemical_system_groupby_names(csys, 0, psyss, psys_hics)
@@ -4170,7 +4732,11 @@ def reset(reset_config, csys, gdb, psystems=None, verbose=False, ws=None):
         for eid in eid_hess:
             psys = psystems[eid]
             hic = psys_hic_all[eid]
-            psys_hics.append({k: [[hic.selections[k]]] for k in graphs.graph_angles(hic.graph) if k in hic.selections})
+            psys_hics.append({
+                k: [[hic.selections[k]]]
+                for k in graphs.graph_angles(hic.graph)
+                if k in hic.selections
+            })
             psyss.append(psys)
 
         hvals[1] = mm.chemical_system_groupby_names(csys, 1, psyss, psys_hics)
@@ -4183,12 +4749,33 @@ def reset(reset_config, csys, gdb, psystems=None, verbose=False, ws=None):
         for eid in eid_hess:
             psys = psystems[eid]
             hic = psys_hic_all[eid]
-            psys_hics.append({k: [[hic.selections[k]]] for k in graphs.graph_torsions(hic.graph) if k in hic.selections})
+            psys_hics.append({
+                k: [[hic.selections[k]]]
+                for k in graphs.graph_torsions(hic.graph)
+                if k in hic.selections
+            })
             psyss.append(psys)
-
         hvals[2] = mm.chemical_system_groupby_names(csys, 2, psyss, psys_hics)
+
         psyss.clear()
         psys_hics.clear()
+
+        for eid in eid_grad:
+            psys = psystems[eid]
+            pos = psys.models[0].positions[0]
+            hic = psys_gic_all[eid]
+            indices = list(
+                assignments.smiles_assignment_geometry_torsions_nonlinear(
+                    pos
+                ).selections
+            )
+            psys_hics.append({
+                k: [[hic.selections[k]]]
+                for k in indices
+                if k in hic.selections
+            })
+            psyss.append(psys)
+        gvals[2] = mm.chemical_system_groupby_names(csys, 2, psyss, psys_hics)
 
     if reset_outofplane_k:
         psys_hics = []
@@ -4196,14 +4783,32 @@ def reset(reset_config, csys, gdb, psystems=None, verbose=False, ws=None):
         for eid in eid_hess:
             psys = psystems[eid]
             hic = psys_hic_all[eid]
-            psys_hics.append({k: [[hic.selections[k]]] for k in graphs.graph_outofplanes(hic.graph) if k in hic.selections})
+            psys_hics.append({
+                k: [[hic.selections[k]]]
+                for k in graphs.graph_outofplanes(hic.graph)
+                if k in hic.selections
+            })
             psyss.append(psys)
 
         hvals[3] = mm.chemical_system_groupby_names(csys, 3, psyss, psys_hics)
         psyss.clear()
         psys_hics.clear()
 
+        for eid in eid_grad:
+            psys = psystems[eid]
+            hic = psys_gic_all[eid]
+            psys_hics.append({
+                k: [[hic.selections[k]]]
+                for k in graphs.graph_outofplanes(hic.graph)
+                if k in hic.selections
+            })
+            psyss.append(psys)
+        gvals[3] = mm.chemical_system_groupby_names(csys, 3, psyss, psys_hics)
+
     psys_hic_all.clear()
+    psys_gic_all.clear()
+
+    # data_file = open("ic_grads.dat", 'a')
 
     for m, hic in hvals.items():
         for lbl, vals in hic.items():
@@ -4216,186 +4821,80 @@ def reset(reset_config, csys, gdb, psystems=None, verbose=False, ws=None):
             if m == 1:
                 # new_k = min(vals)
                 new_k = sum(vals)/len(vals)
+                angles = []
+                idiv = []
+                for psys in psys_hess:
+                    pos = psys.models[m].positions[0]
+                    indices = [
+                        ic[1] for ic, terms in psys.models[m].labels[0].items()
+                        if lbl in terms.values()
+                    ]
+                    nbr = [
+                        len(graphs.graph_connection(pos.graph, a))
+                        for a in indices
+                    ]
+                    idiv.extend(nbr)
+                idiv_expected = sum(idiv)/len(idiv)
                 if reset_outofplane_k or reset_torsion_k:
-                    new_k *= 1.0
+                    new_k *= idiv_expected * 1.3 / 3
                 new_k_lst = [new_k for _ in csys_k]
             elif m == 0:
                 new_k = sum(vals)/len(vals)
                 new_k_lst = [new_k for _ in csys_k]
-            elif m == 2 or m == 3:
+            elif (
+                (reset_torsion_k and m == 2) or
+                (reset_outofplane_k and m == 3)
+            ):
 
-                oldtorsionmethod = False
-                if oldtorsionmethod:
-                    csys_n = mm.chemical_system_get_value_list(csys, (m, 'n', lbl))
-                    csys_p = mm.chemical_system_get_value_list(csys, (m, 'p', lbl))
-                    # go into the psys and get the angles
-                    angles = []
-                    for psys in psys_hess:
-                        indices = [ic for ic, terms in psys.models[m].labels[0].items() if lbl in terms.values()]
-                        if m == 2:
-                            psys_angles = assignments.smiles_assignment_geometry_torsions(psys.models[m].positions[0], indices=indices)
-                        elif m == 3:
-                            psys_angles = assignments.smiles_assignment_geometry_outofplanes(psys.models[m].positions[0], indices=indices)
-                        angles.extend([t for y in psys_angles.selections.values() for x in y for t in x])
-                    new_k_lst = []
-                    # new_k = sum(vals)/len(vals)
-                    for n, p in zip(csys_n, csys_p):
-                        k_vals = [hq/(-n**2*math.cos(n*t - p)) for hq, t in zip(vals, angles)]
-                        new_k_lst.append(sum(k_vals)/len(k_vals))
-                    # new_k = 1.3943109100240065
-                else:
-                    # these are the original we want to fit to
-                    csys_n0 = mm.chemical_system_get_value_list(csys, (m, 'n', lbl))
-                    csys_p0 = mm.chemical_system_get_value_list(csys, (m, 'p', lbl))
-                    csys_k0 = mm.chemical_system_get_value_list(csys, (m, 'k', lbl))
-                    npk0 = csys_n0, csys_p0, csys_k0
+                ret = reset_project_dihedrals(
+                    csys,
+                    psystems,
+                    psys_hess,
+                    vals,
+                    psys_grad,
+                    eid_grad,
+                    gvals,
+                    m,
+                    lbl,
+                    guess_periodicity=guess_periodicity,
+                    max_n=max_n,
+                    max_k=max_k,
+                    alpha=alpha,
+                    min_k=min_k,
+                    verbose=verbose
+                )
+                new_k_lst = ret.value
+                out.extend(ret.out)
+                reset.add(m)
 
-                    # go into the psys and get the angles
-                    angles = []
-                    idiv = []
-                    for psys in psys_hess:
-                        indices = [ic for ic, terms in psys.models[m].labels[0].items() if lbl in terms.values()]
-                        inner_bonds = [geometry.bond(ic[1:3]) for ic in indices]
-                        all_dihed = [geometry.bond(ic[1:3]) for ic in psys.models[m].labels[0] if geometry.bond(ic[1:3]) in inner_bonds]
-                        idiv.extend([all_dihed.count(ic) for ic in set(all_dihed)])
-                        if m == 2:
-                            # psys_angles = assignments.smiles_assignment_geometry_torsions(psys.models[m].positions[0], indices=indices)
-                            psys_angles = assignments.smiles_assignment_geometry_torsions_nonlinear(psys.models[m].positions[0], indices=indices)
-                        elif m == 3:
-                            psys_angles = assignments.smiles_assignment_geometry_outofplanes(psys.models[m].positions[0], indices=indices)
-                        angles.extend([t for y in psys_angles.selections.values() for x in y for t in x])
-                    print("idiv:", idiv)
-                    idiv_expected = sum(idiv)/len(idiv)
-                    # idiv_expected = 1
-                    # print("Expected idiv (set to 1):", idiv_expected)
-                    # print(angles)
-
-                    print("Reference npk0", npk0)
-                    if guess_periodicity:
-                        csys_n = []
-                        csys_p = []
-                        for i in [*range(1, max_n+1)]:
-                            if all(math.cos(i*t) < alpha for t in angles) or all(math.cos(i*t)  >  -alpha for t in angles):
-                                csys_n.append(i)
-                                csys_p.append(0)
-                                break
-                                # print(f"Consider {i}")
-                    else:
-                        csys_n = [n for n in csys_n0]
-                        csys_p = [n for n in csys_p0]
-
-                    # csys_n = [*range(1,121)]
-                    # csys_p = [*[0]*120]
-                    new_k_lst = []
-                    # new_k = sum(vals)/len(vals)
-                    deriv = [math.cos, math.sin, math.cos, math.sin]
-                    sign = [1, -1, -1, 1]
-                    hq = sum(vals) / len(vals)
-
-                    if not csys_n:
-                        print(f"Could not find any appropriate periodicities for label={lbl} max_n={max_n} alpha={alpha}")
-                        csys_n = [n for n in range(1, max_n+1)]
-                        csys_p = [0 for n in range(1, max_n+1)]
-                        print("Angles:")
-                        print(angles)
-                        print("cosines:")
-                        for i in range(1, max_n+1):
-                            print(i, [*(math.cos(i*t) for t in angles)])
-                        print(angles)
-
-                    changed = True
-                    while changed:
-                        A = []
-                        b = []
-                        changed = False
-
-                        if angles:
-                            for i in range(len(csys_n)):
-                                row = []
-                                if i == 0:
-                                    b.append(hq)
-                                else:
-                                    b.append(0)
-                                for n, p in zip(csys_n, csys_p):
-                                    x = [sign[(i+2)%4] * n**(i+2)*deriv[(i+2) % 4](n*t - p) for t in angles]
-                                    x = idiv_expected * sum(x) / len(x)
-                                    row.append(x)
-                                A.append(row)
-                            new_k_lst = np.linalg.solve(A, b)
-                            print("Calculated", new_k_lst)
-                        else:
-                            new_k_lst = [0 for _ in csys_n]
-                        # at this point we have our new_n and new_p; project onto npk0
-
-                        if guess_periodicity:
-                            # new_k_lst = project_torsions(npk0, (csys_n, csys_p), angles)
-                            new_k = []
-                            new_p = []
-                            new_n = []
-                            changed = False
-                            # max_k = 5
-                            # min_k = 1e-3
-                            for n,p,k in zip(csys_n, csys_p, new_k_lst):
-                                if abs(k) > min_k and abs(k) < max_k:
-                                    new_n.append(n)
-                                    new_p.append(p)
-                                    new_k.append(k)
-                                    print("Added n=", n, p, k)
-
-                            if not new_n:
-                                print("Warning, all fitted values were out of range")
-                                i = arrays.argmin([abs(x) for x in new_k_lst])
-                                new_n.append(csys_n[i])
-                                new_p.append(csys_p[i])
-                                k = new_k_lst[i]
-                                if k < -max_k:
-                                    k = -max_k
-                                elif k > max_k:
-                                    k = max_k
-                                new_k.append(k)
-                            if set(new_n).symmetric_difference(csys_n):
-                                changed = True
-                            # if changed:
-                            csys_n = new_n
-                            csys_p = new_p
-                            new_k_lst = new_k
-                        else:
-                            new_k = []
-                            for k in new_k_lst:
-                                if k < -max_k:
-                                    k = -max_k
-                                elif k > max_k:
-                                    k = max_k
-                                new_k.append(k)
-                            new_k_lst = new_k
-
-
-                    if verbose:
-                        if guess_periodicity:
-                            print(f"Setting {lbl} n from {npk0[0]} to {new_n}")
-                            print(f"Setting {lbl} p from {npk0[1]} to {new_p}")
-                        print(f"Setting {lbl} k from {csys_k} to {new_k_lst}")
-                    if guess_periodicity:
-                        mm.chemical_system_set_value_list(csys, (m, 'n', lbl), new_n)
-                        mm.chemical_system_set_value_list(csys, (m, 'p', lbl), new_p)
-                    # mm.chemical_system_set_value_list(csys, (m, 'k', lbl), new_k_lst)
-                    reset.add(m)
-
-            if verbose:
-                print(f"Setting {lbl} k from {csys_k} to {new_k_lst}")
+            line = (
+                f"Setting {lbl} N= {len(vals):5d} k "
+                f"from {csys_k} to {new_k_lst}"
+            )
+            out.append(line)
+            # if verbose:
             mm.chemical_system_set_value_list(csys, (m, 'k', lbl), new_k_lst)
             reset.add(m)
 
+    # data_file.close()
     hvals.clear()
 
     if reset:
+        line = "Resetting systems with new values"
+        out.append(line)
         psys = {}
         reuse = list(set(range(len(csys.models))).difference(reset))
         for eid, gde in gdb.entries.items():
             tid = POSITIONS
             gid = list(gde.tables[tid].graphs)[0]
             rid = 0
-            pos = assignments.graph_db_graph_to_graph_assignment(gdb, eid, tid, gid, rid)
+            pos = assignments.graph_db_graph_to_graph_assignment(
+                gdb,
+                eid,
+                tid,
+                gid,
+                rid
+            )
             psys[eid] = mm.chemical_system_to_physical_system(
                 csys,
                 [pos],
@@ -4404,8 +4903,249 @@ def reset(reset_config, csys, gdb, psystems=None, verbose=False, ws=None):
             )
         psystems = psys
 
-    return psystems
+    return returns.success(psystems, out=out)
 
+
+def reset_unique_dihedral(
+    psystem,
+    hic,
+    m,
+    guess_periodicity,
+    alpha,
+    max_n,
+    min_k,
+    max_k,
+    verbose=False
+):
+
+    pos = psystem.models[m].positions[0]
+    for ic in psystem.models[m].values[0]:
+        idiv_expected = 1
+        if m == 2:
+            angles = assignments.smiles_assignment_geometry_torsions_nonlinear(psystem.models[m].positions[0], indices=[ic])
+            nba = len([x for x in pos.graph.edges if ic[1] in x])
+            nbb = len([x for x in pos.graph.edges if ic[2] in x])
+            idiv_expected = ((nba-1) * (nbb-1))
+            #idiv_expected = 1.0
+            # print("IDIV IS", idiv_expected)
+        elif m == 3:
+            angles = assignments.smiles_assignment_geometry_outofplanes(psystem.models[m].positions[0], indices=[ic])
+        angles = tuple((z for y in angles.selections.values() for x in y for z in x))
+
+        csys_n0 = psystem.models[m].values[0][ic]['n']
+        csys_p0 = psystem.models[m].values[0][ic]['p']
+        csys_k0 = psystem.models[m].values[0][ic]['k']
+
+        npk0 = csys_n0, csys_p0, csys_k0
+
+        if verbose:
+            print("Reference npk0", npk0)
+        if guess_periodicity:
+            csys_n = []
+            csys_p = []
+            for i in [*range(1, max_n+1)]:
+                if all(math.cos(i*t) < alpha for t in angles) or all(math.cos(i*t)  >  -alpha for t in angles):
+                    csys_n.append(i)
+                    csys_p.append(0)
+                    break
+                    # print(f"Consider {i}")
+        else:
+            csys_n = [n for n in csys_n0]
+            csys_p = [n for n in csys_p0]
+
+        # csys_n = [*range(1,121)]
+        # csys_p = [*[0]*120]
+        new_k_lst = []
+        # new_k = sum(vals)/len(vals)
+        deriv = [math.cos, math.sin, math.cos, math.sin]
+        sign = [1, -1, -1, 1]
+        hq = hic.selections.get(ic, 0)
+
+
+        if not csys_n:
+            csys_n = [n for n in range(1, max_n+1)]
+            csys_p = [0 for n in range(1, max_n+1)]
+            if verbose:
+                print(f"Could not find any appropriate periodicities for ic={ic} max_n={max_n} alpha={alpha}")
+                print("Angles:")
+                print(angles)
+                print("cosines:")
+                for i in range(1, max_n+1):
+                    print(i, [*(math.cos(i*t) for t in angles)])
+                print(angles)
+
+        changed = True
+        while changed:
+            A = []
+            b = []
+            changed = False
+
+            if angles:
+                for i in range(len(csys_n)):
+                    row = []
+                    if i == 0:
+                        b.append(hq)
+                    else:
+                        b.append(0)
+                    for n, p in zip(csys_n, csys_p):
+                        x = [sign[(i+2)%4] * n**(i+2)*deriv[(i+2) % 4](n*t - p) for t in angles]
+                        x = sum(x) / len(x) / idiv_expected
+                        row.append(x)
+                    A.append(row)
+                new_k_lst = np.linalg.solve(A, b)
+                if verbose:
+                    print("Calculated", new_k_lst)
+            else:
+                new_k_lst = [0 for _ in csys_n]
+            # at this point we have our new_n and new_p; project onto npk0
+
+            if guess_periodicity:
+                # new_k_lst = project_torsions(npk0, (csys_n, csys_p), angles)
+                new_k = []
+                new_p = []
+                new_n = []
+                changed = False
+                # max_k = 5
+                # min_k = 1e-3
+                for n,p,k in zip(csys_n, csys_p, new_k_lst):
+                    if abs(k) > min_k and abs(k) < max_k:
+                        new_n.append(n)
+                        new_p.append(p)
+                        new_k.append(k)
+                        if verbose:
+                            print("Added n=", n, p, k)
+
+                if not new_n:
+                    if verbose:
+                        print("Warning, all fitted values were out of range")
+                    i = arrays.argmin([abs(x) for x in new_k_lst])
+                    new_n.append(csys_n[i])
+                    new_p.append(csys_p[i])
+                    k = new_k_lst[i]
+                    if k < -max_k:
+                        k = -max_k
+                    elif k > max_k:
+                        k = max_k
+                    new_k.append(k)
+                if set(new_n).symmetric_difference(csys_n):
+                    changed = True
+                # if changed:
+                csys_n = new_n
+                csys_p = new_p
+                new_k_lst = new_k
+            else:
+                new_k = []
+                for k in new_k_lst:
+                    if k < -max_k:
+                        k = -max_k
+                    elif k > max_k:
+                        k = max_k
+                    new_k.append(k)
+                new_k_lst = new_k
+
+        if verbose:
+            print(f"Set m={m} ic={ic} to nkp= {csys_n} {new_k_lst} {csys_p}")
+        psystem.models[m].values[0][ic]['n'].clear()
+        psystem.models[m].values[0][ic]['n'].extend(csys_n)
+        psystem.models[m].values[0][ic]['k'].clear()
+        # new_k_lst = [x*angles[0] for x in new_k_lst]
+        psystem.models[m].values[0][ic]['k'].extend(new_k_lst)
+        psystem.models[m].values[0][ic]['p'].clear()
+        psystem.models[m].values[0][ic]['p'].extend(csys_p)
+    return psystem
+
+
+def reset_unique(reset_config, gde, psystem, verbose=False):
+
+    assert type(reset_config) is dict
+
+    reset_bond_k = reset_config.get("bond_k", False)
+    reset_bond_l = reset_config.get("bond_l", False)
+    reset_angle_k = reset_config.get("angle_k", False)
+    reset_angle_l = reset_config.get("angle_l", False)
+    reset_torsion_k = reset_config.get("torsion_k", False)
+    reset_outofplane_k = reset_config.get("outofplane_k", False)
+
+    guess_periodicity = reset_config.get("dihedral_p", False)
+    max_n = reset_config.get("dihedral_max_n", 3)
+    alpha = reset_config.get("dihedral_alpha", -.25)
+    max_k = reset_config.get("dihedral_max_k", 5.0)
+    min_k = reset_config.get("dihedral_max_k", 1e-3)
+
+    if not any([
+        reset_bond_k,
+        reset_bond_l,
+        reset_angle_k,
+        reset_angle_l,
+        reset_torsion_k
+    ]):
+        return psystem
+
+    assert HESSIANS in gde.tables
+    # eid_hess = [eid for eid, e in gdb.entries.items() if HESSIANS in e.tables]
+    # psys_hess = [psystems[eid] for eid in eid_hess]
+
+    pos = psystem.models[0].positions[0]
+    # reset = set()
+    if reset_bond_l:
+        lengths = assignments.graph_assignment_geometry_bonds(pos)
+        for ic, r in lengths.selections.items():
+            r = r[0][0]
+            l0 = psystem.models[0].values[0][ic]["l"][0]
+            psystem.models[0].values[0][ic]["l"][0] = r
+            if verbose:
+                print(f"Set m=0 ic={ic} from l={l0} to l={r}")
+
+    if reset_angle_l:
+        lengths = assignments.graph_assignment_geometry_angles(pos)
+        for ic, r in lengths.selections.items():
+            r = r[0][0]
+            l0 = psystem.models[1].values[0][ic]["l"][0]
+            psystem.models[1].values[0][ic]["l"][0] = r
+            if verbose:
+                print(f"Set m=1 ic={ic} from l={l0} to l={r}")
+
+    if reset_bond_k or reset_angle_k or reset_torsion_k or reset_outofplane_k:
+
+        hessian = gde.tables[HESSIANS].values
+        icb, B = assignments.bmatrix(pos, torsions=reset_torsion_k, outofplanes=reset_outofplane_k, pairs=False ,remove1_3=True)
+
+        labeled_ic = [x for model in psystem.models for x in model.labels[0]]
+        B = {ic: x for ic, x in zip(icb, B) if ic in labeled_ic}
+        B = list(B.keys()), list(B.values())
+
+        hic = hessians.hessian_project_onto_ics(None, psystem, hessian, verbose=verbose, B=B)
+        if reset_bond_k:
+            for ic in graphs.graph_bonds(pos.graph):
+                if ic not in icb:
+                    continue
+                k0 = psystem.models[0].values[0][ic]["k"][0]
+                k1 = hic.selections[ic]
+                psystem.models[0].values[0][ic]["k"][0] = k1
+                if verbose:
+                    print(f"Set m=0 ic={ic} from k={k0} to k={k1}")
+        if reset_angle_k:
+            for ic in graphs.graph_angles(pos.graph):
+                if ic not in icb:
+                    continue
+                k0 = psystem.models[1].values[0][ic]["k"][0]
+                k1 = hic.selections[ic]
+                nba = len([x for x in pos.graph.edges if ic[1] in x])
+                psystem.models[1].values[0][ic]["k"][0] = k1 * 1.3 * nba / 3
+                if verbose:
+                    print(f"Set m=1 ic={ic} from k={k0} to k={k1}")
+
+        if reset_torsion_k:
+            psystem = reset_unique_dihedral(
+                psystem, hic, 2, guess_periodicity, alpha, max_n, min_k, max_k, verbose=verbose
+            )
+
+        if reset_outofplane_k:
+            psystem = reset_unique_dihedral(
+                psystem, hic, 3, guess_periodicity, alpha, max_n, min_k, max_k, verbose=verbose
+            )
+
+    return psystem
 
 def project_torsions(npk0, np1, angles):
     """
@@ -4494,12 +5234,12 @@ def reset_project_torsions(csys, gdb, psystems, max_n=6, alpha=-.25, m=2, verbos
         if m == 2:
             psys_hics.append({
                 k: [[hic.selections[k]]]
-                for k in graphs.graph_torsions(hic.graph)
+                for k in graphs.graph_torsions(hic.graph) if k in hic.selections
             })
         elif m == 3:
             psys_hics.append({
                 k: [[hic.selections[k]]]
-                for k in graphs.graph_outofplanes(hic.graph)
+                for k in graphs.graph_outofplanes(hic.graph) if k in hic.selections
             })
         else:
             assert False
