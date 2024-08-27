@@ -7,6 +7,7 @@ import copy
 import scipy.optimize
 import numpy as np
 import datetime
+import math
 
 from besmarts.core import geometry
 from besmarts.core import assignments
@@ -164,7 +165,8 @@ def objective_gradient_gdb(
     psysref=None,
     reuse=None,
     ws=None,
-    verbose=False
+    verbose=False,
+    return_gradient=True
 ):
 
     # if ws:
@@ -190,9 +192,11 @@ def objective_gradient_gdb(
 
     # big job, try to start computing while tasks are being generated
     # also, reap objective as it comes due to memory consumption
-    async_compute = True and (ws is not None) and len(args)*len(objlst) > 10000
+    async_compute = True and (ws is not None) and len(args)*len(objlst) > 1000
     # async_compute = True and (ws is not None)
     async_compute = False
+
+    verbose = verbose and not async_compute
 
     line = (
         f"{logs.timestamp()} Generating {len(objlst)} objectives. "
@@ -201,6 +205,9 @@ def objective_gradient_gdb(
     out.append(line)
     if verbose:
         print(line)
+
+    verbose = verbose and not async_compute
+
     dcsys = csys
     if ws:
         dcsys = None
@@ -209,29 +216,63 @@ def objective_gradient_gdb(
     hi = 1e-6
     h = tuple(([hi] * len(z)))
 
-    hp = tuple(1e-6/j[1] for j in priors)
+    hp = tuple()
+    if return_gradient:
+        hp = tuple(1e-6/j[1] for j in priors)
+
 
     n_finished = 0
 
-    chunksize = 20  # aim for about the expected size of workers
+    chunksize = 300
 
-    objbatchsize = 100 if len(objlst) > 100 else len(objlst)
-    if objbatchsize < len(objlst):
+    targetbatch = 300*len(keys)
+    if not return_gradient:
+        targetbatch *= 3
+    objbatches = []
+    cur_batch_score = 0
+    cur_batch = []
+
+    for i, obj in objlst.items():
+        bsz = obj.batch_size
+        if bsz is None:
+            cost = 1
+        else:
+            cost = len(keys) // bsz + bool(len(keys) % bsz)
+
+        if cur_batch_score + cost < targetbatch or len(cur_batch) == 0:
+            cur_batch.append((i, obj))
+            cur_batch_score += cost
+        else:
+            objbatches.append(cur_batch)
+            cur_batch = []
+
+    if cur_batch:
+        objbatches.append(cur_batch)
+        cur_batch = []
+        cur_batch_score = 0
+
+    objbatchsize = 500 if len(objlst) > 500 else len(objlst)
+
+    n_objbatches = len(objbatches)
+    if len(objbatches) > 1 and verbose:
 
         line = (
-            f"{logs.timestamp()} Processing objectives in batches of "
-            f"{objbatchsize}"
+            f"{logs.timestamp()} Processing objectives in "
+            f"{len(objbatches)} batches "
         )
-        if verbose:
-            print(line)
+        print(line)
 
-    n_objbatches = len(objlst)//objbatchsize + bool(len(objlst)%objbatchsize)
-    for obsz, obj in enumerate(arrays.batched(objlst.items(), objbatchsize), 1):
+    # n_objbatches = len(objlst)//objbatchsize + bool(len(objlst)%objbatchsize)
+    # for obsz, obj in enumerate(arrays.batched(objlst.items(), objbatchsize), 1):
+    batches_cum_sum = 0
+    for obsz, obj in enumerate(objbatches, 1):
         tasks = {}
         full_results = {}
         batch_map = {}
         chunk = {}
-        for idx, (i, x) in enumerate(obj, 1 + objbatchsize*(obsz-1)):
+        batches_cum_sum += len(obj)
+        # for idx, (i, x) in enumerate(obj, 1 + objbatchsize*(obsz-1)):
+        for idx, (i, x) in enumerate(obj, batches_cum_sum - len(obj)):
             psys = None
             if psysref:
                 psys = psysref[x.addr.eid[0]]
@@ -293,94 +334,98 @@ def objective_gradient_gdb(
             if async_compute:
                 chunk[(n, (i, (0,)))] = task
 
-            grad_keys = []
-            if x.batch_size is None:
-                batch_size = len(keys)
-            else:
-                batch_size = x.batch_size
+            batch_map[i] = [(0,)]
 
-            batches = [
-                tuple(x)
-                for x in arrays.batched(range(1, 1+len(keys)), batch_size)
-            ]
-            batch_map[i] = [(0,)] + batches
-
-            for batch in arrays.batched(enumerate(zip(keys, z, h), 1), batch_size):
-
-                kbatch = tuple([b[0] for b in batch])
-                for j, (k, v, hi) in batch:
-                    grad_keys.extend([{k: v-hi}, {k:v+hi}])
-
-                task = x.get_task(
-                    gdb,
-                    dcsys,
-                    keys=grad_keys,
-                    psys=psys,
-                    reuse=dreuse
-                )
-                tasks[(n, (i, kbatch))] = task
-                if async_compute:
-                    chunk[(n, (i, kbatch))] = task
-                    if len(chunk) >= chunksize:
-                        compute.workspace_local_submit(
-                            ws,
-                            {key: (fits.objective_run_distributed, [t], {})
-                             for key, t in chunk.items()}
-                        )
-                        chunk = {}
-
-                    task_keys = list(tasks)
-
-                    new_results = compute.workspace_flush(
-                        ws,
-                        set(task_keys),
-                        0.0,
-                        maxwait=0.0,
-                        verbose=False
-                    )
-                    for key in new_results:
-                        if key in tasks:
-                            tasks.pop(key)
-                            n_finished += 1
-
-                    ready, full_results = collect(
-                        gdb,
-                        objlst,
-                        full_results,
-                        new_results,
-                        batch_map,
-                        hp,
-                        verbose=verbose
-                    )
-                    new_results.clear()
-
-                    obj_results = compute.workspace_submit_and_flush(
-                        ws,
-                        run_objective,
-                        ready,
-                        chunksize=None,
-                        verbose=False,
-                        batchsize=5000,
-                        timeout=0.0
-                    )
-                    ready.clear()
-
-                    X, Y, grad, hess, grady, retout = process(
-                        obj_results.values(),
-                        X,
-                        Y,
-                        grad,
-                        hess,
-                        grady,
-                        verbose=verbose
-                    )
-                    obj_results.clear()
-                    if verbose:
-                        retout.clear()
-                    else:
-                        out.extend(retout)
-
+            if return_gradient:
                 grad_keys = []
+                if x.batch_size is None:
+                    batch_size = len(keys)
+                else:
+                    batch_size = x.batch_size
+
+                batches = [
+                    tuple(x)
+                    for x in arrays.batched(range(1, 1+len(keys)), batch_size)
+                ]
+                batch_map[i].extend(batches)
+
+                for batch in arrays.batched(enumerate(zip(keys, z, h), 1), batch_size):
+
+                    kbatch = tuple([b[0] for b in batch])
+                    for j, (k, v, hi) in batch:
+                        grad_keys.extend([{k: v-hi}, {k:v+hi}])
+
+                    task = x.get_task(
+                        gdb,
+                        dcsys,
+                        keys=grad_keys,
+                        psys=psys,
+                        reuse=dreuse
+                    )
+                    tasks[(n, (i, kbatch))] = task
+                    if async_compute:
+                        chunk[(n, (i, kbatch))] = task
+                        if len(chunk) >= chunksize:
+                            compute.workspace_local_submit(
+                                ws,
+                                {key: (fits.objective_run_distributed, [t], {})
+                                 for key, t in chunk.items()}
+                            )
+                            chunk = {}
+
+                        task_keys = list(tasks)
+
+                        new_results = compute.workspace_flush(
+                            ws,
+                            set(task_keys),
+                            0.0,
+                            maxwait=0.0,
+                            verbose=False
+                        )
+                        for key in new_results:
+                            if key in tasks:
+                                tasks.pop(key)
+                                n_finished += 1
+
+                        ready, full_results = collect(
+                            gdb,
+                            objlst,
+                            full_results,
+                            new_results,
+                            batch_map,
+                            hp,
+                            verbose=verbose
+                        )
+                        new_results.clear()
+
+                        obj_results = compute.workspace_submit_and_flush(
+                            ws,
+                            run_objective,
+                            ready,
+                            chunksize=None,
+                            verbose=False,
+                            batchsize=5000,
+                            timeout=0.0,
+                            clear=False
+                        )
+                        ready.clear()
+
+                        X, Y, grad, hess, grady, retout = process(
+                            obj_results.values(),
+                            X,
+                            Y,
+                            grad,
+                            hess,
+                            grady,
+                            verbose=verbose
+                        )
+                        obj_results.clear()
+                        if verbose:
+                            retout.clear()
+                        else:
+                            out.extend(retout)
+
+                    grad_keys = []
             if verbose:
                 print(
                     f"\r{logs.timestamp()}",
@@ -412,7 +457,7 @@ def objective_gradient_gdb(
                 new_results = compute.workspace_flush(
                     ws,
                     set(tasks),
-                    10.0,
+                    0.0,
                     verbose=True
                 )
                 for key in new_results:
@@ -436,7 +481,8 @@ def objective_gradient_gdb(
                     chunksize=None,
                     verbose=False,
                     batchsize=5000,
-                    timeout=0.0
+                    timeout=0.0,
+                    clear=False
                 )
                 ready.clear()
 
@@ -463,7 +509,8 @@ def objective_gradient_gdb(
                     chunksize=chunksize,
                     verbose=verbose,
                     batchsize=10000,
-                    timeout=0.00
+                    timeout=max(0, math.log(len(tasks), 10) - 1),
+                    clear=False
                 )
                 tasks.clear()
                 ready, full_results = collect(
@@ -537,9 +584,6 @@ def objective_gradient_gdb(
             full_results.clear()
             tasks.clear()
 
-        if ws:
-            ws.reset()
-
     kv = {k: v * p[1] + p[0] for k, v, p in zip(keys,args,priors)}
 
     for i, pen in enumerate(penalties, len(objlst)):
@@ -557,52 +601,52 @@ def objective_gradient_gdb(
         X += x2
 
         gradx = list([0.0] * len(keys))
-        for j, k in enumerate(keys, 0):
-            if k not in dx:
-                continue
-            kvi = {k: dx[k]}
-            dx2dp = pen.compute_gradient(kvi)
-            dx2dp *= pen.scale
-            dx2dp = round(dx2dp, 12)
-            # print("dx2dp", dx2dp)
-            grad[j] += dx2dp
-            gradx[j] += dx2dp
+        if return_gradient:
+            for j, k in enumerate(keys, 0):
+                if k not in dx:
+                    continue
+                kvi = {k: dx[k]}
+                dx2dp = pen.compute_gradient(kvi)
+                dx2dp *= pen.scale
+                dx2dp = round(dx2dp, 12)
+                # print("dx2dp", dx2dp)
+                grad[j] += dx2dp
+                gradx[j] += dx2dp
 
-            d2x2dp2 = pen.compute_hessian(kvi)
-            d2x2dp2 *= pen.scale
-            d2x2dp2 = round(d2x2dp2, 12)
-            # print("dxdp", dxdp)
-            hess[j] += d2x2dp2
+                d2x2dp2 = pen.compute_hessian(kvi)
+                d2x2dp2 *= pen.scale
+                d2x2dp2 = round(d2x2dp2, 12)
+                # print("dxdp", dxdp)
+                hess[j] += d2x2dp2
 
-            gnormx = arrays.array_inner_product(gradx, gradx)**.5
-            line = (
-                f">> S= {pen.scale: 14.6f} "
-                f"R2= {x2: 14.6f} "
-                f"|g|= {gnormx: 14.6f}"
-            )
-            if verbose:
-                print(line)
-            out.append(line)
+        gnormx = arrays.array_inner_product(gradx, gradx)**.5
+        line = (
+            f">> RID={i:02d} S= {pen.scale: 14.6f} "
+            f"R2= {x2: 14.6f} "
+            f"|g|= {gnormx: 14.6f}"
+        )
+        if verbose:
+            print(line)
+        out.append(line)
 
     gnorm = arrays.array_inner_product(grad, grad)**.5
     hnorm = arrays.array_inner_product(hess, hess)**.5
-    if verbose:
-        gnormy = arrays.array_inner_product(grady, grady)**.5
-        dX = 0.0
-        if len(history):
-            dX = X - min((x[0] for x in history))
-        out.append(
-            f">>> {datetime.datetime.now()} "
-            f"Step= {len(history)+1:3d} "
-            f"X2= {X: 14.6e} "
-            f"|g|= {gnorm: 14.6e} "
-            f"|h|= {hnorm: 14.6e} "
-            f"DX2= {dX: 14.6e} "
-            f"Y2= {Y: 14.6e} "
-            f"|gy|={gnormy: 14.6e}"
-        )
-        if verbose:
-            print(out[-1])
+    gnormy = arrays.array_inner_product(grady, grady)**.5
+    dX = 0.0
+    if len(history):
+        dX = X - min((x[0] for x in history))
+    out.append(
+        f">>> {datetime.datetime.now()} "
+        f"Step= {len(history)+1:3d} "
+        f"X2= {X: 14.6e} "
+        f"|g|= {gnorm: 14.6e} "
+        f"|h|= {hnorm: 14.6e} "
+        f"DX2= {dX: 14.6e} "
+        f"Y2= {Y: 14.6e} "
+        f"|gy|={gnormy: 14.6e}"
+    )
+    if verbose or async_compute:
+        print(out[-1])
     out.append(f"{logs.timestamp()} Done.")
     if verbose:
         print(out[-1])
@@ -615,7 +659,10 @@ def objective_gradient_gdb(
         if verbose:
             print(line)
     history.append((X, grad, args, hess, out))
-    return X, grad
+    if return_gradient:
+        return X, grad
+    else:
+        return X
 
 
 def objective_gdb(
@@ -657,7 +704,7 @@ def objective_gdb(
     # also, reap objective as it comes due to memory consumption
     async_compute = True and (ws is not None) and len(args)*len(objlst) > 10000
     # async_compute = True and (ws is not None)
-    async_compute = False
+    verbose = verbose and not async_compute
 
     line = (
         f"{logs.timestamp()} Generating {len(objlst)} objectives. "
@@ -1022,8 +1069,9 @@ def run_objective(x, ref, results, h, verbose=False, shm=None):
         gnorm = arrays.array_inner_product(grady, grady)**.5
         hnorm = 0
 
+    addr = x.addr.eid[0]
     output = (
-        f">> S= {x.scale: 14.6f} " +
+        f">> EID={addr:05d} S= {x.scale: 14.6f} " +
         f"{sym}= {x2: 14.6e} " +
         f"|g|= {gnorm: 14.6e} " +
         f"|h|= {hnorm:14.6e}"
@@ -1075,7 +1123,7 @@ def singlepoint_forcefield_gdb_scipy(
             print(out[-1])
 
     # reuse = list(reuse)
-    X = objective_gdb(args, keys, csys, gdb, obj, priors, penalties=penalties, history=history, psysref=psysref, reuse=reuse, ws=ws, verbose=verbose)
+    X = objective_gradient_gdb(args, keys, csys, gdb, obj, priors, penalties=penalties, history=history, psysref=psysref, reuse=reuse, ws=ws, verbose=verbose, return_gradient=False)
     # print(f"RETURN IS {X}")
     return X
 
@@ -1104,9 +1152,13 @@ def fit_grad_gdb(
     args = arrays.array_round(args, 12)
 
     out = []
-    for k, v, p in zip(keys, args, priors):
+    for i, (k, v, p) in enumerate(zip(keys, args, priors)):
         v0 = mm.chemical_system_get_value(csys, k)
         v1 = p[0] + v*p[1]
+
+        if abs(v1-v0) < 1e-6:
+            args[i] = (v0 - p[0])/p[1]
+            v1 = v0
 
         out.append(
             f"Setting {str(k):20s} "
@@ -1181,8 +1233,8 @@ def optimize_forcefield_gdb_scipy(
             'maxls': maxls,
             'maxcor': len(args)**2,
             'iprint': 1000 if verbose else 0,
-            'ftol': 1e-9,
-            'gtol': 1e-9
+            'ftol': 1e-6,
+            'gtol': 1e-4
         }
         hessp = None
 
