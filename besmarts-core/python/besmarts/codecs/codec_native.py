@@ -20,8 +20,6 @@ topology_tab = {
     "ATOM": topology.atom_topology(),
     "BOND": topology.bond_topology(),
     "ANGLE": topology.angle_topology(),
-    # "PROPER": topology.torsion_topology(),
-    # "IMPROPER": topology.outofplane_topology(),
     "TORSION": topology.torsion_topology(),
     "OUTOFPLANE": topology.outofplane_topology(),
 }
@@ -37,6 +35,11 @@ def primitive_load(line, primitive_codecs):
 
 
 def graph_load(lines, dtype=arrays.bitvec):
+
+    if type(lines[0]) is str and type(lines) is str:
+        lines = [l.split() for l in lines.split('\n') if l]
+    elif type(lines[0]) is str and type(lines) is list:
+        lines = [l.split() for l in lines if l]
 
     atom_codecs = [key for key in primitives.primitive_key_set]
     bond_codecs = [key for key in primitives.primitive_key_set]
@@ -161,16 +164,18 @@ def graph_codec_native_read(f) -> Sequence:
     for i, start in enumerate(graph_lines[:-1], 1):
         n = graph_lines[i] - start
         lines = [next(f) for _ in range(n)]
-        lines = [l.split() for l in lines if l]
+        # lines = [l.split() for l in lines if l]
         graph = graph_load(lines)
         graphs.append(graph)
 
     return graphs
 
+
 def graph_codec_native_load(fname) -> Sequence:
 
     with open(fname) as f:
         return graph_codec_native_read(f)
+
 
 def graph_codec_native_write(f, graphs):
 
@@ -185,8 +190,22 @@ def graph_codec_native_save(fname, graphs):
         graph_codec_native_write(f, graphs)
     return True
 
+def graph_codec_native_encode(graphs):
+    return ["\n".join(graph_save(g)) for g in graphs]
+
 
 class graph_codec_native(codecs.graph_codec):
+
+    """
+    The native graph codec implements the SMARTS and SMILES encoders which
+    can transform SMARTS primitives in binary form to string form.
+
+    To use this interface, supply a dictionary of primitive codecs that know how
+    to encode/decode the primitives, and then supply the initial list of
+    primitives that will be used when encoding SMARTS. Manipulating the lists
+    controls which primitives are active.
+    """
+
     def __init__(
         self,
         primitive_codecs: Dict[
@@ -195,6 +214,25 @@ class graph_codec_native(codecs.graph_codec):
         atom_primitives: Sequence[primitives.primitive_key],
         bond_primitives: Sequence[primitives.primitive_key],
     ):
+
+        """
+        Constructor initializer.
+
+        Parameters
+        ----------
+        primitive_codecs
+        The primitives that the codec will have access to
+
+        atom_primitives
+        The atom primitives that will be active when encoding is performed
+
+        bond_primitives
+        The bond primitives that will be active when encoding is performed
+
+        Returns
+        -------
+        graph_codec_native
+        """
 
         self.primitive_codecs = primitive_codecs
 
@@ -270,6 +308,18 @@ class graph_codec_native(codecs.graph_codec):
 
 
 def primitive_codecs_get() -> Dict[codecs.primitive_key, codecs.primitive_codec]:
+    """
+    Return the primitives that the BESMARTS native codec is aware of.
+
+    Parameters
+    ----------
+
+    Returns
+    -------
+    Dict[codecs.primitive_key, codecs.primitive_codec]
+    The map of primitive keys (e.g. "element") and the respective codec that
+    can encode/decode into binary form
+    """
 
     codecs_ = {}
     codecs_.update(primitive_codecs_get_atom())
@@ -277,7 +327,13 @@ def primitive_codecs_get() -> Dict[codecs.primitive_key, codecs.primitive_codec]
 
     return codecs_
 
-def primitive_codecs_get_atom() -> Dict[codecs.primitive_key, codecs.primitive_codec]:
+
+def primitive_codecs_get_atom(
+) -> Dict[codecs.primitive_key, codecs.primitive_codec]:
+    """
+    Return the node (atom) primitives that the BESMARTS native codec is aware
+    of.
+    """
     codecs_ = {
         "element": codecs.primitive_codec_element(),
         "hydrogen": codecs.primitive_codec_hydrogen(),
@@ -291,7 +347,13 @@ def primitive_codecs_get_atom() -> Dict[codecs.primitive_key, codecs.primitive_c
     }
     return codecs_
 
-def primitive_codecs_get_bond() -> Dict[codecs.primitive_key, codecs.primitive_codec]:
+
+def primitive_codecs_get_bond(
+) -> Dict[codecs.primitive_key, codecs.primitive_codec]:
+    """
+    Return the edge (bond) primitives that the BESMARTS native codec is aware
+    of.
+    """
     codecs_ = {
         "bond_order": codecs.primitive_codec_bond_order(),
         "bond_ring": codecs.primitive_codec_bond_ring(),

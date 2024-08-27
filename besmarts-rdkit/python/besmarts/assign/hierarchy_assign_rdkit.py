@@ -4,6 +4,7 @@ besmarts.assign.hierarchy_assign_rdkit
 
 import multiprocessing
 import datetime
+import os
 
 from rdkit import Chem
 

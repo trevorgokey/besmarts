@@ -352,6 +352,12 @@ def batched(iterable, n: int):
 def argmax(iterable):
     return max(enumerate(iterable), key=lambda x: x[1])[0]
 
+def argmin(iterable):
+    return min(enumerate(iterable), key=lambda x: x[1])[0]
+
+def argsort(iterable):
+    return [x[0] for x in sorted(enumerate(iterable), key=lambda x: x[1])]
+
 def find_unsigned_typecode_min(N: int):
     code = None
     for c in "QLIHB":
@@ -377,3 +383,66 @@ def flatten_list(l, times=1):
         return flatten_list(
             [a for b in l if hasattr(b, "__iter__") for a in b], times - 1
         )
+
+def array_scale(a, s):
+    return type(a)((i*s for i in a))
+
+def array_translate(a, s):
+    return type(a)((i+s for i in a))
+
+def array_sum(a):
+    return sum(a)
+
+def array_mean(a):
+    return sum(a)/len(N)
+
+def array_add(a, b):
+    return type(a)(((i+j for i,j in zip(a,b))))
+
+def array_difference(a, b):
+    return type(a)(((i-j for i,j in zip(a,b))))
+
+def array_multiply(a, b):
+    return type(a)(((i*j for i,j in zip(a,b))))
+
+def array_divide(a, b):
+    return type(a)(((i/j for i,j in zip(a,b))))
+
+def array_inner_product(a, b):
+    return sum((i*j for i,j in zip(a,b)))
+
+def array_cross(a, b):
+    return (
+        (a[1]*b[2] - a[2]*b[1]),
+        (a[2]*b[0] - a[0]*b[2]),
+        (a[0]*b[1] - a[1]*b[0])
+    )
+
+def array_unit(a, b):
+    """
+    unit vector from a to b
+    """
+    return array_scale(array_difference(b, a), 1/array_distance(b, a))
+
+def array_basis(a, b):
+    """
+    unit vector from a to b and its projection (magnitude)
+    """
+    r = array_distance(a, b)
+    return array_scale(array_difference(b, a), 1/r), r
+
+def array_magnitude(a) -> float:
+    return sum([x*x for x in a])**.5
+
+
+def array_distance(a,b) -> float:
+    return sum([x*x for x in array_difference(b,a)])**.5
+
+def array_round(a, b) -> List[float]:
+    return [round(x, b) for x in a]
+
+def measure_distance(xyz1, xyz2):
+
+    result = [[array_distance(a,b)] for a, b in zip(xyz1, xyz2)]
+
+    return result

@@ -20,6 +20,5 @@ def dprint(*args, **kwargs):
     on = kwargs.get("on", False)
     if "on" in kwargs:
         kwargs.pop("on")
-    on = False
     if on:
         print(timestamp(), *args, **kwargs)

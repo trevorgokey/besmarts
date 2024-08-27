@@ -44,7 +44,7 @@ class structure_topology:
 
 class transcode_topology:
     """
-    A pair of topologys that defines a transformation from A to B
+    A pair of topologies that defines a transformation from A to B
     """
 
     __slots__ = ("A", "B", "transcode")
@@ -300,6 +300,7 @@ topology_index = [
     bond,
     angle,
     torsion,
+    outofplane,
     pair,
     triplet,
 ]

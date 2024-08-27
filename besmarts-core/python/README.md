@@ -1,3 +1,1 @@
-
-Binary Encoded SMARTS (besmarts)
-
+../../README.md

@@ -4,7 +4,7 @@ besmarts.besmarts_rdkit.codecs
 BESMARTS graph encoding using the RDKit perception model
 """
 
-from typing import Dict, Sequence
+from typing import Dict, Sequence, Tuple
 
 from rdkit import Chem
 
@@ -13,6 +13,7 @@ from besmarts.core.arrays import bitvec as array
 from besmarts.core.arrays import array_dtype
 from besmarts.core.chem import bechem
 from besmarts.core import graphs
+from besmarts.core import assignments
 from besmarts.core.graphs import graph
 from besmarts.core.primitives import primitive_key, primitive_codec
 from besmarts.core.codecs import graph_codec
@@ -95,6 +96,46 @@ class graph_codec_rdkit(graph_codec):
             self.bond_primitives,
             sma,
         )
+    def sdf_decode(self, sdf) -> assignments.graph_assignment:
+        """
+        """
+        sa, extras = rdkit_sdf_to_smiles_assignment(sdf)
+        g = rdkit_smiles_decode(
+            self.smiles_config,
+            self.primitive_codecs,
+            self.array,
+            self.atom_primitives,
+            self.bond_primitives,
+            sa.smiles,
+        )
+        g = graphs.subgraph_as_graph(g)
+        smiles = sa.smiles
+        # smiles = self.smiles_encode(g)
+        return assignments.graph_assignment(smiles, sa.selections, g), extras
+
+    def rdmol_decode(self, mol: Chem.Mol) -> graphs.graph:
+        """
+        Build a graph directly from an RDKit molecule. This sidesteps all
+        sanitization and manipulation; the graph is built by directly querying
+        the molecule for primmitives. Make sure the aromaticity model is
+        compatible!
+
+        Parameters
+        ----------
+        mol: Chem.Mol
+            The RDKit molecule to parse
+
+        Returns
+        -------
+        graphs.graph
+        """
+        return rdkit_mol_decode(
+            self.primitive_codecs,
+            self.array,
+            self.atom_primitives,
+            self.bond_primitives,
+            mol
+        )
 
     @staticmethod
     def list_implemented_atom_primitives() -> Sequence[primitive_key]:
@@ -110,7 +151,7 @@ def rdkit_smarts_decode(
 ) -> graphs.graph:
 
     if r"$" in sma:
-        print(f"Warning, recursive SMARTS {sma} detected, skipping")
+        # print(f"Warning, recursive SMARTS {sma} detected, skipping")
         return sma
     mol = Chem.MolFromSmarts(sma)
 
@@ -192,10 +233,37 @@ def rdkit_smarts_decode(
     else:
         return graphs.graph(nodes, edges)
 
+def rdkit_sdf_to_smiles_assignment(sdf) -> Tuple[assignments.smiles_assignment, Dict]:
+
+    mol = next(Chem.SDMolSupplier(sdf, sanitize=False))
+
+    indices = get_indices(mol)
+
+    for atom in mol.GetAtoms():
+        atom.SetAtomMapNum(indices[atom.GetIdx()])
+
+    smi = Chem.MolToSmiles(mol)
+
+    sel = {}
+    for atom in mol.GetAtoms():
+        idx = atom.GetIdx()
+        i = indices[idx],
+        if i not in sel:
+            sel[i] = []
+        for conf in mol.GetConformers():
+            xyz = conf.GetAtomPosition(idx)
+            sel[i].append(list(xyz))
+
+    extras = mol.GetPropsAsDict()
+
+    return assignments.smiles_assignment_float(smi, sel), extras
+
 
 def rdkit_smiles_decode(
     pcp, codecs, arr: array, atom_primitives, bond_primitives, smi
 ) -> graphs.graph:
+
+    global aromaticity_incompatible_warning
 
     mol = Chem.MolFromSmiles(smi, sanitize=False)
 
@@ -212,10 +280,47 @@ def rdkit_smiles_decode(
     if pcp.protonate:
         mol = Chem.AddHs(mol)
 
-    Chem.SetAromaticity(mol, Chem.AromaticityModel.AROMATICITY_MDL)
+    lut = {
+        "OEAroModel_MDL": Chem.AromaticityModel.AROMATICITY_MDL,
+        "MDL": Chem.AromaticityModel.AROMATICITY_MDL,
+        "RDKIT_MDL": Chem.AromaticityModel.AROMATICITY_MDL,
+        "RDKIT": Chem.AromaticityModel.AROMATICITY_RDKIT,
+        "RDKIT_SIMPLE": Chem.AromaticityModel.AROMATICITY_SIMPLE,
+        "RDKIT_DEFAULT": Chem.AromaticityModel.AROMATICITY_DEFAULT,
+    }
+    lut.update(Chem.AromaticityModel.names)
+
+    warn = aromaticity_incompatible_warning
+    if not warn and pcp.aromaticity == "OEAroModel_MDL":
+        print("Warning, aromaticity set to OEAroModel_MDL with RDKit.", end="")
+        print(" Model set to RDKit MDL. Expect differences.")
+        aromaticity_incompatible_warning = True
+
+    elif pcp.aromaticity not in lut:
+        print(f"Could not set aromaticity to {pcp.aromaticity}")
+        print("Choose from:")
+        for n in lut:
+            print(n)
+        assert pcp.aromaticity in lut, "Unknown aromaticity model"
+
+    Chem.SetAromaticity(mol, lut[pcp.aromaticity])
 
     if pcp.strip_hydrogen:
         mol = Chem.RemoveHs(mol)
+
+    return rdkit_mol_decode(
+        pcp,
+        codecs,
+        arr,
+        atom_primitives,
+        bond_primitives,
+        mol
+    )
+
+
+def rdkit_mol_decode(
+    pcp, codecs, arr: array, atom_primitives, bond_primitives, mol
+) -> graphs.graph:
 
     nodes = {}
 
@@ -255,7 +360,6 @@ def rdkit_smiles_decode(
         return graphs.subgraph(nodes, edges, select)
     else:
         return graphs.graph(nodes, edges)
-
 
 def list_atom_primitives() -> Sequence[primitive_key]:
     atom_primitives = tuple(
@@ -481,3 +585,5 @@ def primitive_codecs_get() -> Dict[primitive_key, primitive_codec]:
         "bond_ring": primitive_codec_bond_ring_rdkit(),
     }
     return codecs
+
+aromaticity_incompatible_warning = False

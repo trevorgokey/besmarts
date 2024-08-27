@@ -1,13 +1,13 @@
 
 import setuptools
 
-requirements = ["scipy", "numpy"]
+requirements = ["besmarts", "scipy", "numpy"]
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name='besmarts-rdkit',
+    name='besmarts-scipy',
     description="BESMARTS SciPy plugin",
     license="MIT",
     author="Trevor Gokey",
@@ -15,7 +15,11 @@ setuptools.setup(
     url='https://github.com/trevorgokey/besmarts',
     long_description=long_description,
     long_description_content_type="text/markdown",
-    packages=setuptools.find_namespace_packages(),
+    packages=[
+        'besmarts',
+        'besmarts.core',
+        'besmarts.mechanics',
+    ],
     install_requires=requirements,
     classifiers=[
         'Programming Language :: Python :: 3.6',

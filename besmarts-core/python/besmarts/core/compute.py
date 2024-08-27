@@ -9,6 +9,7 @@ Architecture-wise, it interfaces the multiprocessing module
 
 
 import traceback
+import signal
 from typing import Tuple, Callable, Sequence, Mapping, Dict
 import itertools
 import io
@@ -46,15 +47,16 @@ import pickle
 
 from besmarts.core import configs
 from besmarts.core import arrays
+from besmarts.core import logs
 
 distributed_function = Tuple[Callable, Sequence, Mapping]
 
 # search/replace this if using a single file
 # remote_compute_enable = configs.remote_compute_enable
 
-TIMEOUT = 20
+TIMEOUT = 3
 
-SHM_GLOBAL = None
+SHM_GLOBAL = {}
 
 ## from https://stackoverflow.com/questions/34361035/python-thread-name-doesnt-show-up-on-ps-or-htop
 
@@ -82,7 +84,9 @@ class workspace_status:
 
 
 def dprint(*args, **kwds):
-    if False:
+    
+    if kwds.get("on", False):
+        kwds.pop("on")
         print(*args, **kwds)
 
 
@@ -234,7 +238,7 @@ def Client(address, family=None, authkey=None, timeout=TIMEOUT):
 
 class Listener(connection.Listener):
     def __init__(self, *args, **kwargs):
-        kwargs["backlog"] = 64000
+        kwargs["backlog"] = 8000
         super().__init__(*args, **kwargs)
         dprint("INIT LISTENER WITH LARGE BACKLOG")
 
@@ -249,8 +253,8 @@ class Listener(connection.Listener):
             raise OSError("listener is closed")
         c = self._listener.accept()
         if self._authkey:
-            deliver_challenge(c, self._authkey)
-            answer_challenge(c, self._authkey)
+            connection.deliver_challenge(c, self._authkey)
+            connection.answer_challenge(c, self._authkey)
         # t = time.perf_counter()
         # dprint(f"SERVER ACCEPT TIME: {t - t0:.6f}")
         return c
@@ -260,8 +264,7 @@ class Server(managers.Server):
     def __init__(self, *args, **kwargs):
         dprint("HELLO FROM SERVER")
         super().__init__(*args, **kwargs)
-        # self.shm_pool = multiprocessing.Pool(32, server_shm_init, )
-        self.shm_pool = None
+
         self.shm_msg_cache = None
         self.shm_msg_cache_lock = threading.Lock()
 
@@ -284,7 +287,13 @@ class Server(managers.Server):
             try:
                 methodname = obj = None
                 thread_name_set("recv")
+                t0 = time.perf_counter()
                 request = recv()
+                t = time.perf_counter()
+                if t-t0 > 10:
+                    dprint(
+                        f"T{name} RECV DONE t={t-t0:.6f} {request[:2]}", on=True
+                    )
                 ident, methodname, args, kwds = request
 
                 try:
@@ -311,14 +320,15 @@ class Server(managers.Server):
                     thread_name_set(name + methodname)
                     t0 = time.perf_counter()
                     # these are always readonly so we can fork and skip GIL
-                    if False and name.startswith("shm"):
-                        res = self.shm_pool.apply(function, args, kwds)
-                    else:
-                        res = function(*args, **kwds)
+                    res = function(*args, **kwds)
                     t = time.perf_counter()
-                    dprint(
-                        f"T{name} RUNNING ON OBJ DONE t={t-t0:.6f} {function} {args} {kwds}"
-                    )
+                    if t-t0 > 10:
+                        # dprint(
+                        #     f"T{name} RUNNING ON OBJ DONE t={t-t0:.6f} {function} {args} {kwds}", on=True
+                        # )
+                        dprint(
+                            f"T{name} RUNNING ON OBJ DONE t={t-t0:.6f} {function}", on=True
+                        )
                 except Exception as e:
                     msg = ("#ERROR", e)
                 else:
@@ -332,7 +342,7 @@ class Server(managers.Server):
 
             except AttributeError:
                 if methodname is None:
-                    msg = ("#TRACEBACK", format_exc())
+                    msg = ("#TRACEBACK", traceback.format_exc())
                 else:
                     try:
                         fallback_func = self.fallback_mapping[methodname]
@@ -423,135 +433,30 @@ class Server(managers.Server):
         idx = 0
         while True:
             # threads = [x for x in threads if x.is_alive()]
-            if True:
-                try:
-                    # print("LISTENING")
-                    # t0 = time.perf_counter()
-                    c = self.listener.accept()
-                    # t = time.perf_counter()
-                    # print(f"CONNECTION RECV time {t-t0:.6f}")
-                except OSError as e:
-                    # except Exception as e:
-                    # print(f"acceptor exception {type(e)} {e}")
-                    # print(
-                    #     f"Warning, there are {len(threads)} active connections, "
-                    #     f"waiting 10 seconds before accepting new connections."
-                    # )
-                    # time.sleep(10.0)
-                    continue
-                # if len(threads) > 600:
-                #     print(f"there are {len(threads)} active connections, waiting 2")
-                #     time.sleep(2)
-                # if len(threads) > 700:
-                #     print(f"there are {len(threads)} active connections, waiting 3")
-                #     time.sleep(3)
-                # if len(threads) > 800:
-                #     print(f"there are {len(threads)} active connections, waiting 4")
-                #     time.sleep(4)
-                # if len(threads) > 900:
-                #     print(f"there are {len(threads)} active connections, waiting 5")
-                #     time.sleep(5)
-                # self.handle_request(c)
-                t = threading.Thread(target=self.handle_request, args=(c,))
-                # pool.apply_async(self.handle_request, (c,))
-                t.daemon = True
+            try:
+                # print("LISTENING")
+                # t0 = time.perf_counter()
+                c = self.listener.accept()
+                # t = time.perf_counter()
+                # print(f"CONNECTION RECV time {t-t0:.6f}")
+            except OSError as e:
+                # except Exception as e:
+                # print(f"acceptor exception {type(e)} {e}")
+                # print(
+                #     f"Warning, there are {len(threads)} active connections, "
+                #     f"waiting 10 seconds before accepting new connections."
+                # )
+                # time.sleep(10.0)
+                continue
+
+            t = threading.Thread(target=self.handle_request, args=(c,))
+            t.daemon = True
+
+            try:
                 t.start()
-
-            else:
-                if len(recvs) < 32:
-                    new_out = []
-                    new_err = []
-                    new_conn = []
-                    new_t = threading.Thread(
-                        target=self.recv_request,
-                        args=(new_conn, new_out, new_err),
-                        name=f"recv_{idx}",
-                    )
-                    new_t.daemon = True
-                    new_t.start()
-                    recvs[idx] = (new_conn, new_t, new_out, new_err)
-                    idx += 1
-
-                for i, (c, tr, out, err) in list(recvs.items()):
-                    if tr.is_alive():
-                        continue
-
-                    if not c:
-                        tr.join()
-                        del recvs[i]
-                        continue
-
-                    if err and not out:
-                        t = threading.Thread(
-                            target=self.send_request,
-                            args=(c[0], err[0]),
-                            name=f"senderr_{i}",
-                        )
-                        t.daemon = True
-                        t.start()
-                        sends[i] = (c, t, None, None)
-                    elif out:
-                        msg = []
-                        fn = out[0][0], out[0][1]
-
-                        new_pt = threading.Thread(
-                            target=self.run_request,
-                            args=(c[0], out[0], msg),
-                            name=f"run_{i}",
-                        )
-                        new_pt.daemon = True
-
-                        if fn not in procs:
-                            procs[fn] = []
-
-                        if len(procs[fn]) == 0:
-                            # print(f"STARTED RUN THREAD {i}")
-                            new_pt.start()
-                        else:
-                            new_pt.start()
-
-                        # print(f"APPEND RUN THREAD {i}")
-                        procs[fn].append((i, c, new_pt, msg))
-
-                        # t = threading.Thread(target=self.send_request, args=(c[0], out, []))
-                        # t.daemon = True
-                        # t.start()
-                    tr.join()
-                    del recvs[i]
-
-                for fn in procs:
-                    if len(procs[fn]) > 0:
-                        j, pc, pt, pmsg = procs[fn][0]
-                        # print(f"CHECKING RUN THREAD {j}, this fn has len={len(procs[fn])}")
-                        if not pt.is_alive():
-                            pt.join()
-                            procs[fn].pop(0)
-                            if pmsg:
-                                st = threading.Thread(
-                                    target=self.send_request,
-                                    args=(pc[0], pmsg[0]),
-                                    name=f"send_{j}",
-                                )
-                                st.daemon = True
-                                st.start()
-                                sends[j] = (pc, st, None, None)
-
-                            # if len(procs[fn]) > 0:
-                            #     procs[fn][0][2].start()
-
-                for i, (c, t, _, _) in list(sends.items()):
-                    if not t.is_alive():
-                        t.join()
-                        del sends[i]
-
-            # t = threading.Thread(target=self.handle_request, args=(c, out, err))
-            # pool.apply_async(self.handle_request, (c,))
-            # t.daemon = True
-            # print("TRYING TO JOIN....")
-            # t.start()
-            # threads.append(t)
-            # t.join(timeout=None)
-            # print("JOINED")
+            except RuntimeError:
+                # possible on large jobs with many threads?
+                continue
 
     def recv_request(self, conn, out, err):
         try:
@@ -671,11 +576,6 @@ class Server(managers.Server):
         dprint(
             f"REQUEST TOTAL {t2-t0:.6f} RECV {tf-t0:.6f} PROC {t1 - tf:.6f} SEND {t2-t1:.6f}"
         )
-
-    def shutdown(self, c):
-        if self.shm_pool:
-            self.shm_pool.terminate()
-        super().shutdown(c)
 
     def incref(self, c, ident):
         with self.mutex:
@@ -814,40 +714,168 @@ managers.AutoProxy = AutoProxy
 # managers.BaseManager._Server = Server
 
 
-def _repopulate_pool(self):
-    """Bring the number of pool processes up to the specified number,
-    for use after reaping workers which have exited.
-    """
-    for i in range(self._processes - len(self._pool)):
-        w = self.Process(
-            target=multiprocessing.pool.worker,
-            args=(
-                self._inqueue,
-                self._outqueue,
-                self._initializer,
-                self._initargs,
-                self._maxtasksperchild,
-                self._wrap_exception,
-            ),
-        )
-        self._pool.append(w)
-        w.name = w.name.replace("Process", "PoolWorker")
-        w.daemon = False
-        w.start()
-        # util.debug('added worker')
+# def _repopulate_pool(self):
+#     """Bring the number of pool processes up to the specified number,
+#     for use after reaping workers which have exited.
+#     """
+#     for i in range(self._processes - len(self._pool)):
+#         w = self.Process(
+#             target=multiprocessing.pool.worker,
+#             args=(
+#                 self._inqueue,
+#                 self._outqueue,
+#                 self._initializer,
+#                 self._initargs,
+#                 self._maxtasksperchild,
+#                 self._wrap_exception,
+#             ),
+#         )
+#         self._pool.append(w)
+#         w.name = w.name.replace("Process", "PoolWorker")
+#         w.daemon = False
+#         w.start()
+#         # util.debug('added worker')
 
 
-multiprocessing.pool.Pool._repopulate_pool = _repopulate_pool
+workspace_global = []
+pool_global = []
+
+SIGINT_MAIN_TRACEBACK = False
+SIGINT_STATE = 0
+
+def close_workspaces():
+    global workspace_global
+    global SIGINT_STATE
+    if multiprocessing.parent_process() is None:
+        if SIGINT_STATE == 0:
+            SIGINT_STATE += 1
+            print(f"Main process {os.getpid()} cleaning up...")
+            print(
+                "If this takes longer than a few seconds, "
+                "press CTRL-C one or more times to interrupt waiting locks/sockets"
+            )
+            for p in reversed(workspace_global):
+                p.close()
+            workspace_global.clear()
+        else: 
+            print(f"Interrupting locks and sockets attempt {SIGINT_STATE}")
+            SIGINT_STATE += 1
+        # # print("Closing pool...")
+        # p.close()
+        # for proc in p._pool:
+        #     if proc.pid:
+        #         try:
+        #             os.kill(proc.pid, signal.SIGKILL)
+        #         except Exception:
+        #             pass
+        #     # proc.kill()
+        # p.terminate()
+    else:
+        # print(f"Child process {os.getpid()} exiting...")
+        sys.exit(0)
+
+
+def close_pools():
+    global pool_global
+    for p in reversed(pool_global):
+        # print("Closing pool...")
+        p.close()
+        for proc in p._pool:
+            if proc.pid:
+                try:
+                    os.kill(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        p.terminate()
+    pool_global.clear()
+
+
+def signal_kill_processes(sig, frame):
+    close_workspaces()
+    close_pools()
+    if SIGINT_MAIN_TRACEBACK:
+        signal.default_int_handler(sig, frame)
+    else:
+        print("Set besmarts.core.compute.SIGINT_MAIN_TRACEBACK = True to see a traceback")
+        sys.exit(0)
+
+
+def register_workspace(p):
+    global workspace_global
+    workspace_global.append(p)
+
+
+def unregister_workspace(p):
+    global workspace_global
+    for q in list(workspace_global):
+        if id(p) == id(q):
+            workspace_global.remove(q)
+
+
+def register_pool(p):
+    global pool_global
+    pool_global.append(p)
+
+
+def unregister_pool(p):
+    global pool_global
+    for q in list(pool_global):
+        if id(p) == id(q):
+            pool_global.remove(q)
 
 
 def Process(obj, *args, **kwds):
-    if type(obj) is multiprocessing.pool.Pool:
-        return obj._ctx.Process(*args, **kwds)
+    if type(obj) is workspace_pool:
+        p = obj._ctx.Process(**kwds)
     else:
-        return obj.Process(*args, **kwds)
+        p = obj.Process(*args, **kwds)
+
+    return p
+
+# if multiprocessing.parent_process() is None:
+signal.signal(signal.SIGINT, signal_kill_processes)
+# signal.signal(signal.SIGTERM, signal_kill_processes)
+
+class workspace_pool(multiprocessing.pool.Pool):
+
+    Process = Process
+
+    def __init__(self, *args, **kwds):
+        super().__init__(*args, **kwds)
+        register_pool(self)
+
+    @staticmethod
+    def _repopulate_pool_static(ctx, Process, processes, pool, inqueue,
+                                outqueue, initializer, initargs,
+                                maxtasksperchild, wrap_exception):
+        """Bring the number of pool processes up to the specified number,
+        for use after reaping workers which have exited.
+        """
+        worker = multiprocessing.pool.worker
+        for i in range(processes - len(pool)):
+            w = Process(ctx, target=worker,
+                        args=(inqueue, outqueue,
+                              initializer,
+                              initargs, maxtasksperchild,
+                              wrap_exception))
+            w.name = w.name.replace('Process', 'PoolWorker')
+            w.daemon = False
+            w.start()
+            pool.append(w)
+            util.debug('added worker')
+
+    def _repopulate_pool(self):
+        return self._repopulate_pool_static(self._ctx, self.Process,
+                                            self._processes,
+                                            self._pool, self._inqueue,
+                                            self._outqueue, self._initializer,
+                                            self._initargs,
+                                            self._maxtasksperchild,
+                                            self._wrap_exception)
+
+# multiprocessing.pool.Pool.Process = Process
 
 
-multiprocessing.pool.Pool.Process = Process
 
 
 class workspace_manager(managers.SyncManager):
@@ -883,6 +911,8 @@ class workqueue_manager(managers.SyncManager):
 
 class workqueue:
     def __init__(self, addr, port):
+        if configs.remote_compute_enable == False and addr in ["", "0.0.0.0"]:
+            addr = "127.0.0.1"
         self.mgr = workqueue_manager(address=(addr, port), authkey=b"0")
         self.mgr._Client = Client
 
@@ -1202,17 +1232,17 @@ def manager_remote_queue_put_thread(oq, obj, n, success):
 
             first = obj[: len(obj) // 2]
             if len(first) == 1:
-                manager_remote_oqueue_put_thread(oq, first[0], 1, success)
+                manager_remote_queue_put_thread(oq, first[0], 1, success)
             else:
-                manager_remote_oqueue_put_thread(
+                manager_remote_queue_put_thread(
                     oq, first[0], len(first), success
                 )
 
             second = obj[len(obj) // 2 :]
             if len(second) == 1:
-                manager_remote_oqueue_put_thread(oq, second[0], 1, success)
+                manager_remote_queue_put_thread(oq, second[0], 1, success)
             else:
-                manager_remote_oqueue_put_thread(
+                manager_remote_queue_put_thread(
                     oq, second, len(second), success
                 )
         elif n == 1 and len(obj) > 1:
@@ -1220,7 +1250,7 @@ def manager_remote_queue_put_thread(oq, obj, n, success):
                 print(
                     f"\nWarning, tried to send too much data. Breaking into pieces and retrying (current tasks={len(obj)} key={k})."
                 )
-                manager_remote_oqueue_put_thread(oq, {k: v}, 1, success)
+                manager_remote_queue_put_thread(oq, {k: v}, 1, success)
         else:
             success.clear()
             raise e
@@ -1409,7 +1439,7 @@ class workqueue_remote(workqueue):
     def get_state(self):
         if self.remote_state is None:
             self.remote_state = manager_remote_get_state(self)
-        return state
+        return self.remote_state
 
     def get_status(self):
         return manager_remote_get_status(self)
@@ -1418,6 +1448,8 @@ class workqueue_remote(workqueue):
 class workspace:
     def __init__(self, addr, port):
         self.mgr = workspace_manager(address=(addr, port), authkey=b"0")
+        self.addr = addr
+        self.port = port
         # self.state = None
         self.holding = set()
 
@@ -1444,7 +1476,7 @@ class myqueue(queues.Queue):
     def __init__(self, maxsize=0):
         super().__init__(maxsize=maxsize, ctx=context._default_context)
 
-    def get(self, block=True, timeout=None, n=1):
+    def get(self, block=True, timeout=TIMEOUT, n=1):
         ret = []
         if self._closed:
             raise ValueError(f"Queue {self!r} is closed")
@@ -1486,11 +1518,11 @@ class myqueue(queues.Queue):
         else:
             return ret
 
-    def put(self, obj, block=True, timeout=None, n=1):
+    def put(self, obj, block=True, timeout=TIMEOUT, n=1):
         if self._closed:
             raise ValueError(f"Queue {self!r} is closed")
         if not self._sem.acquire(block, timeout):
-            raise Full
+            raise queue.Full
 
         with self._notempty:
             if self._thread is None:
@@ -1519,7 +1551,7 @@ class myqueue(queues.Queue):
 
 
 class myqueue(queue.Queue):
-    def put(self, item, block=True, timeout=None, n=1):
+    def put(self, item, block=True, timeout=TIMEOUT, n=1):
         """Put an item into the queue.
 
         If optional args 'block' is true and 'timeout' is None (the default),
@@ -1557,7 +1589,7 @@ class myqueue(queue.Queue):
             self.not_empty.notify_all()
             # with self.not_empty:
 
-    def get(self, block=True, timeout=None, n=1):
+    def get(self, block=True, timeout=TIMEOUT, n=1):
         """Remove and return an item from the queue.
 
         If optional args 'block' is true and 'timeout' is None (the default),
@@ -1607,7 +1639,7 @@ class myqueue(queue.Queue):
 
 
 class myiqueue(queue.Queue):
-    def get(self, block=True, timeout=None):
+    def get(self, block=True, timeout=TIMEOUT):
         raise Exception()
         print(f"GETTING IQ from {id(self)}")
         return super().get(block=block, timeout=timeout)
@@ -1645,24 +1677,8 @@ class workspace_local(workspace):
 
     def __init__(self, addr, port, shm: shm_local = None, nproc=-1):
         super().__init__(addr, port)
-
-        self.mgr._Client = functools.partial(Client, timeout=TIMEOUT)
-        self.state = dict({"status": workspace_status.EMPTY})
-
-        self.iqueue = myqueue()
-        self.oqueue = myqueue()
-        self.holding_remote = {}
-        self.holding_remote_lock = threading.Lock()
-        self.finished = 0
-        self.finished_remote = 0
-        self.mgr.register("get_iqueue", lambda: self.iqueue)
-        self.mgr.register("get_oqueue", lambda: self.oqueue)
-
-        self.mgr.register("get_state", lambda: self.state)
-
-        # this will load whatever interface that shm has
-        self.mgr.register("get_shm", lambda: self.shm)
-        # self.mgr.register('init_shm', functools.partial(shm_init, self.shm))
+        self.pool = None
+        self.ntasks = 1
 
         if shm is None:
             self.shm: shm_local = shm_local()
@@ -1672,35 +1688,47 @@ class workspace_local(workspace):
         else:
             self.shm = shm
 
-        if nproc == -1:
+        if nproc == -1 or nproc is None:
             self.nproc: int = max(
                 1,
                 configs.processors
                 if configs.processors
                 else os.cpu_count() - 1,
             )
-        elif nproc is None:
-            self.nproc = os.cpu_count() - 1
         else:
             self.nproc = nproc
-        # self.shared = shared_mem()
-        # self.mgr.register('get_shared', lambda: self.shared)
 
-        # self.nproc = min(os.cpu_count(), 2)
+        self.remote_iqueue = None
+        self.remote_oqueue = None
+        self.remote_oqueue_size = 0
+        self.remote_iqueue_size = 0
+        self.remote_state = None
+        self.run_thread = None
 
-        ntasks = 1
-        if self.shm.procs_per_task > 0:
-            ntasks = max(1, self.nproc // self.shm.procs_per_task)
+        self.start()
+
+        if configs.compute_verbosity > 0:
+            print(f"Started local workspace on {self.mgr.address} procs={self.nproc} tasks={self.ntasks}")
+
+        register_workspace(self)
+
+    def start(self):
 
         global SHM_GLOBAL
-        SHM_GLOBAL = self.shm
-        # workspace_run_init(self.shm)
-        self.pool = multiprocessing.pool.Pool(
-            ntasks,
-            workspace_run_init,
-            (self.shm.procs_per_task,),
-            context=multiprocessing.get_context("fork"),
-        )
+        self.state = dict({"status": workspace_status.EMPTY})
+
+        self.iqueue = myqueue()
+        self.oqueue = myqueue()
+        self.holding_remote = {}
+        self.holding_remote_lock = threading.Lock()
+
+        self.remote_oqueue_size = 0
+        self.remote_oqueue_size_lock = threading.Lock()
+        self.remote_iqueue_size = 0
+        self.remote_iqueue_size_lock = threading.Lock()
+
+        self.finished = 0
+        self.finished_remote = 0
 
         self.done = threading.Event()
         self.done.clear()
@@ -1718,6 +1746,60 @@ class workspace_local(workspace):
         self.loadbalance_thread = None
         self.run_thread = None
 
+        # print("Registering SHM at ", self.mgr.address)
+        # global SHM_GLOBAL
+        # SHM_GLOBAL[self.mgr.address] = self.shm
+
+        if self.nproc > 1 or configs.remote_compute_enable:
+            self.manager_start()
+            # print("Distributed active. Registering SHM at ", self.mgr.address)
+            SHM_GLOBAL[self.mgr.address] = self.shm
+            self.pool_start()
+        else:
+            # print("Registering SHM at ", self.mgr.address)
+            SHM_GLOBAL[self.mgr.address] = self.shm
+        # else:
+        #     print("Registering SHM at ", self.mgr.address)
+        #     global SHM_GLOBAL
+
+    def pool_start(self):
+
+        if self.pool:
+            # self.pool._cache.clear()
+            unregister_pool(self.pool)
+            self.pool.close()
+            self.pool.terminate()
+            for p in self.pool._pool:
+                p.kill()
+            self.pool = None
+
+        self.ntasks = 1
+        if self.shm.procs_per_task > 0:
+            self.ntasks = max(1, self.nproc // self.shm.procs_per_task)
+        if self.nproc > 1:
+            self.pool = workspace_pool(
+                self.ntasks,
+                workspace_run_init,
+                (self.shm.procs_per_task,),
+                context=multiprocessing.get_context("fork"),
+            )
+
+    def manager_start(self):
+        addr = self.addr
+        port = self.port
+        self.mgr = workspace_manager(address=(addr, port), authkey=b"0")
+        self.mgr._Client = functools.partial(Client, timeout=TIMEOUT)
+        self.mgr.register("get_iqueue", lambda: self.iqueue)
+        self.mgr.register("get_oqueue", lambda: self.oqueue)
+
+        self.mgr.register("clear_iqueue", lambda: self.clear_iqueue)
+        self.mgr.register("clear_oqueue", lambda: self.clear_oqueue)
+
+        self.mgr.register("get_state", lambda: self.state)
+
+        # this will load whatever interface that shm has
+        self.mgr.register("get_shm", lambda: self.shm)
+
         self.mgr.start()
         self.remote_iqueue = None
         self.remote_oqueue = None
@@ -1726,58 +1808,28 @@ class workspace_local(workspace):
         self.remote_state = None
         self.run_thread = None
 
-        # self.pool = None
-        self.reset()
-        print(f"Started local workspace on {self.mgr.address}")
-
-    def start(self):
-        self.mgr.start()
-        self.reset()
-
-    def reset(self):
-        self.done.clear()
-        self.gather_stop.clear()
-        self.loadbalance_stop.clear()
-        self.run_stop.clear()
-
-        self.iqueue = myqueue()
-        self.oqueue = myqueue()
-
         # print("Starting iqueue reference")
         self.remote_iqueue = self.mgr.get_iqueue()
+        self.mgr.clear_iqueue()
+
         # self.remote_iqueue._Client = Client
         # print("Starting oqueue reference")
         self.remote_oqueue = self.mgr.get_oqueue()
+        self.mgr.clear_oqueue()
         # self.remote_oqueue._Client = Client
 
         self.remote_oqueue_size = 0
-        self.remote_oqueue_size_lock = threading.Lock()
+        # self.remote_oqueue_size_lock = threading.Lock()
         self.remote_iqueue_size = 0
-        self.remote_iqueue_size_lock = threading.Lock()
+        # self.remote_iqueue_size_lock = threading.Lock()
 
         self.remote_state = self.mgr.get_state()
 
-        if self.pool:
-            self.pool.close()
-            self.pool.terminate()
-            ntasks = 1
-            if self.shm.procs_per_task > 0:
-                ntasks = max(1, self.nproc // self.shm.procs_per_task)
-            global SHM_GLOBAL
-            SHM_GLOBAL = self.shm
-            self.pool = multiprocessing.pool.Pool(
-                ntasks,
-                workspace_run_init,
-                (self.shm.procs_per_task,),
-                context=multiprocessing.get_context("fork"),
-            )
-        # self.close()
-        # self.pool = None
-        # if self.nproc > 0:
-        #     self.pool = multiprocessing.Pool(self.nproc)
         self.holding.clear()
         self.holding_remote.clear()
-        # self.set_status(workspace_status.EMPTY)
+
+        global SHM_GLOBAL
+        SHM_GLOBAL[self.mgr.address] = self.shm
 
         # starts all threads
         self.run_thread = workspace_local_run(self)
@@ -1796,9 +1848,63 @@ class workspace_local(workspace):
             # print("Starting loadbalance thread...")
             self.loadbalance_thread.start()
 
+    def reset(self):
+
+        # self.gather_stop.set()
+        # self.loadbalance_stop.set()
+        # self.run_stop.set()
+
+        # if self.loadbalance_thread:
+        #     self.loadbalance_thread.join()
+        #     self.loadbalance_thread = None
+        # if self.gather_thread:
+        #     self.gather_thread.join()
+        #     self.gather_thread = None
+        # if self.run_thread:
+        #     self.run_thread.join()
+        #     self.run_thread = None
+
+        # self.done.clear()
+        # self.gather_stop.clear()
+        # self.loadbalance_stop.clear()
+        # self.run_stop.clear()
+
+        # self.iqueue.queue.clear()
+        # self.oqueue.queue.clear()
+
+        self.close()
+        # self.pool_close()
+        self.start()
+        # try:
+            
+        # except ConnectionRefusedError:
+        #     print(
+        #         "Warning, workspace manager not responding",
+        #         "Restarting with a new manager"
+        #     )
+        #     self.manager_start()
+
+    def pool_close(self):
+
+        if self.pool is not None:
+            unregister_pool(self.pool)
+            self.pool.close()
+            self.pool.terminate()
+            for p in self.pool._pool:
+                if p.pid is not None:
+                    try:
+                        os.kill(p.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+            self.pool = None
+
+        if self.mgr.address in SHM_GLOBAL:
+            SHM_GLOBAL.pop(self.mgr.address)
+
     def close(self):
+
         try:
-            self.set_status(workspace_status.DONE)
+            # self.set_status(workspace_status.DONE)
             self.gather_stop.set()
             self.loadbalance_stop.set()
             self.run_stop.set()
@@ -1814,16 +1920,20 @@ class workspace_local(workspace):
                 self.run_thread.join()
                 self.run_thread = None
 
-            if self.pool is not None:
-                self.pool.close()
-                self.pool.terminate()
-                self.pool = None
-
-            self.mgr.shutdown()
+            if self.mgr is not None and self.mgr._state.value == 1:
+                self.mgr.shutdown()
+                if self.mgr._process.pid is not None:
+                    try:
+                        os.kill(self.mgr._process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
             self.remote_iqueue = None
             self.remote_oqueue = None
         except BrokenPipeError:
             pass
+
+        self.pool_close()
+        unregister_workspace(self)
         # self.pool.close()
         # print("Setting to done")
         # self.done.set()
@@ -1838,8 +1948,14 @@ class workspace_local(workspace):
     def get_iqueue(self):
         return self.iqueue
 
+    def clear_iqueue(self):
+        self.iqueue.queue.clear()
+
     def get_oqueue(self):
         return self.oqueue
+
+    def clear_oqueue(self):
+        self.oqueue.queue.clear()
 
     def get_state(self):
         return self.state
@@ -1895,14 +2011,14 @@ class workspace_remote(workspace):
 
         self.remote_state = None
 
-    def start(self):
+    def start(self, input_queue_size=1):
         if self.is_connected:
             print("Connecting queues...")
             self.remote_iqueue = self.get_iqueue()
             self.remote_oqueue = self.get_oqueue()
             print("Connecting state...")
             self.remote_state = self.get_state()
-            self.iqueue = myqueue(maxsize=1)
+            self.iqueue = myqueue(maxsize=input_queue_size)
             self.oqueue = myqueue()
 
             if not (
@@ -1917,10 +2033,11 @@ class workspace_remote(workspace):
                 if self.shm.procs_per_task > 0:
                     ntasks = max(1, self.nproc // self.shm.procs_per_task)
                 global SHM_GLOBAL
-                SHM_GLOBAL = self.shm
-                self.pool = multiprocessing.Pool(
-                    ntasks, workspace_run_init, (self.shm.procs_per_task,)
-                )
+                SHM_GLOBAL[self.mgr.address] = self.shm
+                if self.nproc > 1:
+                    self.pool = workspace_pool(
+                        ntasks, workspace_run_init, (self.shm.procs_per_task,)
+                    )
                 print("Launching threads")
                 self.gather_thread = threading.Thread(
                     target=workspace_remote_local_gather_thread, args=(self,)
@@ -1935,13 +2052,20 @@ class workspace_remote(workspace):
             return False
 
     def close(self):
+
         if self.pool is not None:
+            unregister_pool(self.pool)
             # print("Closing pool")
-            self.pool.terminate()
             self.pool.close()
+            self.pool.terminate()
+            for p in self.pool._pool:
+                p.kill()
+
         self.stop.set()
         self.done.set()
 
+        if self.mgr.address in SHM_GLOBAL:
+            SHM_GLOBAL.pop(self.mgr.address)
         self.remote_iqueue = None
         self.remote_oqueue = None
         self.remote_state = None
@@ -2022,7 +2146,7 @@ def workspace_remote_local_pusher_thread(ws: workspace_remote):
         time.sleep(0.01)
     good = 0
     bad = 0
-
+    target_n = 2
     packets = []
     sleepiness = 0.0
     while not ws.done.is_set():
@@ -2032,8 +2156,8 @@ def workspace_remote_local_pusher_thread(ws: workspace_remote):
 
         # time.sleep(5.0)
         t0 = time.perf_counter()
-        n = max(2, 100 - len(packets))
-        if n <= 100:
+        n = max(2, target_n - len(packets))
+        if n <= target_n:
             try:
                 items = ws.oqueue.get(block=False, n=n)
                 packets.extend(items)
@@ -2041,8 +2165,8 @@ def workspace_remote_local_pusher_thread(ws: workspace_remote):
                 #     packet.update(item)
             except queue.Empty:
                 sleepiness += 2.0
-                time.sleep(sleepiness)
-        lt = time.perf_counter() - t0
+                time.sleep(min(TIMEOUT, sleepiness))
+        # lt = time.perf_counter() - t0
         if packets:
             # need to make sure packet is not too large
             # try to guess 10MB chunks
@@ -2058,8 +2182,16 @@ def workspace_remote_local_pusher_thread(ws: workspace_remote):
                 tosend = packets[0]
 
             # print(f"{datetime.now()} STARTING PUSH {len(packets)} \nVALUES ARE\n{pprint.pformat(packets)}")
+            t1 = time.perf_counter()
             failed = not ws.oqueue_put(tosend, n=n)
-            rt = time.perf_counter() - t0
+            rt = time.perf_counter() - t1
+            if rt > 3.0 or failed:
+
+                target_n = max(1, target_n//2)
+                print(f"{datetime.now()} push N={n} took {rt} seconds (fail={failed}). Reducing target to {target_n}")
+            elif rt < 0.1:
+                target_n = min(100, target_n*2)
+                print(f"{datetime.now()} push N={n} took {rt} seconds (fail={failed}). Raising target to {target_n}")
             if failed:
                 bad += 1
 
@@ -2073,8 +2205,9 @@ def workspace_remote_local_pusher_thread(ws: workspace_remote):
             # if ws.done.is_set():
             #     break
             if failed:
+                target_n = max(1, target_n//2)
                 sleepiness += 2.0
-                time.sleep(sleepiness)
+                time.sleep(min(TIMEOUT, sleepiness))
             # packets.clear()
             # packet.update(unsent)
             # time.sleep(1.0)
@@ -2104,15 +2237,20 @@ def workspace_remote_local_gather_thread(ws: workspace_remote):
 
         # print("workspace_remote_get_functions: Getting item from iq...")
 
-        t0 = time.perf_counter()
-        item = ws.iqueue_get(n=1)
-        # print(f"workspace_remote_get_functions: received {result} {result is not None}")
-        rt = time.perf_counter() - t0
+        item = None
+        if ws.iqueue.maxsize > 1 or not ws.holding: 
+            # print(datetime.now(), "Getting work...")
+            t0 = time.perf_counter()
+            item = ws.iqueue_get(n=1)
+            # print(f"workspace_remote_get_functions: received {result} {result is not None}")
+            rt = time.perf_counter() - t0
+
         if item is not None and len(item):
             if type(item) is not dict:
                 print(
                     f"Warning, gather thread received malformed taskset:\n{item}"
                 )
+            # print(datetime.now(), "Work received")
             t0 = time.perf_counter()
             # this has a maxsize and will block
             # if we timeout
@@ -2126,13 +2264,13 @@ def workspace_remote_local_gather_thread(ws: workspace_remote):
                 if iqs is not None and iqs == 0:
                     ws.iqueue_put(item, n=1)
 
-            lt = time.perf_counter() - t0
+            # lt = time.perf_counter() - t0
             # print(
             #     f"{datetime.now()} REMOTE GATHER THREAD RECEIVED {len(item)} rtime: {rt:6.3f} ltime: {lt:6.3f}"
             # )
         else:
-            sleepiness += 2.0
-            time.sleep(sleepiness)
+            sleepiness += 0.2
+            time.sleep(min(TIMEOUT, sleepiness))
         # else:
         #     time.sleep(.5)
 
@@ -2163,7 +2301,7 @@ def workspace_local_remote_loadbalance_thread(ws: workspace_local):
                 rqs = manager_remote_queue_qsize(remote_q)
                 if ws.done.is_set() or ws.loadbalance_stop.is_set():
                     break
-                time.sleep(min(10.0, sleepiness))
+                time.sleep(min(TIMEOUT, sleepiness))
 
             if rqs is None:
                 continue
@@ -2238,16 +2376,19 @@ def workspace_local_remote_loadbalance_thread(ws: workspace_local):
                             remote_q
                         )
 
+            elif iqs > 0 and rqs == 0 and configs.remote_compute_enable:
+                # We might be emptying rq too fast, so don't sleep
+                continue
             else:
-                sleepiness += 5.0
-                time.sleep(min(60.0, sleepiness))
+                sleepiness += 1.0
+                time.sleep(min(TIMEOUT, sleepiness))
 
         except queue.Empty:
             pass
         t1 = time.perf_counter()
         dt = t1 - t0
-        if dt < 0.0:
-            time.sleep(0.0 - dt)
+        if dt < 0.1:
+            time.sleep(0.1 - dt)
 
 
 def workspace_local_remote_gather_thread(ws: workspace_local):
@@ -2261,6 +2402,7 @@ def workspace_local_remote_gather_thread(ws: workspace_local):
 
     i = 0
     sleepiness = 0.0
+    target_n = 1000
     while (
         not ws.done.is_set()
         and not ws.gather_stop.is_set()
@@ -2269,8 +2411,13 @@ def workspace_local_remote_gather_thread(ws: workspace_local):
         t0 = time.perf_counter()
         try:
             obj = queue_get_nowait(
-                remote_q, block=False, timeout=None, n=10000
+                remote_q, block=False, timeout=TIMEOUT, n=target_n
             )
+            if time.perf_counter()-t0 < 3.0:
+                target_n = min(10, target_n + 1)
+            else:
+                target_n = max(2, target_n - 1)
+
             if obj is not None and len(obj):
                 with ws.remote_oqueue_size_lock:
                     ws.remote_oqueue_size = manager_remote_queue_qsize(
@@ -2286,11 +2433,11 @@ def workspace_local_remote_gather_thread(ws: workspace_local):
             i += 1
         except queue.Empty:
             sleepiness += 1.0
-            time.sleep(min(sleepiness, 60.0))
+            time.sleep(min(sleepiness, TIMEOUT))
         t1 = time.perf_counter()
         dt = t1 - t0
-        if dt < 0.0:
-            time.sleep(0.0 - dt)
+        if dt < 0.1:
+            time.sleep(0.1 - dt)
 
 
 def workqueue_push_workspace(wq: workqueue_local, ws: workspace):
@@ -2307,6 +2454,9 @@ def workqueue_push_workspace(wq: workqueue_local, ws: workspace):
 def workspace_local_run_thread(ws: workspace_local):
     thread_name_set("run")
 
+    # import tracemalloc
+
+    verbose = False
     functions = {}
     put_back = {}
     started = False
@@ -2316,7 +2466,8 @@ def workspace_local_run_thread(ws: workspace_local):
 
     local_n = 0
 
-    # print("local_run_thread: getting mgr.iqueue")
+    # verbose = True
+    logs.dprint("local_run_thread: getting mgr.iqueue", on=verbose)
     iq = ws.mgr.get_iqueue()
     # iq = ws.remote_iqueue
 
@@ -2324,35 +2475,37 @@ def workspace_local_run_thread(ws: workspace_local):
     if ws.shm.procs_per_task > 0:
         ntasks = max(1, ws.nproc // ws.shm.procs_per_task)
 
+    # pool = ws.pool
 
-    pool = ws.pool
+    # if ws.pool is None:
+        # print("WARNING POOL IS NONE")
+        # return
 
-    if pool is None:
-        print("WARNING POOL IS NONE")
-        return
+    # snap1 = tracemalloc.take_snapshot()
 
-    # print("workspace_local_run_thread: Entering run loop")
+    logs.dprint("workspace_local_run_thread: Entering run loop", on=verbose)
     try:
         while (
             not ws.done.is_set() and not ws.run_stop.is_set()
         ) or ws.iqueue.qsize():
+            dist = ws.pool is not None
             t0 = time.perf_counter()
             # time.sleep(.1)
             idx = None
-            local_n = len(work)
-            # print("workspace_local_run_thread: In loop")
+            local_n = max(len(work), len(ws.holding))
+            logs.dprint("workspace_local_run_thread: In loop", on=verbose)
             functions.clear()
             put_back.clear()
             stole = False
             try:
                 if local_n < ntasks:
-                    # print(f"\nworkspace_local_run_thread: Getting local functions {id(ws.iqueue)}")
+                    logs.dprint(f"\nworkspace_local_run_thread: Getting local functions {id(ws.iqueue)}", on=verbose)
                     functions = ws.iqueue.get(block=False)
 
             except queue.Empty:
                 # print(f"\nworkspace_local_run_thread: LOCAL EMPTY")
                 pass
-            except Exception:
+            except Exception as e:
                 # qsize can fail
                 print(f"\nworkspace_local_run_thread: Exception {type(e)} {e}")
                 continue
@@ -2411,25 +2564,36 @@ def workspace_local_run_thread(ws: workspace_local):
                 break
 
             if functions:
-                # print(f"There are {len(functions)} to run")
+                logs.dprint(f"There are {len(functions)} to run", on=verbose)
 
                 local_submit = True
 
                 if local_submit:
+                    new_idx = {}
                     for idx, distfun in functions.items():
                         # print("local_n = ", local_n, "remote_n:", remote_n)
                         # print("LOCAL SUBMIT?", local_submit)
                         if local_submit and idx not in ws.holding:
-                            # print(f"Pushing job {idx} to local q {iq}")
-                            work.append(
-                                (
-                                    idx,
-                                    pool.apply_async(
-                                        workspace_run, (distfun,), {}
-                                    ),
-                                )
-                            )
+                            logs.dprint(f"{datetime.now()} Pushing job {idx} to local q", on=verbose)
                             ws.holding.add(idx)
+                            # work.append(
+                            #     (
+                            #         idx,
+                            #         pool.apply_async(
+                            #             workspace_run, (distfun,), {"workspace_address": ws.mgr.address}
+                            #         ),
+                            #     )
+                            # )
+                            new_idx[idx] = distfun, ws.mgr.address
+                    if new_idx:
+                        if dist:
+                            work.append((tuple(new_idx), ws.pool.starmap_async(workspace_run, new_idx.values())))
+                        else:
+                            result = [workspace_run(fn, addr) for fn, addr in new_idx.values()]
+                            work.append((tuple(new_idx), result))
+                        for idx in new_idx:
+                            functions.pop(idx)
+
                 else:
                     remote_put = {
                         idx: unit
@@ -2440,10 +2604,10 @@ def workspace_local_run_thread(ws: workspace_local):
                     if remote_put:
                         remote_puts.append(remote_put)
 
-                    # print(f"\nCollected {len(remote_puts)}/{int(0.5 * ws.iqueue.qsize())} items for remote push")
+                    logs.dprint(f"\nCollected {len(remote_puts)}/{int(0.5 * ws.iqueue.qsize())} items for remote push", on=verbose)
                     for remote_put in remote_puts:
                         if remote_put:
-                            # print(f"Pushing job {remote_put.keys()} to remote q {iq}")
+                            logs.dprint(f"Pushing job {remote_put.keys()} to remote q {iq}", on=verbose)
                             manager_remote_queue_put(
                                 iq, remote_put, block=False
                             )
@@ -2458,34 +2622,48 @@ def workspace_local_run_thread(ws: workspace_local):
                                         work.append(
                                             (
                                                 idx,
-                                                pool.apply_async(
+                                                ws.pool.apply_async(
                                                     workspace_run,
                                                     (distfun,),
-                                                    {},
+                                                    {"workspace_address": ws.mgr.address},
                                                 ),
                                             )
                                         )
                                         ws.holding.add(idx)
-
             if work:
                 drop.clear()
-                # print(f"Scanning {len(work)} work units")
+                finished = 0
+                logs.dprint(f"Scanning {len(work)} work units", on=verbose)
                 for i in range(len(work)):
+                    result = None
                     idx, unit = work[i]
-                    if unit.ready():
-                        drop.add(i)
+
+                    if dist and unit.ready():
                         result = unit.get()
-                        # print(f"Unit {idx} is ready")
-                        if idx in ws.holding:
-                            ws.holding.remove(idx)
-                        with ws.holding_remote_lock:
-                            if idx in ws.holding_remote:
-                                ws.holding_remote.pop(idx)
-                        ws.oqueue.put({idx: result}, block=False)
-                        # print(f"Unit {idx} is done")
+                    elif not dist:
+                        result = unit
+
+                    if result is not None:
+                        drop.add(i)
+                        if dist and type(unit) is not multiprocessing.pool.MapResult:
+                            idx = [idx]
+                            result = [result]
+                        for idxi, res in zip(idx, result):
+                            # print(f"Unit {idxi} is ready")
+                            finished += 1
+                            if idxi in ws.holding:
+                                ws.holding.remove(idxi)
+                            with ws.holding_remote_lock:
+                                if idxi in ws.holding_remote:
+                                    ws.holding_remote.pop(idxi)
+                            ws.oqueue.put({idxi: res}, block=False)
+                            # print(f"Unit {idxi} is done")
+                    result = None
+                    unit = None
+                    idx = None
 
                 working = [x for i, x in enumerate(work) if i not in drop]
-                ws.finished += len(drop)
+                ws.finished += finished
 
                 work.clear()
                 work.extend(working)
@@ -2496,8 +2674,15 @@ def workspace_local_run_thread(ws: workspace_local):
                 ws.holding.clear()
             t1 = time.perf_counter()
             dt = t1 - t0
-            if dt < 0.0:
-                time.sleep(0.0 - dt)
+            if dt < 0.1:
+                time.sleep(0.1 - dt)
+            # snap2 = tracemalloc.take_snapshot()
+            # stats = snap2.compare_to(snap1, 'traceback')
+            # print("After one iter of thread run")
+            # for stat in stats[:1]:
+            #     print(stat)
+                # for line in stat.traceback[1:]:
+                #     print("   ", line)
 
     except BrokenPipeError as e:
         print(f"Warning, BrokenPipeError {e}")
@@ -2511,15 +2696,14 @@ def workspace_local_run(ws: workspace_local):
     Take jobs from the input queue and distribute to the processing queues,
     which can be a (low latency) local pool or a (high latency) manager
     """
-    ws.set_status(workspace_status.RUNNING)
     t = threading.Thread(target=workspace_local_run_thread, args=(ws,))
     t.start()
     return t
 
 
 def workspace_submit_and_flush(
-    ws, fn, iterable, chunksize=1, timeout=1.0, batchsize=0
-):
+    ws, fn, iterable: Dict, chunksize=1, timeout=0.0, batchsize=0, verbose=False, clear=True
+) -> Dict:
     results = {}
     j = len(results)
 
@@ -2531,7 +2715,18 @@ def workspace_submit_and_flush(
     if batchsize == 0:
         batchsize = n
 
-    while len(results) < n:
+    todo = iterable
+
+
+    if clear:
+        ws.holding.clear()
+        with ws.holding_remote_lock:
+            ws.holding_remote.clear()
+        # ws.mgr.clear_oqueue()
+
+    distribute = ws.nproc > 1 or configs.remote_compute_enable
+
+    while todo:
         todo = {
             idx: unit for idx, unit in iterable.items() if idx not in results
         }
@@ -2541,18 +2736,25 @@ def workspace_submit_and_flush(
                 for idx, (args, kwds) in chunk:
                     tasks[idx] = (fn, args, kwds)
 
-                workspace_local_submit(ws, tasks)
-            results.update(
-                workspace_flush(
-                    ws, set((x[0] for x in batch)), timeout=timeout
+                if distribute:
+                    workspace_local_submit(ws, tasks)
+                else:
+                    for idx, (fn, args, kwds) in tasks.items():
+                        results[idx] = fn(*args, **kwds, shm=ws.shm)
+
+            if distribute:
+                results.update(
+                    {k: v for k, v in workspace_flush(
+                        ws, set((x[0] for x in batch)), timeout=timeout, verbose=verbose
+                    ).items() if k in iterable}
                 )
-            )
         j = len(results)
-    print(f"Batch: {j/n*100:5.2f}%  {j:8d}/{n}")
+    if verbose and configs.compute_verbosity > 1:
+        print(f"Batch: {j/n*100:5.2f}%  {j:8d}/{n}")
     return results
 
 
-def workspace_flush(ws: workspace_local, indices, timeout: float = TIMEOUT):
+def workspace_flush(ws: workspace_local, indices, timeout: float = TIMEOUT, maxwait=None, verbose=True):
     if len(indices) == 0:
         return {}
     results = {}
@@ -2560,18 +2762,19 @@ def workspace_flush(ws: workspace_local, indices, timeout: float = TIMEOUT):
     ws.finished_remote = 0
     oq = ws.oqueue
     iq = ws.iqueue
-
     riq = ws.remote_iqueue
-    if not riq:
+    distributed = ws.pool is not None or configs.remote_compute_enable
+    if distributed and not riq:
         return {}
 
     roq = ws.remote_oqueue
-    if not roq:
+    if distributed and not roq:
         return {}
+
     n = len(indices)
     at_least_one = False
     waited = 0.0
-    waittime = 5.0
+    waittime = .1
 
     totalwait = None
     if timeout is not None:
@@ -2582,7 +2785,21 @@ def workspace_flush(ws: workspace_local, indices, timeout: float = TIMEOUT):
         if idx in ws.holding_remote:
             ws.holding_remote.pop(idx)
 
-    ttp = 10  # times to print; 100 is every 1%
+    patience = 0  # force an update every n seconds
+
+    ttp = 0  # times to print; 100 is every 1%, 0 disables
+    if verbose:
+        if configs.compute_verbosity == 1:
+            ttp = 10
+            patience = 60
+        elif configs.compute_verbosity > 1:
+            ttp = 100
+            patience = 2
+        elif configs.compute_verbosity > 10:
+            ttp = 100
+            patience = 0.5
+
+
     update = set()
     force_update = True
     remote_finished = 0
@@ -2608,64 +2825,67 @@ def workspace_flush(ws: workspace_local, indices, timeout: float = TIMEOUT):
         iqsize = ws.iqueue.qsize()
         oqsize = ws.oqueue.qsize()
 
-        if dt < 10.0:
-            force_update = False
-        else:
-            force_update = True
+        if ttp > 0:
+            if dt < patience:
+                force_update = False
+            else:
+                force_update = True
 
-        progress = int(i / n * ttp) % ttp
-        if i == n:
-            progress = ttp
-        if force_update or progress not in update:
-            update.add(progress)
-            ti = time.monotonic()
-            riqsize = ws.remote_iqueue_size
-            if riqsize is None:
-                riqsize = -1
-            roqsize = ws.remote_oqueue_size
-            if roqsize is None:
-                roqsize = -1
-            erc = 0
-            if ws.finished > 0:
-                erc = ws.finished_remote * ws.nproc / ws.finished
-            print(
-                f"\r{datetime.now()} P: {i/n*100:6.2f}%  {n-i:4d}/{n} "
-                f"IQ: {iqsize:4d} OQ: {oqsize:4d} "
-                f"IP: {len(ws.holding):4d} "
-                f"LF: {ws.finished:4d} "
-                f"RF: {ws.finished_remote:4d} "
-                f"RIQ: {riqsize:4d} ROQ: {roqsize:4d} "
-                f"RIP: {len(ws.holding_remote):4d} ",
-                f"ERC: {erc:6.1f} ",
-                end="",
-            )
-            # show the first entry for timing comparsions
-            if first:
-                print()
-                first = False
-            force_update = False
+            progress = int(i / n * ttp) % ttp
+            if i == n:
+                progress = ttp
+            if force_update or progress not in update:
+                update.add(progress)
+                ti = time.monotonic()
+                riqsize = ws.remote_iqueue_size
+                if riqsize is None:
+                    riqsize = -1
+                roqsize = ws.remote_oqueue_size
+                if roqsize is None:
+                    roqsize = -1
+                erc = 0
+                if ws.finished > 0:
+                    erc = ws.finished_remote * ws.nproc / ws.finished
+                print(
+                    f"\r{datetime.now()} P: {i/n*100:6.2f}%  {n-i:4d}/{n} "
+                    f"IQ: {iqsize:4d} OQ: {oqsize:4d} "
+                    f"IP: {len(ws.holding):4d} "
+                    f"LF: {ws.finished:4d} "
+                    f"RF: {ws.finished_remote:4d} "
+                    f"RIQ: {riqsize:4d} ROQ: {roqsize:4d} "
+                    f"RIP: {len(ws.holding_remote):4d} ",
+                    f"ERC: {erc:6.1f} ",
+                    end="",
+                )
+                # show the first entry for timing comparsions
+                if first:
+                    print()
+                    first = False
+                force_update = False
         if len(indices.difference(results)) == 0:
             break
 
-        packets = queue_get_nowait(oq, timeout=5.0, n=1000)
+        packets = queue_get_nowait(oq, timeout=None, n=10000)
         if (packets is None or len(packets) == 0) and not (
             ws.holding or iqsize or oqsize
         ):
             if waited >= totalwait:
-                print(f"Done waiting")
+                # print(f"Done waiting")
                 break
             sleepiness = 0.0
             time.sleep(waittime)
             waited += waittime
             # print(f"Waited {int(waited)}/{totalwait}")
         elif packets:
-            # print("\nReceived packet")
+            # print(f"\nReceived packet {len(packets)}")
             sleepiness = 0.0
             force_update = True
             # print(f"RECEIVED type {type(packets)} values are \n{pprint.pformat(packets)}")
             for packet in packets:
                 # print(f"    packet is type {type(packet)}")
-                results.update(packet)
+                results.update({k: v for k, v in packet.items() if k in indices})
+                # otherwork = {k: v for k, v in packet.items() if k not in indices}
+                # ws.oqueue.put(otherwork, block=True)
                 for idx in packet:
                     at_least_one = True
                     waited = False
@@ -2674,15 +2894,43 @@ def workspace_flush(ws: workspace_local, indices, timeout: float = TIMEOUT):
                     with ws.holding_remote_lock:
                         if idx in ws.holding_remote:
                             ws.holding_remote.pop(idx)
+        elif (not configs.remote_compute_enable) and ws.iqueue.qsize():
+            if ws.pool is None :
+
+                # optimization to skip remote/socket stuff if we are serial
+
+                functions = ws.iqueue._get()
+                # functions = queue_get_nowait(iq)
+                for idx, distfun in functions.items():
+                    results[idx] = workspace_run(distfun, ws.mgr.address)
+            elif ws.pool and ws.nproc > 1:
+
+                functions = ws.iqueue._get()
+                # functions = queue_get_nowait(iq)
+
+                N = len(functions)
+                results.update(zip(
+                    functions.keys(),
+                    ws.pool.starmap(
+                        workspace_run,
+                        [(distfun, ws.mgr.address) for distfun in functions.values()],
+                    )
+                ))
+
+
+        if maxwait is not None and time.monotonic() - t0 >= maxwait:
+            break
 
         t01 = time.perf_counter()
         dt = t01 - t00
-        if dt < 0.0:
-            time.sleep(0.0 - dt)
+        if dt < timeout:
+            # print("Sleeping for", timeout - dt)
+            time.sleep(timeout - dt)
         # print("JOINING GOT", i)
 
     # print("\nDone flushing.")
-    print()
+    if ttp > 0:
+        print()
     return results
 
 
@@ -2704,6 +2952,7 @@ def workqueue_new_workspace(
                 assert ip in ["127.0.0.1", "localhost", "::1"]
 
     ws = workspace_local(ip, port, shm=shm, nproc=nproc)
+
 
     address = ws.mgr.address
     if address[0] == "0.0.0.0":
@@ -2745,45 +2994,52 @@ def workqueue_remove_workspace(wq: workqueue_local, ws: workspace_local):
             # print(f"Found workspace. Removed {address}")
 
 
-def workqueue_get_workspace(wq: workqueue_remote, addr, wq_port) -> workspace:
-    print("Getting workspace...")
+def workqueue_list_workspaces(wq: workqueue_remote) -> Dict:
+    print("Getting workspace list...")
     ws = None
     wss = wq.get_workspaces()
     wss = list(
         [x for x in wss.items() if type(x[0]) is tuple and len(x[0]) == 2]
     )
-    if wss:
-        for (address, port), v in sorted(wss, key=lambda x: x[1]):
-            if v != 0:
-                continue
-            ws = workspace_remote(addr, port)
-            if ws.is_connected:
-                wq.put_workspaces({addr: v + 1})
-                print(f"Received workspace {addr}:{port}")
-                # now I will have a fully copied shm in the remote ws
-                success = workspace_remote_shm_init(ws, timeout=None)
-                print(f"Initializing shared memory success {success}")
-                if not success:
-                    ws = None
-                else:
-                    print(f"Shared memory is {ws.shm}")
-                    print(
-                        f"Shared memory has members {list(ws.shm.__dict__.keys())}"
-                    )
-                    print(
-                        f"Requested processors per task is {ws.shm.procs_per_task}"
-                    )
-            else:
-                print(f"Unable to connect workspace")
-                ws = None
-    else:
+    if not wss:
         print("No workspaces")
+
+    return wss
+
+
+def workqueue_get_workspace(wq: workqueue_remote, addr, port) -> workspace:
+
+    print(f"Connecting to {addr}:{port}...")
+    ws = workspace_remote(addr, port)
+    if ws.is_connected:
+        # TODO: do the reference counting correctly
+        # wq.put_workspaces({addr: v + 1})
+        print(f"Received workspace {addr}:{port}")
+        # now I will have a fully copied shm in the remote ws
+        success = workspace_remote_shm_init(ws, timeout=60)
+        print(f"Initializing shared memory success {success}")
+        if not success:
+            ws = None
+        else:
+            print(f"Shared memory is {ws.shm}")
+            print(
+                f"Shared memory has members {list(ws.shm.__dict__.keys())}"
+            )
+            print(
+                f"Requested processors per task is {ws.shm.procs_per_task}"
+            )
+    else:
+        print(f"Unable to connect workspace")
+        ws = None
 
     return ws
 
 
 def workspace_local_submit(ws, work):
-    ws.iqueue.put(work, block=True)
+    if ws.nproc > 1 or configs.remote_compute_enable:
+        ws.iqueue.put(work, block=True)
+    else:
+        ws.iqueue._put(work)
 
 
 def workspace_is_active(ws: workspace_remote):
@@ -2865,8 +3121,8 @@ def workspace_remote_compute(wq: workqueue_remote, ws: workspace_remote):
                     # print(
                     #     f"Waiting {waits} {len(ws.holding)} {len(work)} {iqsize} {oqsize}"
                     # )
-                    sleepiness += 2.0
-                    time.sleep(sleepiness)
+                    sleepiness += .2
+                    time.sleep(min(TIMEOUT, sleepiness))
                     if waits % 6 == 0:
                         if not workspace_is_active(ws):
                             break
@@ -2879,24 +3135,36 @@ def workspace_remote_compute(wq: workqueue_remote, ws: workspace_remote):
 
             success = True
             try:
+                new_idx = {}
                 for idx, distfun in list(functions.items()):
                     # print(f"workspace_remote_compute: starting task {idx}")
 
                     if idx not in ws.holding:
-                        work.append(
-                            (
-                                idx,
-                                pool.apply_async(
-                                    workspace_run, (distfun,), {}
-                                ),
-                            )
-                        )
-                        ws.holding.add(idx)
+                        # work.append(
+                        #     (
+                        #         idx,
+                        #         pool.apply_async(
+                        #             workspace_run, (distfun,), {"workspace_address": ws.mgr.address}
+                        #         ),
+                        #     )
+                        # )
+                        if pool:
+                            ws.holding.add(idx)
+                            new_idx[idx] = distfun, ws.mgr.address
+                        else:
+                            res = workspace_run(distfun, ws.mgr.address)
+                            ws.oqueue.put({idx: res}, block=False)
+
+                if new_idx:
+                    if pool:
+                        work.append((tuple(new_idx), pool.starmap_async(workspace_run, new_idx.values())))
+                    else:
+                        ws.oqueue.put({idxi: res}, block=False)
                     # print("compute_remote: putting task result to oqueue")
                 if work:
                     drop = set()
                     # print(f"Scanning {len(work)} work units")
-                    while not drop or len(work) >= processes:
+                    while not drop:
                         drop = set()
                         for i in range(len(work)):
                             idx, unit = work[i]
@@ -2904,13 +3172,17 @@ def workspace_remote_compute(wq: workqueue_remote, ws: workspace_remote):
                                 drop.add(i)
                                 result = unit.get()
                                 force_update = True
+                                if type(unit) is not multiprocessing.pool.MapResult:
+                                    idx = [idx]
+                                    result = [result]
+                                for idxi, res in zip(idx, result):
                                 # print(f"\nUnit {idx} is ready: {result}")
                                 # print(f"\nUnit {idx} is ready")
-                                if idx in ws.holding:
-                                    ws.holding.remove(idx)
-                                ws.oqueue.put({idx: result}, block=False)
+                                    if idxi in ws.holding:
+                                        ws.holding.remove(idxi)
+                                    completed += 1
+                                    ws.oqueue.put({idxi: res}, block=False)
                                 success = True
-                                completed += 1
                         working = [
                             x for i, x in enumerate(work) if i not in drop
                         ]
@@ -2921,11 +3193,11 @@ def workspace_remote_compute(wq: workqueue_remote, ws: workspace_remote):
                         working.clear()
 
                 t1 = time.perf_counter()
-                if t1 - t0 < 1.0 and not force_update:
-                    time.sleep(1 - (t1 - t0))
+                if t1 - t0 < 0.1 and not force_update:
+                    time.sleep(.1 - (t1 - t0))
             except Exception as e:
-                print(f"workspace_remote_compute exception: {e}")
-                break
+                print(f"workspace_remote_compute exception: {type(e)}\n{e}")
+                raise e
 
     except BrokenPipeError:
         success = False
@@ -2988,7 +3260,9 @@ def workspace_remote_shm_init(ws, timeout=TIMEOUT):
     return False
 
 
-def compute_remote(addr, port, processes=1):
+def compute_remote(addr, port, processes=1, queue_size=1):
+
+    configs.compute_verbosity = 2
     retry = 0
     # connect to the work workqueue, which will serve workspaces
     retry_n = 240
@@ -2996,6 +3270,7 @@ def compute_remote(addr, port, processes=1):
     success = False
     configs.processes = min(processes, os.cpu_count())
     process.current_process().name = "WS_" + str(int(random.random() * 1e6))
+
     while retry < retry_n:
         print(f"Connecting to workqueue {addr}:{port}")
         wq = workqueue_remote(addr, port)
@@ -3008,35 +3283,36 @@ def compute_remote(addr, port, processes=1):
             )
             wq = None
 
-        try:
-            if success:
-                success = False
-                # workspaces hold global/shared space for the functions to operate
-                # In this case, I will need to setup the shared memory here first, but
-                # perhaps likely do this in the main process
-                ws: workspace_remote = workqueue_get_workspace(wq, addr, port)
-                # now this is supposed to copy the proxy objects appropriately
+        wss = workqueue_list_workspaces(wq)
 
-                if ws is not None:
+        for idx, ((_, ws_port), v) in enumerate(wss, 1):
+
+            # workspaces hold global/shared space for the functions to operate
+            # In this case, I will need to setup the shared memory here first, but
+            # perhaps likely do this in the main process
+            try:
+                print(f"Getting workspace {idx}/{len(wss)} {addr}:{ws_port}...")
+                ws: workspace_remote = workqueue_get_workspace(wq, addr, ws_port)
+                success = ws is not None
+
+                if success:
+                    success = False
+
                     ws.nproc = processes
-                    success = ws.start()
+                    success = ws.start(queue_size)
 
-                    # this needs to copy everything
                     if success:
                         print(
                             f"Starting remote compute from {addr} {port} with {processes} processes"
                         )
                         success = workspace_remote_compute(wq, ws)
                         print(f"compute_remote: success is {success}")
-                    # if not success:
-                    #     retry += 1
-                    # else:
-                    #     success = workqueue_is_active(wq)
+
                     ws.close()
-        except EOFError:
-            print("Disconnected from workspace.")
-        except Exception as e:
-            print(f"compute_remote: Exception. {e}")
+            except EOFError:
+                print("Disconnected from workspace.")
+            except Exception as e:
+                print(f"compute_remote: Exception. {e}")
 
         if success:
             retry = 0
@@ -3050,12 +3326,16 @@ def compute_remote(addr, port, processes=1):
     return retry < retry_n
 
 
-def workspace_run(distfun: distributed_function):
+def workspace_run(distfun: distributed_function, workspace_address=None):
     global SHM_GLOBAL
     fn = distfun[0]
     args = distfun[1]
     kwargs = distfun[2]
-    return fn(*args, **kwargs, shm=SHM_GLOBAL)
+    if workspace_address is None:
+        shm = shm_local()
+    else:
+        shm = SHM_GLOBAL[workspace_address]
+    return fn(*args, **kwargs, shm=shm)
 
 
 def workspace_run_init(procs_per_task, t0=None):

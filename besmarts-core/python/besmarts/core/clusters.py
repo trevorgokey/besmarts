@@ -22,6 +22,7 @@ from besmarts.core import (
     configs,
     mapper,
     graphs,
+    topology,
     hierarchies,
     assignments,
     optimization,
@@ -90,6 +91,8 @@ def get_objective(cst, assn, objfn, edits, splitting=True):
         m = hidx.index.above.get(n.index, None)
         if m is not None:
             m = hidx.index.nodes[m]
+            if m.type != "parameter" or n.type != "parameter":
+                continue
             n_match = new_match[n.name]
             m_match = new_match[m.name]
             # if not (n_match and m_match):
@@ -98,7 +101,7 @@ def get_objective(cst, assn, objfn, edits, splitting=True):
             #     continue
             n_group = tuple(((assn[i] for i in n_match)))
             m_group = tuple(((assn[i] for i in m_match)))
-            # print(f"Objective for Sj: {sma}")
+            # print(f"Objective for Sj: {n.name} {m.name} ->")
             obj = objfn(n_group, m_group, overlap=edits)
             if False and splitting:
                 if obj >= 0.0:
@@ -106,26 +109,13 @@ def get_objective(cst, assn, objfn, edits, splitting=True):
                 # print(f"Object increased to {obj} for {n.name} parent {m.name}")
                 # continue
             X += obj
+    # print("Total objective:", X)
     return keep, X
 
 
-class find_successful_candidates_ctx:
-    candidates = None
-    pq = None
-    group_number = None
-    step = None
-    hidx = None
-    topology = None
-    labeler = None
-    Sj_sma = None
-    groups = None
-    assn = None
-    strategy = None
-    gcd = None
-    objective = None
-
 
 def find_successful_candidates_distributed(S, Sj, operation, edits, shm=None):
+
     sag = shm.sag
     cst = shm.cst
     hidx = cst.hierarchy.copy()
@@ -154,7 +144,7 @@ def find_successful_candidates_distributed(S, Sj, operation, edits, shm=None):
         # print(datetime.datetime.now(), '*** 2')
         hent = hidx.index.node_add(
             S.index,
-            trees.tree_node(None, "parameter", "", param_name),
+            trees.tree_node(None, S.category, S.type, param_name),
             index=0,
         )
         # print(datetime.datetime.now(), '*** 3')
@@ -198,10 +188,11 @@ def find_successful_candidates_distributed(S, Sj, operation, edits, shm=None):
 
             if not (cst.mappings[S.name] and cst.mappings[hent.name]):
                 keep = False
+            # print(datetime.datetime.now(), '*** 8', keep, X, obj)
 
             # keep the splits that match the most (general)
             # match_len = len(cst.mappings[S.name])
-            
+
             # keep the splits that match the least (specific)
             # this is better since it leaves more in S, so more can be split
             # at a time
@@ -216,7 +207,8 @@ def find_successful_candidates_distributed(S, Sj, operation, edits, shm=None):
         # print(datetime.datetime.now(), '*** 8')
         groups = clustering_build_ordinal_mappings(cst, sag, [S.name, hent.name])
         obj = 0.0
-        obj = objective.merge(groups[S.name], groups[hent.name], overlap=edits)
+        if S.name in groups and hent.name in groups:
+            obj = objective.merge(groups[S.name], groups[hent.name], overlap=edits)
         trees.tree_index_node_remove(hidx.index, Sj.index)
         # print(datetime.datetime.now(), '*** 9')
         new_assignments = labeler.assign(hidx, gcd, smiles, topo)
@@ -229,9 +221,14 @@ def find_successful_candidates_distributed(S, Sj, operation, edits, shm=None):
         # cst.hierarchy.subgraphs.pop(hent.index)
         # cst.hierarchy.smarts.pop(hent.index)
         # sma = Sj_sma[cnd_i-1]
-        keep = obj < 0 or len(groups[hent.name]) == 0
-
-        match_len = len(cst.mappings[S.name])
+        keep = (
+            obj < 0
+            or hent.name in groups and len(groups[hent.name]) == 0
+        )
+        if S.name in cst.mappings:
+            match_len = len(cst.mappings[S.name])
+        else:
+            keep = False
 
         return keep, X, obj, match_len
     else:
@@ -244,6 +241,7 @@ def perform_operations(
         group_number,
         Sj_sma,
         strategy,
+        prefix="p"
     ):
 
     topo = hidx.topology
@@ -257,14 +255,21 @@ def perform_operations(
         added = False
 
         if step.operation == strategy.SPLIT:
-            param_name = "p" + str(group_number)
+            # param_name = prefix + str(group_number)
+            i = max(hidx.index.nodes) + 1
+            name = f"{prefix}{i}"
+            existing_names = [x.name for x in hidx.index.nodes.values()]
+            while name in existing_names:
+                i += 1
+                name = f"{prefix}{i}"
 
             # print(datetime.datetime.now(), '*** 2')
             hent = hidx.index.node_add(
                 S.index,
-                trees.tree_node(None, "parameter", "", param_name),
+                trees.tree_node(None, S.category, S.type, name),
                 index=0,
             )
+
             # print(datetime.datetime.now(), '*** 3')
             Sj = graphs.subgraph_relabel_nodes(
                 Sj, {n: i for i, n in enumerate(Sj.select, 1)}
@@ -297,111 +302,6 @@ def perform_operations(
     return hidx, nodes
 
 
-def find_successful_candidates(cnd_i, key, return_hier=False):
-    candidates = find_successful_candidates_ctx.candidates
-    # pq = find_successful_candidates_ctx.pq
-    # x, key = pq[cnd_i]
-    group_number = find_successful_candidates_ctx.group_number
-    # step = find_successful_candidates_ctx.step
-    Sj_sma = find_successful_candidates_ctx.Sj_sma
-    labeler = find_successful_candidates_ctx.labeler
-    groups = find_successful_candidates_ctx.groups
-    assn = find_successful_candidates_ctx.assn
-    hidx = find_successful_candidates_ctx.hidx.copy()
-    strategy = find_successful_candidates_ctx.strategy
-    gcd = find_successful_candidates_ctx.gcd
-    smiles = find_successful_candidates_ctx.smiles
-    objective = find_successful_candidates_ctx.objective
-    # topo = find_successful_candidates_ctx.topology
-
-    topo = hidx.topology
-
-    (S, Sj, step, _, _, _, _) = candidates[key]
-    (edits, _, p_j) = key
-    param_name = "p."
-    sma = ""
-    added = False
-    dX = 0.0
-
-    if step.operation == strategy.SPLIT:
-        param_name = "p" + str(group_number)
-
-        # print(datetime.datetime.now(), '*** 2')
-        hent = hidx.index.node_add(
-            S.index,
-            trees.tree_node(None, "parameter", "", param_name),
-            index=0,
-        )
-        # print(datetime.datetime.now(), '*** 3')
-        Sj = graphs.subgraph_relabel_nodes(
-            Sj, {n: i for i, n in enumerate(Sj.select, 1)}
-        )
-        Sj = graphs.subgraph_to_structure(Sj, topo)
-
-        sma = Sj_sma[cnd_i]  # gcd.smarts_encode(Sj)
-
-        hidx.subgraphs[hent.index] = Sj
-        hidx.smarts[hent.index] = sma
-
-        # print(datetime.datetime.now(), '*** 4')
-        procs = configs.processors
-        configs.processors = 1
-        new_assignments = labeler.assign(hidx, gcd, smiles, topo)
-        configs.processors = procs
-
-        # print(datetime.datetime.now(), '*** 5')
-        new_match = clustering_build_assignment_mappings(hidx, new_assignments)
-
-        cst = smarts_clustering(hidx, new_assignments, new_match)
-
-        # print(datetime.datetime.now(), '*** 7')
-        keep, X = get_objective(
-            cst, assn, objective.split, edits, splitting=True
-        )
-        # dX = X - X
-        # if dX > 0:
-        #     keep = False
-        if not (cst.mappings[S.name] and cst.mappings[hent.name]):
-            keep = False
-
-        match_len = len(cst.mappings[hent.name])
-        return_cst = None
-        if return_hier:
-            return_cst = (cst, hent)
-
-        return keep, X, 0.0, match_len, return_cst
-
-        # print(datetime.datetime.now(), '*** 8')
-    elif step.operation == strategy.MERGE:
-        if (S.name not in groups) or (Sj.name not in groups):
-            return False, 0.0, 0.0, 0, (None, None)
-
-        hent = Sj
-        obj = objective.merge(groups[S.name], groups[hent.name], overlap=edits)
-        trees.tree_index_node_remove(hidx.index, Sj.index)
-        procs = configs.processors
-        configs.processors = 1
-        new_assignments = labeler.assign(hidx, gcd, smiles, topo)
-        configs.processors = procs
-        new_match = clustering_build_assignment_mappings(hidx, new_assignments)
-        cst = smarts_clustering(hidx, new_assignments, new_match)
-        _, X = get_objective(cst, assn, objective.split, edits, splitting=False)
-
-        cst.hierarchy.subgraphs.pop(hent.index)
-        cst.hierarchy.smarts.pop(hent.index)
-        keep = True
-        if obj >= 0:
-            keep = False
-        match_len = len(cst.mappings[S.name])
-
-        return_cst = None
-        if return_hier:
-            return_cst = (cst, hent)
-        return keep, X, obj, match_len, return_cst
-    else:
-        return False, 0.0, 0.0, 0, (None, None)
-
-
 def check_lbls_data_selections_equal(
     lbls: assignments.smiles_assignment_group,
     data: assignments.smiles_assignment_group,
@@ -425,6 +325,7 @@ def check_lbls_data_selections_equal(
         print(
             f"WARNING: suppressed {warnings - warning_max} additional warnings"
         )
+
 
 def smarts_clustering_optimize(
     gcd: codecs.graph_codec,
@@ -455,6 +356,8 @@ def smarts_clustering_optimize(
 
     icd = codecs.intvec_codec(gcd.primitive_codecs, gcd.atom_primitives, gcd.bond_primitives)
 
+    wq = compute.workqueue_local('0.0.0.0', configs.workqueue_port)
+
     check_lbls_data_selections_equal(initial_conditions.group, sag)
 
 
@@ -468,20 +371,18 @@ def smarts_clustering_optimize(
     """
 
     group_number = max(
-        [
-            int(x.name[1:])
-            for x in hidx.index.nodes.values()
-            if x.name[0] == group_prefix_str
-        ]
+        [0] + [*map(int, [x for x in 
+            ["".join(a for a in x.name[1:] if a.isdigit())
+            for x in hidx.index.nodes.values()] if x])]
     )
 
     group_number += 1
 
     # gc.collect()
-    if len(sag.assignments) > 100000:
+    if len(sag.assignments) > 100000 and (configs.remote_compute_enable or configs.processors > 1):
         batch_size = 10000
         print(f"{datetime.datetime.now()} Large number of graphs detected... using a workspace")
-        wq = compute.workqueue_local('', configs.workqueue_port)
+        # wq = compute.workqueue_local('', configs.workqueue_port)
         ws = compute.workqueue_new_workspace(wq, address=('127.0.0.1', 0), shm={"gcd": gcd})
 
         work = compute.workspace_submit_and_flush(
@@ -507,8 +408,8 @@ def smarts_clustering_optimize(
         #threading.Thread(target=ws.close).start()
         ws = None
 
-        wq.close()
-        wq = None  
+        # wq.close()
+        # wq = None  
         # gc.collect()
 
     else:
@@ -538,12 +439,12 @@ def smarts_clustering_optimize(
         assignments,
         clustering_build_assignment_mappings(hidx, assignments),
     )
+    cst.group_prefix_str = group_prefix_str
     print(f"{datetime.datetime.now()} Checking consistency...")
     check_lbls_data_selections_equal(cst.group, sag)
     _, X0 = get_objective(
         cst, assn, objective.split, strategy.overlaps[0], splitting=True
     )
-
 
     if not strategy.steps:
         print("Optimization strategy is building steps...")
@@ -566,6 +467,8 @@ def smarts_clustering_optimize(
                 f"{cur} {ma_i:3d}. op={micro.operation:2d} a={a} b={b0}->{b1} d={d0}->{d1} n={n0}->{n1}"
             )
 
+    union_cache = {}
+
     step_tracker = strategy.step_tracker
 
     while True:
@@ -584,9 +487,14 @@ def smarts_clustering_optimize(
         nodes = [
             x
             for x in strategy.tree_iterator(cst.hierarchy.index, roots)
-            if strategy.cursor == -1
-            or strategy.cursor >= step_tracker.get(x.name, 0)
+            if cst.hierarchy.smarts.get(x.index)
+            and cst.hierarchy.subgraphs.get(x.index) is not None
+            and (strategy.cursor >= step_tracker.get(x.name, -1))
         ]
+        for n in nodes:
+            tkey = n.name
+            if tkey not in step_tracker:
+                step_tracker[tkey] = 0
 
         print(f"Targets for this macro step {strategy.cursor+1}:")
         for nidx, n in enumerate(nodes, 1):
@@ -644,7 +552,6 @@ def smarts_clustering_optimize(
         print(f"{datetime.datetime.now()} Saving checkpoint to chk.cst.p")
         pickle.dump([sag, cst, strategy], open("chk.cst.p", "wb"))
 
-        
         step = None
 
         while not optimization.optimization_iteration_is_done(macro):
@@ -657,13 +564,18 @@ def smarts_clustering_optimize(
             n_micro = len(macro.steps)
             config: configs.smarts_perception_config = step.pcp
             S = step.cluster
+
+            # step_tracker[S.name] = strategy.cursor
+
+            if type(cst.hierarchy.subgraphs[S.index]) is str:
+                step_tracker[S.name] = strategy.cursor
+                continue
+
             S0 = graphs.subgraph_to_structure(
                 cst.hierarchy.subgraphs[S.index], topo
             )
 
             cfg = config.extender.copy()
-            if graphs.structure_max_depth(S0) > config.extender.depth_max:
-                continue
 
             S0_depth = graphs.structure_max_depth(S0)
             d = max(S0_depth, config.splitter.branch_depth_limit)
@@ -679,7 +591,7 @@ def smarts_clustering_optimize(
             # find only unique graphs!
             aa = cst.mappings[S.name]
             selected_graphs = set((x[0] for x in aa))
-            G = {k:v for k,v in G0.items() if k in selected_graphs}
+            G = {k:v for k, v in G0.items() if k in selected_graphs}
             del selected_graphs
 
             assn_s = {i: assn[i] for i in cst.mappings[S.name]}
@@ -724,8 +636,8 @@ def smarts_clustering_optimize(
                 seen = set()
                 # depth = graphs.structure_max_depth(S0)
                 extend_config = config.extender.copy()
-                extend_config.depth_max = S0_depth
-                extend_config.depth_min = S0_depth
+                extend_config.depth_max = config.splitter.branch_depth_limit
+                extend_config.depth_min = config.splitter.branch_depth_min
                 for seen_i, (i, x) in enumerate(assn_s.items(), 1):
                     g = graphs.graph_to_structure(icd.graph_decode(G[i[0]]), i[1], topo) 
                     graphs.structure_extend(extend_config, [g])
@@ -738,37 +650,58 @@ def smarts_clustering_optimize(
                             objective.report([x]),
                             gcd.smarts_encode(g),
                         )
-                        # seen.add(g)
+                        seen.add(g)
                 print()
-                # if len(seen) < 2 and len(assn_s) < 100:
-                #     print(f"Skipping {S.name} since all graphs are the same")
-                #     step_tracker[S.name] = strategy.cursor
-                #     continue
+                if len(seen) < 2 and len(assn_s) < 100:
+                    print(f"Skipping {S.name} since all graphs are the same")
+                    step_tracker[S.name] = strategy.cursor
+                    continue
+
+                if len(set(map(tuple, groups[S.name]))) == 1:
+                    print(f"Skipping {S.name} since all data are the same")
+                    step_tracker[S.name] = strategy.cursor
+                    continue
+
+                if len(seen) < 2 and len(assn_s) < 100:
+                    print(f"Skipping {S.name} since all graphs are the same")
+                    step_tracker[S.name] = strategy.cursor
+                    continue
 
                 if objective.single(assn_s.values()) == 0.0:
                     print(f"Skipping {S.name} due to no objective")
                     step_tracker[S.name] = strategy.cursor
                     continue
 
-                if (
-                    step.direct_enable
-                ):  # and config.splitter.bit_search_limit > 2:
-                    assn_i = []
-                    if objective.is_discrete():
-                        assn_i.extend(groups[S.name])
-                    else:
-                        # or form matches based on unique smarts
-                        assert False
-                        lbls = set(a)
-                        if len(lbls) < step.direct_limit:
-                            lbls = dict()
-                            for (i, idx), sg in a.items():
-                                lbl_i = lbls.get(a, len(lbls))
-                                lbls[a] = lbl_i
-                                assn_i.append(lbl_i)
+                if graphs.structure_max_depth(S0) > config.splitter.branch_depth_min:
+                    print("This parameter exceeds current depth. Skipping")
+                    step_tracker[S.name] = strategy.cursor
+                    continue
 
-                    if len(set(assn_i)) < step.direct_limit:
-                        assert False
+                if step.direct_enable and config.splitter.bit_search_limit < len(assn_s):
+                    assn_i = []
+                    if len(assn_s) < step.direct_limit:
+                        # or form matches based on unique smarts
+                        a = []
+                        extend_config = config.extender.copy()
+                        extend_config.depth_max = config.splitter.branch_depth_limit
+                        extend_config.depth_min = config.splitter.branch_depth_min
+                        for seen_i, (i, x) in enumerate(assn_s.items(), 1):
+                            g = graphs.graph_to_structure(icd.graph_decode(G[i[0]]), i[1], topo) 
+                            graphs.structure_extend(extend_config, [g])
+                            g = graphs.structure_remove_unselected(g)
+                            a.append(g)
+                        # if len(a) < step.direct_limit:
+                        #     lbls = dict()
+                            # for (i, idx), sg in a.items():
+                            #     lbl_i = lbls.get(a, len(lbls))
+                            #     lbls[a] = lbl_i
+                            #     assn_i.append(lbl_i)
+
+                        if objective.is_discrete():
+                            assn_i.extend(groups[S.name])
+                        else:
+                            assn_i = list(range(len(a)))
+
                         pcp = step.pcp.copy()
                         pcp.extender = cfg
                         print("Direct splitting....")
@@ -777,14 +710,14 @@ def smarts_clustering_optimize(
                         ret = splits.split_all_partitions(
                             topo,
                             pcp,
-                            list(a.values()),
+                            a,
                             assn_i,
                             gcd=gcd,
                             maxmoves=0,
                         )
 
                         for p_j, (Sj, Sj0, matches, unmatches) in enumerate(ret.value, 0):
-                            print(f"Found {p_j+1}")
+                            print(f"Found {p_j+1} {gcd.smarts_encode(Sj)}")
 
                             edits = 0
                             matches = [
@@ -815,46 +748,69 @@ def smarts_clustering_optimize(
                             print("Direct found nothing")
 
 
-                if step.iterative_enable: #and not direct_success:
+                if step.iterative_enable and not direct_success:
                     # Q = mapper.union_list_parallel(
                     #     list(a.values()),
                     #     reference=S0,
                     #     max_depth=graphs.structure_max_depth(S0),
                     #     icd=icd if len(a) > 100000 else None
                     # )
-                    Q = mapper.union_list_parallel(
-                        G, aa, topo,
-                        # list(a.values()),
-                        reference=S0,
-                        max_depth=graphs.structure_max_depth(S0),
-                        icd=icd
-                        # icd=icd if len(a) > 100000 else None
-                    )
+
+                    (Q, new_candidates) = union_cache.get((S.index, S.name, strategy.cursor), (None, None))
+                    if Q is None:
+                        if len(aa) < 1000:
+                            Q = mapper.union_list_parallel(
+                                G, aa, topo,
+                                # list(a.values()),
+                                reference=S0,
+                                max_depth=graphs.structure_max_depth(S0),
+                                icd=icd
+                                # icd=icd if len(a) > 100000 else None
+                            )
+                        else:
+                            Q = mapper.union_list_distributed(
+                                G, aa, topo, wq,
+                                # list(a.values()),
+                                reference=S0,
+                                max_depth=graphs.structure_max_depth(S0),
+                                icd=icd
+                                # icd=icd if len(a) > 100000 else None
+                            )
+
+                        union_cache[(S.index, S.name, strategy.cursor)] = (Q, new_candidates)
+                    else:
+                        print(
+                            f"{datetime.datetime.now()} Candidates retreived from cache for node {S.index}:{S.name}"
+                        )
 
                     t = datetime.datetime.now()
                     print(f"{t} Union is {gcd.smarts_encode(Q)}")
 
-                    return_matches = config.splitter.return_matches
-                    config.splitter.return_matches = True
+                    if new_candidates is None:
+                        return_matches = config.splitter.return_matches
+                        config.splitter.return_matches = True
 
-                    ret = splits.split_structures_distributed(
-                        config.splitter,
-                        S0,
-                        G,
-                        aa,
-                        compute.workqueue_local("", configs.workqueue_port),
-                        icd,
-                        Q=Q,
-                    )
-                    config.splitter.return_matches = return_matches
+                        ret = splits.split_structures_distributed(
+                            config.splitter,
+                            S0,
+                            G,
+                            aa,
+                            wq,
+                            icd,
+                            Q=Q,
+                        )
+                        config.splitter.return_matches = return_matches
 
-                    backmap = {i: j for i, j in enumerate(cst.mappings[S.name])}
-                    print(
-                        f"{datetime.datetime.now()} Collecting new candidates"
-                    )
-                    new_candidates = clustering_collect_split_candidates_serial(
-                        S, ret, step
-                    )
+                        backmap = {i: j for i, j in enumerate(cst.mappings[S.name])}
+                        print(
+                            f"{datetime.datetime.now()} Collecting new candidates"
+                        )
+
+                        new_candidates = clustering_collect_split_candidates_serial(
+                            S, ret, step
+                        )
+                        union_cache[(S.index, S.name, strategy.cursor)] = (Q, new_candidates)
+
 
                 p_j_max = -1
                 if candidates:
@@ -915,6 +871,7 @@ def smarts_clustering_optimize(
         cur_cst = smarts_clustering(
             cst.hierarchy.copy(), cur_assignments, cur_mappings
         )
+        cur_cst.group_prefix_str = group_prefix_str
         print(f"{datetime.datetime.now()} Rebuilding mappings")
         groups = clustering_build_ordinal_mappings(cur_cst, sag)
         check_lbls_data_selections_equal(cst.group, sag)
@@ -944,26 +901,12 @@ def smarts_clustering_optimize(
         visited.clear()
         repeat.clear()
 
-        find_successful_candidates_ctx.labeler = labeler
-        # find_successful_candidates_ctx.pq = pq
-        find_successful_candidates_ctx.candidates = candidates
-        find_successful_candidates_ctx.hidx = cur_cst.hierarchy.copy()
-        # find_successful_candidates_ctx.hidx = cur_cst.hierarchy.topology
-        find_successful_candidates_ctx.step = step
-        find_successful_candidates_ctx.group_number = group_number
-        find_successful_candidates_ctx.Sj_sma = Sj_sma
-        find_successful_candidates_ctx.groups = groups
-        find_successful_candidates_ctx.assn = assn
-        find_successful_candidates_ctx.strategy = strategy
-        find_successful_candidates_ctx.gcd = gcd
-        find_successful_candidates_ctx.smiles = smiles
-        find_successful_candidates_ctx.objective = objective
 
         pq_idx = 0
         procs = (
             os.cpu_count() if configs.processors is None else configs.processors
         )
-        
+
         n_keep = None
 
         print(f"Scanning {len(candidates)} candidates for operation={step.operation}")
@@ -980,8 +923,8 @@ def smarts_clustering_optimize(
         macro_count = collections.Counter()
         ignore = set()
         reuse = {}
-        wq = compute.workqueue_local("", configs.workqueue_port)
-        print(f"{datetime.datetime.now()} workqueue started on {wq.mgr.address}")
+        # wq = compute.workqueue_local("", configs.workqueue_port)
+        # print(f"{datetime.datetime.now()} workqueue started on {wq.mgr.address}")
         n_nano = 0
         while added:
 
@@ -998,7 +941,6 @@ def smarts_clustering_optimize(
             cout = {}
             cout_sorted_keys = []
 
-
             shm = compute.shm_local(1, data={
                 "cst": cur_cst,
                 "sag": sag,
@@ -1006,14 +948,14 @@ def smarts_clustering_optimize(
                 "labeler": labeler,
                 "objective": objective,
                 "assn": assn
-            }) 
+            })
 
             iterable = {
                 i: ((S, Sj, step.operation, edits), {})
                 for i, (
                     (edits, _, p_j),
                     (S, Sj, step, _, _, _, _),
-                ) in enumerate(candidates.items(), 1) 
+                ) in enumerate(candidates.items(), 1)
             }
 
             chunksize = 10
@@ -1033,8 +975,7 @@ def smarts_clustering_optimize(
             addr = ("", 0)
             if len(iterable)*(shm.procs_per_task or procs) <= procs:
                 addr = ('127.0.0.1', 0)
-                procs=len(iterable)
-
+                procs = len(iterable)
 
             cnd_keys = {i: k for i, k in enumerate(candidates, 1)}
 
@@ -1053,29 +994,38 @@ def smarts_clustering_optimize(
             for k, v in list(candidates.items()):
                 S = v[0]
                 if S.name in cur_cst.mappings:
-                    if objective.single([assn[i] for i in cur_cst.mappings[S.name]]) == 0.0:
+                    if objective.single([
+                        assn[i] for i in cur_cst.mappings[S.name]
+                    ]) == 0.0:
                         if k in iterable:
                             iterable.pop(k)
                 elif k in iterable:
                     iterable.pop(k)
 
-            if step.operation != strategy.MERGE and (macroamt + macroampc + microamt + microampc == 0):
-                # use X0 so later dX will be 0 and kept
-                # if we do this for merges, every merge will be taken..
-                work = {i: (1, X0, 0.0, 1) for i in iterable}
+            # if step.operation != strategy.MERGE and (macroamt + macroampc + microamt + microampc == 0):
+            #     # use X0 so later dX will be 0 and kept
+            #     # if we do this for merges, every merge will be taken..
+            #     work = {i: (1, X0, 0.0, 1) for i in iterable}
 
-            else:
-                ws = compute.workqueue_new_workspace(wq, address=addr, nproc=procs, shm=shm)
-                work = compute.workspace_submit_and_flush(
-                    ws,
-                    find_successful_candidates_distributed,
-                    iterable,
-                    chunksize,
-                    1.0,
-                    len(iterable),
-                )
-                ws.close()
-                ws = None
+            # else:
+            ws = compute.workqueue_new_workspace(
+                wq,
+                address=addr,
+                nproc=procs,
+                shm=shm
+            )
+            # this modifies the cst, relabels and computes objective
+            work = compute.workspace_submit_and_flush(
+                ws,
+                find_successful_candidates_distributed,
+                iterable,
+                chunksize,
+                0.0,
+                len(iterable),
+                verbose=True
+            )
+            ws.close()
+            ws = None
 
             print(f"The unfiltered results of the candidate scan N={len(work)} total={len(iterable)}:")
 
@@ -1109,7 +1059,7 @@ def smarts_clustering_optimize(
                 )
                 max_line = max(len(cout_line), max_line)
                 # print(datetime.datetime.now())
-                print('\r' + cout_line, end=" " * (max_line - len(cout_line)))
+                print(cout_line, end=" " * (max_line - len(cout_line)) + '\n')
                 sys.stdout.flush()
 
                 if match_len == 0:
@@ -1126,7 +1076,6 @@ def smarts_clustering_optimize(
                 if cnd_i in kept:
                     ignore.add(cnd_i)
                     continue
-
 
                 # We prefer to add in this order
                 cout_key = None
@@ -1189,6 +1138,13 @@ def smarts_clustering_optimize(
                 # if ck[3] in best_params:
                         keeping = "->"
                         kept.add(ck[0])
+                    else:
+                        # if we only accept 1 but this is still a good param
+                        # put it on the repeat list or else it will get skipped
+                        # as we increment nonrepeating params to the next step
+                        repeat.add(ck[4])
+                else:
+                    repeat.add(ck[4])
                 print(f"{keeping} {ck_i:4d}", cout[ck])
                 ck_i += 1
             ck = None
@@ -1204,7 +1160,8 @@ def smarts_clustering_optimize(
                 keys,
                 group_number,
                 Sj_sma,
-                strategy
+                strategy,
+                prefix=cur_cst.group_prefix_str
             )
 
             print(f"There are {len(nodes)} nodes returned")
@@ -1310,6 +1267,11 @@ def smarts_clustering_optimize(
                 # hent = Sj
                 visited.add(hent.name)
                 edits = step.overlap[0]
+                for union_idx in [(S.index, S.name), (hent.index, hent.name)]:
+                    for k in list(union_cache):
+                        if union_idx == tuple(k[:2]):
+                            union_cache.pop(k)
+
 
                 if step.operation == strategy.SPLIT:
 
@@ -1324,7 +1286,7 @@ def smarts_clustering_optimize(
                         # some will no longer satisfy the constraint
                         kept.remove(cnd_i)
                         repeat.remove(S.name)
-                        
+
                         n_list = trees.tree_index_node_remove_by_name(cst.hierarchy.index, hent.name)
                         for n in n_list:
                             recalc = True
@@ -1437,8 +1399,8 @@ def smarts_clustering_optimize(
             cst = None
             X0 = X
 
-        wq.close()
-        wq = None
+        # wq.close()
+        # wq = None
 
         if strategy.macro_accept_max_total > 0 and n_added > 0:
             strategy.repeat_step()
@@ -1474,20 +1436,6 @@ def smarts_clustering_optimize(
 
         pickle.dump([sag, cst, strategy], open("chk.cst.p", "wb"))
 
-        find_successful_candidates_ctx.labeler = None
-        find_successful_candidates_ctx.pq = None
-        find_successful_candidates_ctx.candidates = None
-        find_successful_candidates_ctx.cur_cst = None
-        find_successful_candidates_ctx.step = None
-        find_successful_candidates_ctx.group_number = None
-        find_successful_candidates_ctx.Sj_sma = None
-        find_successful_candidates_ctx.groups = None
-        find_successful_candidates_ctx.assn = None
-        find_successful_candidates_ctx.strategy = None
-        find_successful_candidates_ctx.gcd = None
-        find_successful_candidates_ctx.smiles = None
-        find_successful_candidates_ctx.objective = None
-
     new_assignments = labeler.assign(cst.hierarchy, gcd, smiles, topo)
     mappings = clustering_build_assignment_mappings(
         cst.hierarchy, new_assignments
@@ -1499,6 +1447,9 @@ def smarts_clustering_optimize(
 
     print(f"Start time: {started}")
     print(f"End   time: {ended}")
+
+    wq.close()
+    wq = None
 
     # gc.enable()
     return cst
@@ -1516,7 +1467,6 @@ def smarts_clustering_find_max_depth(
         topo = group.topology
         assignments = {}
         struct_lbls = {}
-        common_lbls = {}
         for moli, mol in enumerate(group.assignments, 0):
             print(
                 f"Assigning molecule {moli+1:5d}/{len(group.assignments):d} at depth {i}",
@@ -1524,35 +1474,28 @@ def smarts_clustering_find_max_depth(
             )
             N += len(mol.selections)
             for molj, (selection, lbl) in enumerate(mol.selections.items()):
-                idx = tuple((selection[i] for i in topo.primary))
+                idx = tuple((selection[j] for j in topo.primary))
                 atom = graphs.graph_to_structure(mol.graph, idx, topo)
                 suc = mapper.mapper_smarts_extend(
-                    configs.smarts_extender_config(i, i, True), [atom]
+                    configs.smarts_extender_config(i, i, False), [atom]
                 )
+                atom = graphs.structure_remove_unselected(atom)
                 atom_lbls = struct_lbls.get(atom, dict())
                 assignments[(moli, molj)] = lbl
 
                 if lbl not in atom_lbls:
                     atom_lbls[lbl] = []
-                    common_lbls[atom] = set()
 
-                atom_lbls[lbl].append((moli, molj, idx))
+                atom_lbls[lbl].append((moli, molj, idx, hash(atom)))
                 struct_lbls[atom] = atom_lbls
-                common_lbls[atom].add(lbl)
 
                 # print((moli, molj, idx), gcd.smarts_encode(atom))
-        # for atom, lbl in common_lbls.items():
-        #     print(list(lbl), hash(atom), gcd.smarts_encode(atom))
         print()
         print("Labels per unique structure that need more depth")
         problems = set()
         for j, (h, lbl) in enumerate(struct_lbls.items()):
             if len(lbl.values()) > 1:
                 problems.add(tuple((h, *sorted(set(lbl.keys())))))
-
-        # for j, (h, lbl) in enumerate(common_lbls.items()):
-        #     if len(lbl) > 1:
-        #         problems.add(tuple((h, *sorted(lbl))))
 
         print(
             f"There are {len(set(struct_lbls))}/{N} unique structures at depth",
@@ -1643,47 +1586,74 @@ def clustering_update_assignments(
 
 
 def clustering_initial_conditions(
-    gcd, sag: assignments.smiles_assignment_group
+    gcd, sag: assignments.smiles_assignment_group, hidx=None, labeler=None, prefix="p"
 ):
     topo = sag.topology
+    group_prefix_str = prefix
 
-    hidx = hierarchies.structure_hierarchy(trees.tree_index(), {}, {}, topo)
+    if hidx is None:
+        hidx = hierarchies.structure_hierarchy(trees.tree_index(), {}, {}, topo)
 
-    hidx.index.node_add(None, trees.tree_node(0, "parameter", "", "p0"))
-    graph = gcd.smiles_decode(sag.assignments[0].smiles)
-    select = next(iter(sag.assignments[0].selections.keys()))
+        hidx.index.node_add(None, trees.tree_node(0, tuple((0,0,0)), "parameter", "p0"))
 
-    S0 = graphs.graph_to_structure(graph, select, topo)
-    S0 = graphs.structure_remove_unselected(S0)
-    S0 = graphs.structure_relabel_nodes(
-        S0, {n: i for i, n in enumerate(S0.select, 1)}
-    )
+        if topo == topology.atom:
+            S0 = gcd.smarts_decode("[*:1]")
+        elif topo == topology.bond:
+            S0 = gcd.smarts_decode("[*:1]~[*:2]")
+        elif topo == topology.angle:
+            S0 = gcd.smarts_decode("[*:1]~[*:2]~[*:3]")
+        elif topo == topology.torsion:
+            S0 = gcd.smarts_decode("[*:1]~[*:2]~[*:3]~[*:4]")
+        elif topo == topology.outofplane:
+            S0 = gcd.smarts_decode("[*:1]~[*:2](~[*:3])~[*:4]")
 
-    graphs.subgraph_fill(S0)
 
-    hidx.subgraphs[0] = graphs.structure_to_subgraph(S0)
-    if gcd:
-        hidx.smarts[0] = gcd.smarts_encode(S0)
-    # match: Dict[str: List[int]] = {"p0": list(assn)}
+        hidx.subgraphs[0] = graphs.structure_to_subgraph(S0)
+        if gcd:
+            hidx.smarts[0] = gcd.smarts_encode(S0)
+        group_name = group_prefix_str + "0"
 
-    group_prefix_str = "p"
-    group_name = group_prefix_str + "0"
+        assn = []
+        for sag_i in sag.assignments:
+            sels = {}
+            for idx in sag_i.selections:
+                sels[idx] = group_name
+            assn.append(
+                cluster_assignment.smiles_assignment_str(sag_i.smiles, sels)
+            )
 
-    assn = []
-    for sag_i in sag.assignments:
-        sels = {}
-        for idx in sag_i.selections:
-            sels[idx] = group_name
-        assn.append(
-            cluster_assignment.smiles_assignment_str(sag_i.smiles, sels)
-        )
+        groups: assignments.assignment_mapping = {
+            group_name: list(
+                x for y in sag.assignments for x in list(y.selections.values())
+            )
+        }
+    else:
+        assn = []
+        new_assignments = labeler.assign(hidx, gcd, [x.smiles for x in sag.assignments], topo)
+        all_lbls = set()
+        for sag_i, lbls in zip(sag.assignments, new_assignments.assignments):
+            sels = {}
+            for idx in sag_i.selections:
+                sels[idx] = lbls.selections[idx]
+                all_lbls.add(sels[idx])
+
+            assn.append(
+                cluster_assignment.smiles_assignment_str(sag_i.smiles, sels)
+            )
+        groups = {lbl: [] for lbl in all_lbls}
+        for sag_i, lbls in zip(sag.assignments, new_assignments.assignments):
+            for idx, vals in sag_i.selections.items():
+                groups[lbls.selections[idx]].append(vals)
+
+        if gcd:
+            for idx, smarts in hidx.smarts.items():
+                if smarts:
+                    hidx.subgraphs[idx] = gcd.smarts_decode(smarts)
+                else:
+                    hidx.subgraphs[idx] = None
+
+
     new_assn_group = assignments.smiles_assignment_group(assn, sag.topology)
-
-    groups: assignments.assignment_mapping = {
-        group_name: list(
-            x for y in sag.assignments for x in list(y.selections.values())
-        )
-    }
 
     initial_conditions = smarts_clustering(hidx, new_assn_group, groups)
     initial_conditions.group_prefix_str = group_prefix_str
@@ -1839,6 +1809,8 @@ def clustering_build_assignment_mappings(
 ) -> assignments.assignment_mapping:
 
     mappings = {n.name: [] for n in hierarchy.index.nodes.values()}
+    # allow a None if there is no parameter for diagostic purposes
+    mappings[None] = []
     for i, ag in enumerate(assns.assignments):
         for sel, lbl in ag.selections.items():
             mappings[lbl].append((i, sel))

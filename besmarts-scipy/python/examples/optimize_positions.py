@@ -395,7 +395,7 @@ pos = assignments.smiles_assignment_to_graph_assignment(pos, pcp.gcd)
 csys = make_chemical_system_ethane()
 
 pos = [pos]
-print("Parameterizing...")
+# print("Parameterizing...")
 psys = mm.chemical_system_to_physical_system(csys, pos)
 
 def xyz(pos):
@@ -409,6 +409,7 @@ def xyz(pos):
     return f
 
 if True:
+    print("Initial and final xyz coordinates:")
     # pprint(psys.models[0].positions[0].selections)
     print("\n".join(xyz(psys.models[0].positions[0])))
     optpos = optimizers_scipy.optimize_positions_scipy(csys, psys)

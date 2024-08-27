@@ -12,18 +12,17 @@ import multiprocessing
 
 from typing import Dict, Sequence, List, Tuple
 
-from besmarts.codecs import codec_native
 from besmarts.core import configs, chem, graphs, db, codecs
 from besmarts.core.graphs import structure
-from besmarts.core.primitives import primitive_key
-from besmarts.core import compute
 from besmarts.core import arrays
 from besmarts.core.logs import dprint, timestamp
+from besmarts.core import compute
 
 # TODO: remove this shim
 from besmarts.core.graphs import structure_extend as mapper_smarts_extend
 
 mapping = Dict[int, int]
+
 
 class mapped_type:
     """
@@ -59,6 +58,7 @@ class map_vertices_ctx:
     strict = False
     equality = False
 
+verbose=False
 
 def mapper_invert(T: mapped_type) -> mapped_type:
     """
@@ -167,7 +167,7 @@ def map_vertices_parallel(permA, permB, a, b):
             o, j
         ):
             S += H[(i, j)] + edge_score + 1
-    dprint("mapped vertices:", S, mapping)
+    dprint("mapped vertices:", S, mapping, on=verbose)
     return permA, permB, S, mapping
 
 def mapper(
@@ -522,7 +522,7 @@ def map_to(
         map_scores[0] = [{i: skip[i] for i in cg_primary}]
 
     if len(map_scores) == 0:
-        dprint("returned {}")
+        dprint("returned {}", on=verbose)
         ret = mapped_type(cg_orig, o_orig, {})
         if return_all:
             # this path needs to be tested better
@@ -530,7 +530,7 @@ def map_to(
         else:
             return ret
 
-    dprint("map_scores1", map_scores)
+    dprint("map_scores1", map_scores, on=verbose)
 
     if mode == "high":
         best_score = max(map_scores)
@@ -573,7 +573,7 @@ def map_to(
     best_maps = map_scores.pop(best_score)
 
     lvl = 1
-    dprint("starting map_to_descend depth", lvl)
+    dprint("starting map_to_descend depth", lvl, on=verbose)
     total_score, total_maps = map_to_descend(
         cg,
         o,
@@ -757,7 +757,7 @@ def map_to_descend(
         The score of best mapping
     """
 
-    dprint("map_to_descend", mappings, "level", lvl, on=add_nodes == 2)
+    dprint("map_to_descend", mappings, "level", lvl, on=verbose)
     best_s = 0
     best_map = {}
 
@@ -851,7 +851,7 @@ def map_to_descend(
                 best_maps.append(total_map)
                 best_s = s
 
-    dprint("map_to best_map", "score:", best_s, "map", best_map)
+    dprint("map_to best_map", "score:", best_s, "map", best_map, on=verbose)
     return best_s, best_maps
 
 
@@ -916,11 +916,11 @@ def map_vertices(
         A mapping of scores to node maps
     """
 
-    dprint(f"map_vertices begin on lvl {lvl}", on=add_nodes == 2)
+    dprint(f"map_vertices begin on lvl {lvl}",  on=verbose)
     cgl = graphs.structure_max_depth(cg)
     ol = graphs.structure_max_depth(o)
     dprint(
-        f"map_vertices begin on lvl {lvl} cgl {cgl} ol {ol}", on=add_nodes == 2
+        f"map_vertices begin on lvl {lvl} cgl {cgl} ol {ol}", on=verbose
     )
 
     if lvl > cgl and lvl > ol:
@@ -984,7 +984,7 @@ def map_vertices(
         # )
         o.cache.clear()
 
-        dprint("0ADDING nbrs:", len(sucA), len(sucB), len(new_b))
+        dprint("0ADDING nbrs:", len(sucA), len(sucB), len(new_b), on=verbose)
         for add_idx in range(
             len(sucA) - len(sucB) - len(new_b) + len(preA) - len(preB)
         ):
@@ -1065,7 +1065,7 @@ def map_vertices(
             len(new_a),
             len(preA),
             len(preB),
-            on=True,
+            on=verbose,
         )
 
         for add_idx in range(
@@ -1172,7 +1172,7 @@ def map_vertices(
         pool = multiprocessing.pool.Pool()
 
     work = []
-    dprint(f"Number of pairs: {len(pairs)}", on=add_nodes == 2)
+    dprint(f"Number of pairs: {len(pairs)}", on=verbose)
     for (Ai, permA), (Bi, permB) in pairs:
         permA = tuple(permA)
         permB = tuple(permB)
@@ -1318,13 +1318,13 @@ def overlap_scores(cg, o, skip=None, cg_depth_cache=None, o_depth_cache=None):
 def pairwise_overlap(cg, A, o, B):
     H = {}
 
-    dprint(f"pairwise overlap {len(A)} {len(B)}")
+    dprint(f"pairwise overlap {len(A)} {len(B)}", on=verbose)
     for i in A:
         prim_i = cg.nodes[i]
         bonds_i = tuple(
             tuple(sorted((i, j))) for j in graphs.subgraph_connection(cg, i)
         )
-        dprint(f"pairwise overlap bonds to permute", bonds_i)
+        dprint(f"pairwise overlap bonds to permute", bonds_i, on=verbose)
         if len(bonds_i) > 4:
             breakpoint()
         for j in B:
@@ -1342,7 +1342,7 @@ def pairwise_overlap(cg, A, o, B):
                 best_score = max(best_score, score)
 
             H[(i, j)] = (prim_i & prim_j).bits(maxbits=True) + best_score + 1
-    dprint(f"pairwise overlap {A} {B} {H[(i, j)]}")
+    dprint(f"pairwise overlap {A} {B} {H[(i, j)]}", on=verbose)
 
     return H
 
@@ -1852,6 +1852,7 @@ def union_list(
 
     return graphs.structure_copy(ref)
 
+
 def intersection_list_dispatch(
     indices,
 ) -> graphs.structure:
@@ -1863,6 +1864,35 @@ def intersection_list_dispatch(
     return intersection_list(
         A, config, max_depth, reference, sort=True, executor=None, verbose=False
     )
+
+
+def union_list_dispatch_distributed(
+    indices: List[int],
+    shm=None
+) -> graphs.structure:
+
+    topo = shm.topology
+
+    reference = shm.reference
+    config = shm.config
+    max_depth = shm.max_depth
+
+    icd: codecs.intvec_codec = shm.icd
+    G, sel = shm.A
+
+    sel = [sel[i] for i in indices]
+
+    work = union_list_parallel(
+        G,
+        sel,
+        topo,
+        config=config,
+        max_depth=max_depth,
+        reference=reference,
+        icd=icd,
+        verbose=False
+    )
+    return icd.structure_encode(work)
 
 
 def union_list_dispatch(
@@ -1946,10 +1976,12 @@ def intersection_list_parallel(
 
     return work[0]
 
-def union_list_parallel(
+
+def union_list_distributed(
     G: Sequence[graphs.graph],
     selections,
     topo,
+    wq,
     config: configs.mapper_config = None,
     max_depth=None,
     reference=None,
@@ -1962,9 +1994,139 @@ def union_list_parallel(
 
     if len(selections) == 1:
         # return graphs.structure_copy(A[0])
-        i = selections[0][0][0]
+        i = selections[0][0]
         sel = selections[0][1]
-        g = graphs.graph_to_structure(G[i], sel, topo)
+        if icd:
+            g = graphs.graph_to_structure(icd.graph_decode(G[i]), sel, topo)
+        else:
+            g = graphs.graph_to_structure(G[i], sel, topo)
+        return g
+
+    # icd = None
+
+    # if icd:
+    #     print(f"{datetime.datetime.now()} Writing structures to disk...")
+    #     adb = db.db_dict(icd, "A.db")
+    #     adb.write_structure({i:a for i, a in enumerate(A)})
+    #     union_ctx.A = adb
+    # else:
+    union_ctx.A = G, selections
+    union_ctx.icd = icd
+
+    if reference is None:
+        reference = graphs.graph_to_structure(icd.graph_decode(G[selections[0][0]]), selections[0][1], topo)
+        # union_ctx.reference = graphs.graph_to_structure(icd.graph_decode(G[selections[0]]))
+    union_ctx.reference = reference
+    union_ctx.result = None
+    union_ctx.topology = topo
+    union_ctx.config = config
+    union_ctx.max_depth = max_depth
+
+    indices = list(range(len(selections)))
+    procs = min(os.cpu_count(), len(indices))
+    procs = min(procs, configs.processors)
+
+    work = None
+
+
+    while len(indices) > 1:
+        # print(timestamp(), f"Initializing pool")
+
+        if len(indices) > 1000:
+            print(timestamp(), f"Distributed Union merging={len(indices)}")
+            shm = compute.shm_local(0, data={
+                "reference": reference,
+                "result": union_ctx.result,
+                "topology": topo,
+                "config": config,
+                "max_depth": max_depth,
+                "A": (G, selections),
+                "icd": icd
+            })
+            ws = compute.workqueue_new_workspace(
+                wq,
+                shm=shm
+            )
+            
+            chunk_n = max(2, len(indices) // procs)
+            chunk_n = min(chunk_n, 10000)
+
+            iterable = {
+                i: ((x,), {}) for i, x in enumerate(arrays.batched(indices, chunk_n))
+            }
+
+            chunksize = 1
+
+            work = compute.workspace_submit_and_flush(
+                ws,
+                union_list_dispatch_distributed,
+                iterable,
+                chunksize,
+                1,
+                len(iterable),
+                verbose=True
+            )
+            ws.close()
+            work = list(work.values())
+        else:
+            print(timestamp(), f"Parallel Union merging={len(indices)}")
+
+            with multiprocessing.pool.Pool(processes=procs) as pool:
+                # print(timestamp(), f"Generating batches")
+                chunk_n = max(2, len(indices) // procs)
+                chunk_n = min(chunk_n, 10000)
+
+                chunked = arrays.batched(indices, chunk_n)
+                # print(timestamp(), f"Submitting")
+                work = [
+                    pool.apply_async(union_list_dispatch, (chunk,))
+                    for chunk in chunked
+                ]
+                # print(timestamp(), f"Collecting")
+                work = [unit.get() for unit in work]
+
+        union_ctx.result = work
+
+        # print(timestamp(), f"Done")
+        indices = list(range(len(work)))
+        # print(timestamp(), f"Union merging={len(indices)}")
+        if len(indices) // procs < 2:
+            procs = max(1, procs // 2)
+    # print()
+    ans = work[0]
+    union_ctx.A = None
+    union_ctx.reference = None
+    union_ctx.config = None
+    union_ctx.max_depth = None
+    union_ctx.result = None
+    # if icd:
+    #     adb.remove()
+    return icd.structure_decode(ans)
+
+
+def union_list_parallel(
+    G: Sequence[graphs.graph],
+    selections,
+    topo,
+    config: configs.mapper_config = None,
+    max_depth=None,
+    reference=None,
+    sort=True,
+    executor=None,
+    icd = None,
+    verbose=True
+) -> graphs.structure:
+    procs = configs.processors
+
+
+    if len(selections) == 1:
+        # return graphs.structure_copy(A[0])
+        i = selections[0][0]
+        sel = selections[0][1]
+        if icd:
+            g = graphs.graph_to_structure(icd.graph_decode(G[i]), sel, topo)
+        else:
+            g = graphs.graph_to_structure(G[i], sel, topo)
         return g
 
     # icd = None
@@ -1993,7 +2155,8 @@ def union_list_parallel(
 
     work = []
 
-    print(timestamp(), f"Union merging={len(indices)}")
+    if verbose:
+        print(timestamp(), f"Union merging={len(indices)}")
     while len(indices) > 1:
         # print(timestamp(), f"Initializing pool")
         with multiprocessing.pool.Pool(processes=procs) as pool:
@@ -2014,7 +2177,8 @@ def union_list_parallel(
 
         # print(timestamp(), f"Done")
         indices = list(range(len(work)))
-        print(timestamp(), f"Union merging={len(indices)}")
+        if verbose:
+            print(timestamp(), f"Union merging={len(indices)}")
         if len(indices) // procs < 2:
             procs = max(1, procs // 2)
     # print()

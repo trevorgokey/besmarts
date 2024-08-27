@@ -19,6 +19,7 @@ from besmarts.core import chem
 from besmarts.core import topology
 from besmarts.core import geometry
 from besmarts.core import configs
+from besmarts.core import primitives
 
 from besmarts.core.primitives import primitive_key
 
@@ -162,9 +163,15 @@ class structure(subgraph):
         super().__init__(nodes, edges, select)
         self.topology: topology.structure_topology = topology
 
+        if len(topology.primary) > len(select):
+            breakpoint()
+            print(topology.primary, print(select))
         assert len(topology.primary) <= len(select)
         for e in topology.connect:
             _edge = edge((select[e[0]], select[e[1]]))
+            if _edge not in edges:
+                print(_edge, "not in edges", edges)
+                breakpoint()
             assert _edge in edges
 
         self.cache: Dict = {}
@@ -250,6 +257,7 @@ def graph_nodes_copy(g: graph) -> Dict[node_id, chem.bechem]:
     return nodes
 
 
+
 def graph_edges_copy(g: graph) -> Dict[edge_id, chem.bechem]:
     edges = {k: chem.bechem_copy(v) for k, v in g.edges.items()}
     return edges
@@ -301,6 +309,26 @@ def graph_copy(beg: graph) -> graph:
     # g.cache = beg.cache.copy()
     return g
 
+def graph_same(g: graph, h: graph) -> bool:
+
+    if set(g.nodes).symmetric_difference(h.nodes):
+        return False
+    if set(g.edges).symmetric_difference(h.edges):
+        return False
+
+    for n in g.nodes:
+        if n not in h.nodes:
+            return False
+        if g.nodes[n] != h.nodes[n]:
+            return False
+
+    for n in g.edges:
+        if n not in h.edges:
+            return False
+        if g.edges[n] != h.edges[n]:
+            return False
+
+    return True
 
 def graph_fill(beg: graph) -> None:
     """
@@ -448,6 +476,36 @@ def graph_minimum_spanning_tree(
                 visited.add(n)
     g.edges = {e: g.edges[e] for e in edges}
     return g
+
+def graph_relabel_nodes(g: graph, M: Dict[node_id, node_id]) -> graph:
+    """
+    Return the nodes selected by the subgraph.
+
+    Parameters
+    ----------
+    g: subgraph
+        The input subgraph
+
+    Returns
+    -------
+    Sequence[node_id]
+        The selected nodes
+    """
+    assert len(set(M)) == len(set(M.values()))
+    nodes = {}
+    edges = {}
+    M = {k: v for k, v in M.items() if v is not None}
+
+    for tn, fn in M.items():
+        # tc = bes.nodes.pop(tn)
+        nodes[fn] = chem.bechem_copy(g.nodes[tn])
+    for (i, j) in list(g.edges):
+        tc = g.edges[(i, j)]
+        a, b = (M.get(i, i), M.get(j, j))
+        e = edge((a, b))
+        edges[e] = chem.bechem_copy(tc)
+    g_ = graph(nodes, edges)
+    return g_
 
 
 def graph_remove_hydrogen(g: graph) -> graph:
@@ -834,8 +892,9 @@ def graph_set_primitives_bond(beg, select):
     """
 
     for bet in beg.edges.values():
+        bet.select = tuple()
         for p in select:
-            bet.enable(select)
+            bet.enable(p)
 
 
 def graph_is_null(g: graph) -> bool:
@@ -945,7 +1004,7 @@ def graph_all(g: graph) -> bool:
     return True
 
 
-def graph_bits(g: graph, maxbits=False) -> int:
+def graph_bits(g: graph, maxbits=True) -> int:
     """
     Return the number of bits set across all primitives
 
@@ -968,6 +1027,31 @@ def graph_bits(g: graph, maxbits=False) -> int:
         bits += g.nodes[atom].bits(maxbits=maxbits)
     for bond in g.edges:
         bits += g.edges[bond].bits(maxbits=maxbits)
+    return bits
+
+def graph_bits_max(g: graph) -> int:
+    """
+    Return the number of maximum bits set across all primitives
+
+    Parameters
+    ----------
+    g : graph
+        The input the graph
+
+    maxbits : bool
+        Whether to use the maximum bit limits when counting full primitives
+
+    Returns
+    -------
+    int
+        The number of bits set in the graph
+    """
+
+    bits = 0
+    for atom in g.nodes:
+        bits += g.nodes[atom].bits_max()
+    for bond in g.edges:
+        bits += g.edges[bond].bits_max()
     return bits
 
 
@@ -1148,6 +1232,45 @@ def graph_outofplanes(g: graph) -> Sequence[Tuple[int, int, int, int]]:
     return tuple(
         sorted(list(set(dihedrals)), key=lambda x: (x[1], x[0], x[2], x[3]))
     )
+
+def graph_topology(g, topo):
+    """
+    Return the IDs of the primary atoms defined by the topology
+
+    Parameters
+    ----------
+    g : graph
+        The input the graph
+
+    Returns
+    -------
+    Sequence[Tuple[int, int, int, int]]
+        A sequence of 4-tuples containing the dihedral IDs
+    """
+
+    if topo == topology.atom:
+        return graph_atoms(g)
+    if topo == topology.bond:
+        return graph_bonds(g)
+    if topo == topology.angle:
+        return graph_angles(g)
+    if topo == topology.torsion:
+        return graph_torsions(g)
+    if topo == topology.outofplane:
+        return graph_outofplanes(g)
+    if topo == topology.null:
+        return [(0,)]
+
+    return []
+
+def graph_symbols(g: graph):
+    s = {}
+    for n in sorted(g.nodes):
+        node = g.nodes[n]
+        assert "element" in node.primitives
+        e = node.primitives['element'].on()[0]
+        s[n] = primitives.element_tr[str(e)]
+    return s
 
 def subgraph_connection(g: subgraph, a: int) -> Sequence[node_id]:
     """
@@ -1453,6 +1576,23 @@ def subgraph_to_structure(
     g_ = structure(g_.nodes, g_.edges, tuple(g.select), topo)
     return g_
 
+
+def subgraph_to_structure_bond(g: subgraph) -> structure:
+    return subgraph_to_structure(g, topology.bond)
+
+
+def subgraph_to_structure_angle(g: subgraph) -> structure:
+    return subgraph_to_structure(g, topology.angle)
+
+
+def subgraph_to_structure_torsion(g: subgraph) -> structure:
+    return subgraph_to_structure(g, topology.torsion)
+
+
+def subgraph_to_structure_outofplane(g: subgraph) -> structure:
+    return subgraph_to_structure(g, topology.outofplane)
+
+
 def subgraph_as_graph(
     g: subgraph
 ) -> structure:
@@ -1574,21 +1714,9 @@ def subgraph_relabel_nodes(g: subgraph, M: Dict[node_id, node_id]) -> subgraph:
     Sequence[node_id]
         The selected nodes
     """
-    assert len(set(M)) == len(set(M.values()))
-    nodes = {}
-    edges = {}
-    M = {k: v for k, v in M.items() if v is not None}
-
-    for tn, fn in M.items():
-        # tc = bes.nodes.pop(tn)
-        nodes[fn] = chem.bechem_copy(g.nodes[tn])
-    for (i, j) in list(g.edges):
-        tc = g.edges[(i, j)]
-        a, b = (M.get(i, i), M.get(j, j))
-        e = edge((a, b))
-        edges[e] = chem.bechem_copy(tc)
-    g_ = subgraph(nodes, edges, tuple((M.get(i, i) for i in g.select)))
-    return g_
+    select = tuple((M.get(i, i) for i in g.select))
+    g_ = graph_relabel_nodes(g, M)
+    return graph_as_subgraph(g_, select)
 
 
 def subgraph_fill(g: subgraph) -> None:
@@ -1628,6 +1756,29 @@ def subgraph_bits(g: subgraph) -> int:
     b = graph_bits(g_)
     return b
 
+def subgraph_remove_unselected(g: structure) -> structure:
+    """
+    Return a subgraph that has all unselected nodes removed from the graph.
+
+    Parameters
+    ----------
+    g : subgraph
+        The input structure
+
+    Returns
+    -------
+    subgraph
+        A new subgraph with no unselected nodes
+    """
+    # g = structure_copy(g)
+    nodes = {i: chem.bechem_copy(g.nodes[i]) for i in g.select}
+    edges = {
+        i: chem.bechem_copy(g.edges[i])
+        for i in subgraph_edges(g)
+    }
+    g_ = subgraph(nodes, edges, tuple(g.select))
+
+    return g_
 
 def subgraph_any(g: subgraph) -> bool:
     """
@@ -1731,10 +1882,10 @@ def structure_remove_empty_leaves(g: structure) -> structure:
 
     return g
 
-def structure_branch(template, m: dict, n, d, visited_groups=None) -> Generator:
+def structure_branch(template, m: dict, n, d, visited_groups=None, verbose=True) -> Generator:
 
-    if n < 1:
-        yield structure_copy(template)
+    # if n < 1:
+    #     yield structure_copy(template)
 
     if visited_groups is None:
         visited_groups = set()
@@ -1745,7 +1896,8 @@ def structure_branch(template, m: dict, n, d, visited_groups=None) -> Generator:
     if not nodes:
         yield structure_copy(template)
 
-    print(datetime.datetime.now(), f"Branching depth={d} nodes={len(nodes)} n={n} groups={len(visited_groups)}")
+    if verbose:
+        print(datetime.datetime.now(), f"Branching depth={d} nodes={len(nodes)} n={n} groups={len(visited_groups)}")
 
     for group in range(1, n + 1):
         nck = list(itertools.combinations(nodes, group))
@@ -1765,7 +1917,7 @@ def structure_branch(template, m: dict, n, d, visited_groups=None) -> Generator:
 
             yield structure_copy(g)
             yield from structure_branch(
-                template, m, n - len(node_set), d, visited_groups=visited_groups
+                template, m, n - len(node_set), d, visited_groups=visited_groups, verbose=verbose
             )
 
 def structure_extend(
@@ -2035,6 +2187,7 @@ def structure_topology_edges(g: structure) -> Sequence[edge_id]:
 
 def structure_up_to_depth(g: structure, i: int, adj=None):
 
+    g = structure_copy(g)
     to_remove = []
     for d in range(structure_max_depth(g), i, -1):
         nodes = structure_vertices_at_depth(g, d, adj=adj)
@@ -2361,7 +2514,7 @@ def graph_shortest_path(g: graph, a: node_id, b: node_id, adj=None) -> Sequence[
     if b in path:
         path = tuple([a] + path[b])
     else:
-        path = None
+        path = tuple()
     # g.cache["shortest_path"][(a, b)] = path
     if debug:
         print("returned", path)
@@ -2514,3 +2667,11 @@ def structure_to_intvec(g: structure, atom_primitives, bond_primitives) -> array
     intvec = subgraph_to_intvec(g, atom_primitives, bond_primitives)
     intvec.v[4] = topology.index_of(g.topology)
     return intvec
+
+
+def graph_complexity(g: graph, scale=1.0, offset=0.0):
+    # C = len(g.nodes) + graphs.graph_bits_max(g) / graphs.graph_bits(g)  / len(g.nodes) / 100
+    # return scale*C + offset
+
+    C = graph_bits(g)  / len(g.nodes)
+    return C

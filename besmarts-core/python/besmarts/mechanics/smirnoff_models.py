@@ -8,12 +8,17 @@ from besmarts.core import topology
 from besmarts.core import assignments
 from besmarts.core import hierarchies
 from besmarts.core import trees
+from besmarts.core import arrays
+from besmarts.core import tree_iterators
 from besmarts.core import perception
-import pprint
+from besmarts.core import configs
+
 from besmarts.mechanics import molecular_models as mm
 from besmarts.mechanics import smirnoff_xml
 from besmarts.mechanics import force_harmonic, force_periodic, force_pairwise
 
+PRECISION = configs.precision
+sigma2rmin_half =  1 / 2 ** (5 / 6)
 
 def chemical_model_bond_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     cm = mm.chemical_model("B", "Bonds", topology.bond)
@@ -36,6 +41,7 @@ def chemical_model_bond_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     proc = mm.chemical_model_procedure_smarts_assignment(
         pcp, cm.topology_terms
     )
+    pid = len(cm.procedures)
     proc.name = f"{cm.name} SMARTS assignment"
 
     proc.unit_hierarchy = hierarchies.structure_hierarchy(
@@ -43,23 +49,30 @@ def chemical_model_bond_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     )
     u = proc.unit_hierarchy.index.node_add_below(None)
     u.name = "u1"
+    uid = u.index
 
     proc.unit_hierarchy.smarts[u.index] = "[*:1]"
 
     h = hierarchies.structure_hierarchy(
         trees.tree_index(), {}, {}, topology.bond
     )
-    proc.smarts_hierarchies = {u.index: h}
+    proc.smarts_hierarchies = {uid: h}
 
     root = proc.smarts_hierarchies[u.index].index.node_add_below(None)
     root.name = "Bonds"
+    root.category = [-1, pid, uid]
+    root.type = "hierarchy"
     proc.smarts_hierarchies[u.index].smarts[root.index] = None
 
+    uid = u.index
     for param in d["parameters"]:
+        param = param["Bond"]
         node = proc.smarts_hierarchies[u.index].index.node_add_below(
             root.index
         )
         node.name = param.get("id", "")
+        node.type = "parameter"
+        node.category = [-1, pid, uid]
         h.smarts[node.index] = param.get("smirks", None)
         # print(f"Loading {node.name} {h.smarts[node.index]}")
 
@@ -76,6 +89,8 @@ def chemical_model_bond_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     cm.procedures.append(proc)
 
     return cm
+
+
 
 def chemical_model_angle_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     cm = mm.chemical_model("A", "Angles", topology.angle)
@@ -97,6 +112,7 @@ def chemical_model_angle_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     proc = mm.chemical_model_procedure_smarts_assignment(
         pcp, cm.topology_terms
     )
+    pid = len(cm.procedures)
     proc.name = f"{cm.name} SMARTS assignment"
 
     proc.unit_hierarchy = hierarchies.structure_hierarchy(
@@ -104,24 +120,30 @@ def chemical_model_angle_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     )
     u = proc.unit_hierarchy.index.node_add_below(None)
     u.name = "u1"
+    uid = 0
 
-    proc.unit_hierarchy.smarts[u.index] = "[*:1]"
+    proc.unit_hierarchy.smarts[uid] = "[*:1]"
 
     h = hierarchies.structure_hierarchy(
         trees.tree_index(), {}, {}, topology.angle
     )
-    proc.smarts_hierarchies = {u.index: h}
+    proc.smarts_hierarchies = {uid: h}
 
     root = proc.smarts_hierarchies[u.index].index.node_add_below(None)
     root.name = "Angles"
+    root.category = [-1, pid, uid]
+    root.type = "hierarchy"
     proc.smarts_hierarchies[u.index].smarts[root.index] = None
 
+    uid = u.index
     for param in d["parameters"]:
-
+        param = param["Angle"]
         node = proc.smarts_hierarchies[u.index].index.node_add_below(
             root.index
         )
         node.name = param.get("id", "")
+        node.type = "parameter"
+        node.category = [-1, pid, uid]
         h.smarts[node.index] = param.get("smirks", None)
 
         kval = float(param["k"].split()[0])
@@ -143,6 +165,7 @@ def smirnoff_dihedral_load(cm, pcp, d):
     proc = mm.chemical_model_procedure_smarts_assignment(
         pcp, cm.topology_terms
     )
+    pid = len(cm.procedures)
     proc.name = f"{cm.name} SMARTS assignment"
 
     proc.unit_hierarchy = hierarchies.structure_hierarchy(
@@ -150,21 +173,27 @@ def smirnoff_dihedral_load(cm, pcp, d):
     )
     u = proc.unit_hierarchy.index.node_add_below(None)
     u.name = "u1"
+    uid = 0
 
-    proc.unit_hierarchy.smarts[u.index] = "[*:1]"
+    proc.unit_hierarchy.smarts[uid] = "[*:1]"
 
     h = hierarchies.structure_hierarchy(
         trees.tree_index(), {}, {}, cm.topology
     )
-    proc.smarts_hierarchies = {u.index: h}
+    proc.smarts_hierarchies = {uid: h}
 
     root = proc.smarts_hierarchies[u.index].index.node_add_below(None)
     root.name = cm.name
+    root.category = [-1, pid, uid]
+    root.type = "hierarchy"
     proc.smarts_hierarchies[u.index].smarts[root.index] = None
 
+    uid = u.index
     for param in d["parameters"]:
         node = h.index.node_add_below(root.index)
         node.name = param.get("id", "")
+        node.type = "parameter"
+        node.category = [-1, pid, uid]
         h.smarts[node.index] = param.get("smirks", None)
 
         pdict = {}
@@ -224,6 +253,10 @@ def chemical_model_torsion_periodic_smirnoff(
     cm.symbol = "T"
     cm.internal_function = assignments.graph_assignment_geometry_torsions
     cm.derivative_function = assignments.graph_assignment_jacobian_torsions
+
+    for i in range(len(d["parameters"])):
+        d["parameters"][i] = d["parameters"][i]["Proper"]
+
     smirnoff_dihedral_load(cm, pcp, d)
 
     return cm
@@ -239,6 +272,10 @@ def chemical_model_outofplane_periodic_smirnoff(
     cm.topology = topology.outofplane
     cm.internal_function = assignments.graph_assignment_geometry_outofplanes
     cm.derivative_function = assignments.graph_assignment_jacobian_outofplanes
+
+    for i in range(len(d["parameters"])):
+        d["parameters"][i] = d["parameters"][i]["Improper"]
+
     smirnoff_dihedral_load(cm, pcp, d)
 
     return cm
@@ -250,6 +287,7 @@ def chemical_model_electrostatics_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     proc = force_pairwise.chemical_model_procedure_antechamber(
         cm.topology_terms
     )
+    pid = len(cm.procedures)
     proc.name = "Electrostatics antechamber AM1BCC"
     cm.procedures.append(proc)
 
@@ -268,25 +306,32 @@ def chemical_model_electrostatics_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     proc = force_pairwise.chemical_model_procedure_combine_coulomb(
         cm.topology_terms
     )
-    proc.name = "Electrostatics combine"
+    pid = len(cm.procedures)
+    proc.name = "Electrostatics combining"
     cm.procedures.append(proc)
 
     proc = mm.chemical_model_procedure_smarts_assignment(
         pcp, cm.topology_terms
     )
+    pid = len(cm.procedures)
     proc.name = "Electrostatics scaling"
+    uid = 0
     proc.smarts_hierarchies = {
-        0: hierarchies.structure_hierarchy(
+        uid: hierarchies.structure_hierarchy(
             trees.tree_index(), {}, {}, topology.pair
         )
     }
+    pid = len(cm.procedures)
 
     # NB scaling (off)
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "s1"
+    i.type = "parameter"
+    i.category = [-1, pid, uid]
     proc.smarts_hierarchies[0].smarts[i.index] = "[*:1].[*:2]"
     proc.topology_parameters[(0, i.name)] = {"s": i.name}
     cm.topology_terms["s"].values[i.name] = [1.0]
+    proc.default_parameter = "s1"
 
     # 12 scaling is skipped as it is not a valid pair
     # i = proc.smarts_hierarchies[0].index.node_add_below(None)
@@ -298,6 +343,8 @@ def chemical_model_electrostatics_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     # 13 scaling (on)
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "s3"
+    i.type = "parameter"
+    i.category = [-1, pid, uid]
     proc.smarts_hierarchies[0].smarts[i.index] = "[*:1]~[*]~[*:2]"
     proc.topology_parameters[(0, i.name)] = {"s": i.name}
     cm.topology_terms["s"].values[i.name] = [0.0]
@@ -305,12 +352,285 @@ def chemical_model_electrostatics_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     # 14 scaling (0.83)
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "s4"
+    i.type = "parameter"
+    i.category = [-1, pid, uid]
     proc.smarts_hierarchies[0].smarts[i.index] = "[*:1]~[*]~[*]~[*:2]"
     proc.topology_parameters[(0, i.name)] = {"s": i.name}
     cm.topology_terms["s"].values[i.name] = [1 / 1.2]
     cm.procedures.append(proc)
 
     return cm
+
+def chemical_model_to_xml_dict(csys):
+
+    name_to_model = {
+        "Bonds": "Bonds",
+        "Angles": "Angles",
+        "Torsions": "ProperTorsion",
+        "OutOfPlanes": "ImproperTorsion",
+        "vdW": "vdW",
+        "LibraryCharges": "LibraryCharge",
+        "Constraints": "Constraint",
+        "ChargeIncrementModel": "ChargeIncrement"
+    }
+    model_to_parameter = {
+        "Bonds": "Bond",
+        "Angles": "Angle",
+        "ProperTorsions": "ProperTorsion",
+        "ImproperTorsions": "ImproperTorsion",
+        "vdW": "Atom",
+        "LibraryCharges": "LibraryCharge",
+        "Constraints": "Constraint",
+        "ChargeIncrementModel": "ChargeIncrement"
+    }
+    model_keys = {
+        "Bonds": ["smirks", "id", "k", "length"],
+        "Angles": ["smirks", "id", "k", "angle"],
+        "ProperTorsions": ["smirks", "id", "periodicity", "k", "phase"],
+        "ImproperTorsions": ["smirks", "id", "periodicity", "k", "phase"],
+        "vdW": ["smirks", "id", "epsilon", "sigma"],
+        "LibraryCharges": ["smirks", "id", "charge"],
+        "Constraints": ["smirks", "id", "c"],
+        "ChargeIncrementModel": ["smirks", "id", "charge"]
+    }
+    model_multi_parameter = {
+        "Bonds": False,
+        "Angles": False,
+        "ProperTorsions": True,
+        "ImproperTorsions": True,
+        "vdW": False,
+        "LibraryCharges": True,
+        "Constraints": True,
+        "ChargeIncrementModel": True
+    }
+
+    root_attrib = {
+        "version": "0.3", "aromaticity_model": "MDL"
+    }
+    xml = {
+        "SMIRNOFF": {
+            "options": {"version":"0.3", "aromaticity_model":"MDL"},
+            "parameters": [],
+        },
+        "Bonds": {
+            "options": dict(
+                version="0.4",
+                potential="harmonic",
+                fractional_bondorder_method="AM1-Wiberg",
+                fractional_bondorder_interpolation="linear"
+            ),
+            "parameters": []
+        },
+        "Angles": {
+            "options": dict(
+                version="0.3",
+                potential="harmonic"
+            ),
+            "parameters": []
+        },
+        "ProperTorsions": {
+            "options":  dict(
+                version="0.4",
+                potential="k*(1+cos(periodicity*theta-phase))",
+                default_idivf="auto",
+                fractional_bondorder_method="AM1-Wiberg",
+                fractional_bondorder_interpolation="linear"
+            ),
+            "parameters": []
+        },
+        "ImproperTorsions": {
+            "options": dict(
+                version="0.3",
+                potential="k*(1+cos(periodicity*theta-phase))",
+                default_idivf="auto",
+                fractional_bondorder_method="AM1-Wiberg",
+                fractional_bondorder_interpolation="linear"
+            ),
+            "parameters": []
+        },
+        "vdW": {
+            "options": dict(
+                version="0.3",
+                potential="Lennard-Jones-12-6",
+                combining_rules="Lorentz-Berthelot",
+                scale12="0.0",
+                scale13="0.0",
+                scale14="0.5",
+                scale15="1.0",
+                cutoff="9.0 * angstrom",
+                switch_width="1.0 * angstrom",
+                method="cutoff"
+            ),
+            "parameters": []
+        },
+        "Electrostatics": {
+            "options": dict(
+                version="0.3",
+                scale12="0.0",
+                scale13="0.0",
+                scale14="0.8333333333",
+                scale15="1.0",
+                cutoff="9.0 * angstrom",
+                switch_width="0.0 * angstrom",
+                method="PME"
+            ),
+            "parameters": []
+        },
+        "LibraryCharges": {
+            "options": dict(
+                version="0.3",
+            ),
+            "parameters": []
+        },
+        "ToolkitAM1BCC": {
+            "options": dict(
+                version="0.3",
+            ),
+            "parameters": []
+        },
+    }
+    units = {
+        "bond_l": " * angstrom",
+        "bond_k": " * angstrom**-2 * mole**-1 * kilocalorie",
+        "angle_l": " degree",
+        "angle_k": " * radian**-2 * mole**-1 * kilocalorie",
+        "dihedral_k": " * kilocalorie * mole**-1",
+        "dihedral_p": " * degree",
+        "vdw_e": " * kilocalorie * mole**-1",
+        "vdw_r": " * angstrom",
+    }
+
+    uid = 0
+    cm = [x for x in csys.models if x.name == "Bonds"][0]
+    hier = cm.procedures[0].smarts_hierarchies[uid]
+    tree = hier.index
+
+    for root in trees.tree_index_roots(tree):
+        for node in tree_iterators.tree_iter_dive(tree, root):
+            if node.type != 'parameter':
+                continue
+            k = round(
+                cm.topology_terms["k"].values[node.name][0],
+                PRECISION
+            )
+            l0 = round(
+                cm.topology_terms["l"].values[node.name][0],
+                PRECISION
+            )
+            pvals = {
+                "smirks": hier.smarts[node.index],
+                "id": node.name,
+                "k": str(k) + units["bond_k"],
+                "length": str(l0) + units["bond_l"]
+            }
+            xml["Bonds"]["parameters"].append({"Bond": pvals})
+
+    cm = [x for x in csys.models if x.name == "Angles"][0]
+    hier = cm.procedures[0].smarts_hierarchies[uid]
+    tree = hier.index
+    for root in trees.tree_index_roots(tree):
+        for node in tree_iterators.tree_iter_dive(tree, root):
+            if node.type != 'parameter':
+                continue
+            k = round(
+                cm.topology_terms["k"].values[node.name][0],
+                PRECISION
+            )
+            l0 = round(
+                math.degrees(cm.topology_terms["l"].values[node.name][0]),
+                PRECISION
+            )
+            pvals = {
+                "smirks": hier.smarts[node.index],
+                "id": node.name,
+                "k": str(k) + units["angle_k"],
+                "angle": str(l0) + units["angle_l"]
+            }
+            xml["Angles"]["parameters"].append({"Angle": pvals})
+
+    cm = [x for x in csys.models if x.name == "Torsions"][0]
+    hier = cm.procedures[0].smarts_hierarchies[uid]
+    tree = hier.index
+
+    for root in trees.tree_index_roots(tree):
+        for node in tree_iterators.tree_iter_dive(tree, root):
+            if node.type != 'parameter':
+                continue
+            nl = cm.topology_terms["n"].values[node.name]
+            pl = arrays.array_round(
+                cm.topology_terms["p"].values[node.name],
+                PRECISION
+            )
+            kl = arrays.array_round(
+                cm.topology_terms["k"].values[node.name],
+                PRECISION
+            )
+
+            pvals = {
+                "smirks": hier.smarts[node.index],
+                "id": node.name
+            }
+            for i, (n, p, k) in enumerate(zip(nl, pl, kl), 1):
+                i = str(i)
+                pvals["periodicity"+i] = str(int(n))
+                pvals["phase"+i] = str(p*180/math.pi) + units["dihedral_p"]
+                pvals["k"+i] = str(k) + units["dihedral_k"]
+                pvals["idiv"+i] = "1"
+
+            xml["ProperTorsions"]["parameters"].append({"Proper": pvals})
+
+    cm = [x for x in csys.models if x.name == "OutOfPlanes"][0]
+    hier = cm.procedures[0].smarts_hierarchies[uid]
+    tree = hier.index
+    for root in trees.tree_index_roots(tree):
+        for node in tree_iterators.tree_iter_dive(tree, root):
+            if node.type != 'parameter':
+                continue
+            nl = cm.topology_terms["n"].values[node.name]
+            pl = arrays.array_round(
+                cm.topology_terms["p"].values[node.name],
+                PRECISION
+            )
+            kl = arrays.array_round(
+                cm.topology_terms["k"].values[node.name],
+                PRECISION
+            )
+
+            pvals = {
+                "smirks": hier.smarts[node.index],
+                "id": node.name
+            }
+            for i, (n, p, k) in enumerate(zip(nl, pl, kl), 1):
+                i = str(i)
+                pvals["periodicity"+i] = str(int(n))
+                pvals["phase"+i] = str(p*180/math.pi) + units["dihedral_p"]
+                pvals["k"+i] = str(k) + units["dihedral_k"]
+            xml["ImproperTorsions"]["parameters"].append({"Improper": pvals})
+
+    cm = [x for x in csys.models if x.name == "vdW"][0]
+    hier = cm.procedures[0].smarts_hierarchies[uid]
+    tree = hier.index
+    for root in trees.tree_index_roots(tree):
+        for node in tree_iterators.tree_iter_dive(tree, root):
+            if node.type != 'parameter':
+                continue
+            eps = round(
+                cm.topology_terms["e"].values[node.name][0],
+                PRECISION
+            )
+            sig = round(
+                cm.topology_terms["r"].values[node.name][0] * sigma2rmin_half,
+                PRECISION
+            )
+            pvals = {
+                "smirks": hier.smarts[node.index],
+                "id": node.name,
+                "epsilon": str(eps) + units["vdw_e"],
+                "rmin_half": str(sig) + units["vdw_r"]
+            }
+            xml["vdW"]["parameters"].append({"Atom": pvals})
+
+    return xml
 
 
 def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
@@ -319,6 +639,7 @@ def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     proc = mm.chemical_model_procedure_smarts_assignment(
         pcp, cm.topology_terms
     )
+    pid = len(cm.procedures)
     proc.name = f"{cm.name} SMARTS assignment"
 
     proc.unit_hierarchy = hierarchies.structure_hierarchy(
@@ -326,23 +647,30 @@ def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     )
     u = proc.unit_hierarchy.index.node_add_below(None)
     u.name = "u1"
+    uid = u.index
 
     proc.unit_hierarchy.smarts[u.index] = "[*:1]"
 
     h = hierarchies.structure_hierarchy(
         trees.tree_index(), {}, {}, topology.atom
     )
-    proc.smarts_hierarchies = {u.index: h}
+    proc.smarts_hierarchies = {uid: h}
 
-    root = proc.smarts_hierarchies[u.index].index.node_add_below(None)
+    root = proc.smarts_hierarchies[uid].index.node_add_below(None)
     root.name = "vdW"
+    root.category = [-1, pid, uid]
+    root.type = "hierarchy"
     proc.smarts_hierarchies[u.index].smarts[root.index] = None
 
+    uid = u.index
     for param in d["parameters"]:
+        param = param["Atom"]
         node = proc.smarts_hierarchies[u.index].index.node_add_below(
             root.index
         )
         node.name = param.get("id", "")
+        node.type = "parameter"
+        node.category = [-1, pid, uid]
         h.smarts[node.index] = param.get("smirks", None)
 
         if "sigma" in param:
@@ -370,14 +698,17 @@ def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
         )
     )
     proc.name = "vdW combining Lorentz-Berthelot"
+    pid = len(cm.procedures)
     cm.procedures.append(proc)
 
     proc = mm.chemical_model_procedure_smarts_assignment(
         pcp, cm.topology_terms
     )
-    proc.name = f"vdW scaling"
+    pid = len(cm.procedures)
+    proc.name = "vdW scaling"
+    uid = 0
     proc.smarts_hierarchies = {
-        0: hierarchies.structure_hierarchy(
+        uid: hierarchies.structure_hierarchy(
             trees.tree_index(), {}, {}, topology.pair
         )
     }
@@ -385,9 +716,12 @@ def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     # NB scaling (off)
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "s1"
+    i.type = "parameter"
+    i.category = [-1, pid, uid]
     proc.smarts_hierarchies[0].smarts[i.index] = "[*:1].[*:2]"
     proc.topology_parameters[(0, i.name)] = {"s": i.name}
     cm.topology_terms["s"].values[i.name] = [1.0]
+    proc.default_parameter = "s1"
 
     # 12 scaling is skipped as it is not a valid pair
     # i = proc.smarts_hierarchies[0].index.node_add_below(None)
@@ -399,6 +733,8 @@ def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     # 13 scaling (on)
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "s3"
+    i.type = "parameter"
+    i.category = [-1, pid, uid]
     proc.smarts_hierarchies[0].smarts[i.index] = "[*:1]~[*]~[*:2]"
     proc.topology_parameters[(0, i.name)] = {"s": i.name}
     cm.topology_terms["s"].values[i.name] = [0.0]
@@ -406,12 +742,15 @@ def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     # 14 scaling (0.5)
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "s4"
+    i.type = "parameter"
+    i.category = [-1, pid, uid]
     proc.smarts_hierarchies[0].smarts[i.index] = "[*:1]~[*]~[*]~[*:2]"
     proc.topology_parameters[(0, i.name)] = {"s": i.name}
     cm.topology_terms["s"].values[i.name] = [0.5]
     cm.procedures.append(proc)
 
     return cm
+
 
 def smirnoff_load(
     fname, pcp: perception.perception_model
@@ -431,6 +770,8 @@ def smirnoff_load(
     )
     vdw = chemical_model_vdw_smirnoff(d["vdW"], pcp)
 
+    aro_model = d["SMIRNOFF"]['options']["aromaticity_model"]
+    pcp.gcd.smiles_config.aromaticity = aro_model
     csys = mm.chemical_system(
         pcp,
         [
@@ -442,5 +783,13 @@ def smirnoff_load(
             vdw,
         ],
     )
+    for m, cm in enumerate(csys.models):
+        for node in mm.chemical_model_iter_smarts_hierarchies_nodes(cm):
+            node.category = tuple([m, node.category[1], node.category[2]])
 
     return csys
+
+
+def smirnoff_write_version_0p3(csys, fname):
+    sxml = chemical_model_to_xml_dict(csys)
+    smirnoff_xml.smirnoff_xml_write(sxml, fname)

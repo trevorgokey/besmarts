@@ -177,10 +177,10 @@ def structure_hierarchy_merge(
                 # print("Composing keys for", new_desc)
                 # print("Seen", seen)
                 work = {}
-                if sym in "lr" or configs.processors == 1:
-                    _pool = multiprocessing.pool.ThreadPool
-                else:
-                    _pool = multiprocessing.Pool
+                # if sym in "lr" or configs.processors == 1:
+                #     _pool = multiprocessing.pool.ThreadPool
+                # else:
+                _pool = multiprocessing.Pool
                 with _pool(configs.processors) as pool:
                     for hent in new_desc:
                         if hent.name in seen:
@@ -358,7 +358,7 @@ def structure_hierarchy_add_hierarchy(
     rootB: trees.tree_node,
     index=None,
 ):
-    node = trees.tree_node(0, "", "", rootB.name)
+    node = trees.tree_node(0, rootB.category, rootB.type, rootB.name)
     # hent.key = rootB.key
     node = sA.index.node_add(rootA.index, node, index=index)
     sA.subgraphs[node.index] = graphs.subgraph_copy(sB.subgraphs[rootB.index])
@@ -371,7 +371,7 @@ def structure_hierarchy_add_hierarchy(
         up = mapping[sB.index.above[ei]]
 
         node = trees.tree_index_node_add(
-            sA.index, up, trees.tree_node(None, "", "", eb.name)
+            sA.index, up, trees.tree_node(None, eb.category, eb.type, eb.name)
         )
         ni = node.index
         sA.subgraphs[node.index] = graphs.subgraph_copy(sB.subgraphs[eb.index])

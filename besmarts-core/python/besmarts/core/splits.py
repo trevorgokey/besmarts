@@ -2,14 +2,12 @@
 besmarts.core.splits
 
 Chemical perception in SMARTS. Functions to find numerical splits based on
-bit iteration, and analytical splits based on a predefined partitioning. 
+bit iteration, and analytical splits based on a predefined partitioning.
 """
 
 import array
-import pprint
-import time
+import os
 import itertools
-import threading
 import math
 from typing import List, Set, Tuple, Sequence
 import multiprocessing.pool
@@ -18,8 +16,6 @@ import datetime
 
 from besmarts.core.topology import structure_topology
 from besmarts.core.graphs import (
-    structure_remove_unselected,
-    graph,
     subgraph,
     structure,
 )
@@ -77,13 +73,6 @@ class process_split_ctx:
 
 
 def process_split_matches_distributed(Sj, indices, shm=None):
-    # A = shm.A
-    # matches = arrays.bitvec(maxbits=len(A))
-    # for i, ai in enumerate(A):
-    #     matches[i] = mapper.mapper_match(ai, Sj)
-    # return matches
-    # print(f"My indices are {indices} N={len(indices)} and A is {len(A)} elements")
-    # t0 = time.perf_counter()
 
     # try to send back the minimum amount of data
 
@@ -127,9 +116,36 @@ def split_all_partitions(
     Find a shard that induces the given partition in a sequence of fragments.
     Up to two shards can be found; one will match everything in the specified
     partition, and the other will match the fragments not in the partition.
+
+    Parameters
+    ----------
+    topology: structure_topology
+        The topology of the structures to split
+    perception: smarts_perception_config
+        The settings that control the search depth
+    fragments: List[subgraph]
+        The list of subgraphs that are the target of splitting
+    assignments: List[str]
+        The label for each subgraph. The function will try to create partitions
+        that group these labels together
+    gcd: graph_codec
+        A graph codec
+    maxmoves: int
+        The number of subgraphs that we can allow to move around to arrive at
+        a solution
+
+    Returns
+    -------
+    A return_value containing pairs of structures and indices of the subgraphs
+    that belong to the structures. The structures are the SMARTS that cluster
+    the subgraphs..
     """
 
-    lbls = set(assignments)
+    lbls = []
+    for x in assignments:
+        if x not in lbls:
+            lbls.append(x)
+
     bitmin = perception.splitter.bit_search_min
     bitmax = perception.splitter.bit_search_limit
     # bitmax = max(1, len(lbls) // 2)
@@ -151,7 +167,7 @@ def split_all_partitions(
                 "Direct on",
                 b,
                 "combo",
-                combo,
+                tuple(sorted(combo)),
                 "depth",
                 perception.extender.depth_min,
                 perception.extender.depth_max,
@@ -191,6 +207,8 @@ def split_all_partitions(
             unmatch.difference_update(lhs_removeB)
             unmatch.update(lhs_removeA)
 
+            # if lhs or rhs:
+            #     results.append((lhs, rhs, matched, unmatch))
             if lhs:
                 results.append((lhs, rhs, matched, unmatch))
             elif rhs:
@@ -406,22 +424,21 @@ def split_partition(
             if gcd:
                 print("RHS_INTR: ", gcd.smarts_encode(rhs))
             valid = True
-            if maxmoves > 0:
-                for i in partition:
-                    if len(rhs_removeA) > maxmoves:
-                        break
-                    ai = A[i]
-                    if mapper.mapper_match(ai, rhs):
-                        rhs_removeA.add(i)
-                        # print("RHS Did match but shouldn't:", i, gcd.smarts_encode(ai))
+            for i in partition:
+                if len(rhs_removeA) > maxmoves:
+                    break
+                ai = A[i]
+                if mapper.mapper_match(ai, rhs):
+                    rhs_removeA.add(i)
+                    # print("RHS Did match but shouldn't:", i, gcd.smarts_encode(ai))
 
-                for i in part_diff:
-                    if len(rhs_removeA) + len(rhs_removeB) > maxmoves:
-                        break
-                    ai = A[i]
-                    if not mapper.mapper_match(ai, rhs):
-                        rhs_removeB.add(i)
-                        # print("RHS Didn't match but should:", i, gcd.smarts_encode(ai))
+            for i in part_diff:
+                if len(rhs_removeA) + len(rhs_removeB) > maxmoves:
+                    break
+                ai = A[i]
+                if not mapper.mapper_match(ai, rhs):
+                    rhs_removeB.add(i)
+                    # print("RHS Didn't match but should:", i, gcd.smarts_encode(ai))
             if len(rhs_removeA) + len(rhs_removeB) > maxmoves:
                 valid = False
 
@@ -1363,6 +1380,7 @@ def split_subgraphs(
 
     return S, shards, matched
 
+
 def split_subgraphs_distributed(
     topology: structure_topology,
     splitter: smarts_splitter_config,
@@ -1445,7 +1463,7 @@ def split_subgraphs_distributed(
     shm = {"splitter": splitter, "S0": S0, "G": G, "selections": selections, "icd": icd}
 
     # we need 1 for this main process, and the other for the workspace server
-    nproc = configs.processors - 1
+    nproc = max(1, configs.processors - 1)
 
 
     offsets = {}
@@ -1484,6 +1502,7 @@ def split_subgraphs_distributed(
     sma_visited = set()
     k = 0
     n = 0
+    chunksize = nproc
     while len(completed) < len(iterable):
         Bn = n_ops * (
             math.factorial(len(single_bits))
@@ -1497,7 +1516,7 @@ def split_subgraphs_distributed(
             if idx not in completed
         }
         for batch in arrays.batched(unfinished.items(), 100000):
-            for chunk in arrays.batched(batch, 100):
+            for chunk in arrays.batched(batch, 20):
                 tasks = {}
                 for idx, unit in chunk:
                     if idx % n_ops:
@@ -1533,7 +1552,7 @@ def split_subgraphs_distributed(
         for i in range(min_bits, uptobits):
             n = offsets[i]
             these_results = compute.workspace_flush(
-                ws, set([x[0] for x in batch if x[0] < n]), timeout=1.0
+                ws, set([x[0] for x in batch if x[0] < n]), timeout=0.0,
             )
             for idx, splits in sorted(
                 these_results.items(), key=lambda x: x[0]
@@ -1556,7 +1575,7 @@ def split_subgraphs_distributed(
                     # if jj + j == clen * ci + len(work) and j == len(splits):
                     progress = int(len([x for x in completed if x < n]) / Bn * 10)
                     report_number = progress
-                    if (verbose and debug) or (report_number not in updates):
+                    if (verbose and debug) and (report_number not in updates):
                         updates.add(report_number)
                         print(
                             datetime.datetime.now(),
@@ -1716,7 +1735,7 @@ def split_subgraphs_distributed(
                     compute.workspace_local_submit(ws, tasks)
                 # print("Flushing")
                 new_results = compute.workspace_flush(
-                    ws, set((key for key, _ in unfinished)), timeout=2.0
+                    ws, set((key for key, _ in unfinished)), timeout=0.0
                 )
                 # print("Flushing Done")
                 # completed.update(new_results)
@@ -1755,14 +1774,14 @@ def split_subgraphs_distributed(
                 unmatch = sorted(indices.difference(match))
 
                 key = match
-                if splitter.unique_compliments:
+                if splitter.unique_complements:
                     if len(unmatch) < len(match):
                         key = unmatch
                 key = tuple(key)
 
                 if key in keep:
                     # prefer the one that matched the least
-                    if splitter.unique_compliments_prefer_min:
+                    if splitter.unique_complements_prefer_min:
                         if len(keep[key][2]) > len(match):
                             keep[key] = Sj, bj, match
                     elif len(keep[key][2]) < len(match):
