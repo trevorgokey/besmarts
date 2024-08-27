@@ -135,6 +135,8 @@ class chemical_model:
         self.internal_function = None
         self.derivative_function = None
 
+        self.enable = 1
+
 
 class physical_system:
     def __init__(self, models: List[physical_model]):
@@ -309,6 +311,12 @@ def chemical_model_smarts_hierarchy_remove_node(
     proc: chemical_model_procedure = cm.procedures[pid]
 
     h: hierarchies.structure_hierarchy = proc.smarts_hierarchies[uid]
+    nodes = [x for x in h.index.nodes.values() if x.name == node.name]
+    if len(nodes) > 1:
+        print("Multiple nodes have the same name:")
+        for n in nodes:
+            print(n.index, n.name)
+    assert len(nodes) == 1, "Multiple nodes have the same name"
     h.index.node_remove(node.index)
 
     if node.index in h.smarts:
@@ -322,7 +330,9 @@ def chemical_model_smarts_hierarchy_remove_node(
     for tname in list(proc.topology_parameters[(uid, node.name)]):
         if node.name in cm.topology_terms[tname].values:
             cm.topology_terms[tname].values.pop(node.name)
+
     proc.topology_parameters.pop(pkey)
+
     return
 
 
@@ -339,17 +349,26 @@ def chemical_model_smarts_hierarchy_copy_node(
     node = h.index.node_add_below(
         parent.index, index=0
     )
+    assert (uid, name) not in proc.topology_parameters, f"{name} already exists"
+
     if name is None:
-        name = f"{cm.symbol}{node.index}"
-        pkey = (uid, node.name)
-        i = node.index
-        while pkey in proc.topology_parameters:
+        i = max(h.index.nodes) + 1
+        name = f"{cm.symbol}{i}"
+        while (uid, name) in proc.topology_parameters:
             i += 1
             name = f"{cm.symbol}{i}"
 
     node.name = str(name)
     node.category = tuple(parent.category)
     node.type = str(parent.type)
+
+    nodes = [x.name for x in h.index.nodes.values() if x.name == name]
+    if len(nodes) > 1:
+        print("Duplicate names:")
+        for n in nodes:
+            print(n.index, n.name)
+    assert len(nodes) == 1, "Duplicate names"
+
     h.smarts[node.index] = str(h.smarts[parent.index])
     assert h.subgraphs[parent.index].select
     h.subgraphs[node.index] = graphs.subgraph_copy(h.subgraphs[parent.index])
@@ -583,7 +602,7 @@ def chemical_system_groupby_names(
             if names and lbl not in names:
                 continue
             if ic not in measure:
-                print("Warning, key {ic} did not have data (linear torsion?). Skipping.")
+                print(f"Warning, key {ic} did not have data (linear torsion?). Skipping.")
             else:
                 x = measure[ic][0]
                 if lbl not in kv:
@@ -682,12 +701,15 @@ def chemical_system_to_physical_system(
             pm = physical_model(pos, ref.models[ci].labels, values)
             # ps.models.append(ref.models[ci])
         else:
-            pm = physical_model(pos, [], [])
-            # print(f"{datetime.datetime.now()} Processing", cm.name)
-            for proc in cm.procedures:
-                #print(f"{datetime.datetime.now()}     Procedure", proc.name)
-                procedure: chemical_model_procedure
-                pm = proc.assign(cm, pm)
+            if cm.enable:
+                pm = physical_model(pos, [], [])
+                # print(f"{datetime.datetime.now()} Processing", cm.name)
+                for proc in cm.procedures:
+                    #print(f"{datetime.datetime.now()}     Procedure", proc.name)
+                    procedure: chemical_model_procedure
+                    pm = proc.assign(cm, pm)
+            else:
+                pm = physical_model(pos, [{}], [{}])
         ps.models.append(pm)
     return ps
 

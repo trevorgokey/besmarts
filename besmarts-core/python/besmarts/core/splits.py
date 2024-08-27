@@ -1380,6 +1380,7 @@ def split_subgraphs(
 
     return S, shards, matched
 
+
 def split_subgraphs_distributed(
     topology: structure_topology,
     splitter: smarts_splitter_config,
@@ -1462,7 +1463,7 @@ def split_subgraphs_distributed(
     shm = {"splitter": splitter, "S0": S0, "G": G, "selections": selections, "icd": icd}
 
     # we need 1 for this main process, and the other for the workspace server
-    nproc = configs.processors - 1
+    nproc = max(1, configs.processors - 1)
 
 
     offsets = {}
@@ -1551,7 +1552,7 @@ def split_subgraphs_distributed(
         for i in range(min_bits, uptobits):
             n = offsets[i]
             these_results = compute.workspace_flush(
-                ws, set([x[0] for x in batch if x[0] < n]), timeout=1.0
+                ws, set([x[0] for x in batch if x[0] < n]), timeout=0.0,
             )
             for idx, splits in sorted(
                 these_results.items(), key=lambda x: x[0]
@@ -1734,7 +1735,7 @@ def split_subgraphs_distributed(
                     compute.workspace_local_submit(ws, tasks)
                 # print("Flushing")
                 new_results = compute.workspace_flush(
-                    ws, set((key for key, _ in unfinished)), timeout=2.0
+                    ws, set((key for key, _ in unfinished)), timeout=0.0
                 )
                 # print("Flushing Done")
                 # completed.update(new_results)

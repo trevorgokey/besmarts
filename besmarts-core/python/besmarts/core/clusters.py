@@ -255,12 +255,18 @@ def perform_operations(
         added = False
 
         if step.operation == strategy.SPLIT:
-            param_name = prefix + str(group_number)
+            # param_name = prefix + str(group_number)
+            i = max(hidx.index.nodes) + 1
+            name = f"{prefix}{i}"
+            existing_names = [x.name for x in hidx.index.nodes.values()]
+            while name in existing_names:
+                i += 1
+                name = f"{prefix}{i}"
 
             # print(datetime.datetime.now(), '*** 2')
             hent = hidx.index.node_add(
                 S.index,
-                trees.tree_node(None, S.category, S.type, param_name),
+                trees.tree_node(None, S.category, S.type, name),
                 index=0,
             )
 
@@ -373,7 +379,7 @@ def smarts_clustering_optimize(
     group_number += 1
 
     # gc.collect()
-    if len(sag.assignments) > 100000:
+    if len(sag.assignments) > 100000 and (configs.remote_compute_enable or configs.processors > 1):
         batch_size = 10000
         print(f"{datetime.datetime.now()} Large number of graphs detected... using a workspace")
         # wq = compute.workqueue_local('', configs.workqueue_port)
@@ -1016,6 +1022,7 @@ def smarts_clustering_optimize(
                 chunksize,
                 0.0,
                 len(iterable),
+                verbose=True
             )
             ws.close()
             ws = None
@@ -1052,7 +1059,7 @@ def smarts_clustering_optimize(
                 )
                 max_line = max(len(cout_line), max_line)
                 # print(datetime.datetime.now())
-                print('\r' + cout_line, end=" " * (max_line - len(cout_line)))
+                print(cout_line, end=" " * (max_line - len(cout_line)) + '\n')
                 sys.stdout.flush()
 
                 if match_len == 0:
@@ -1069,7 +1076,6 @@ def smarts_clustering_optimize(
                 if cnd_i in kept:
                     ignore.add(cnd_i)
                     continue
-
 
                 # We prefer to add in this order
                 cout_key = None
@@ -1132,6 +1138,13 @@ def smarts_clustering_optimize(
                 # if ck[3] in best_params:
                         keeping = "->"
                         kept.add(ck[0])
+                    else:
+                        # if we only accept 1 but this is still a good param
+                        # put it on the repeat list or else it will get skipped
+                        # as we increment nonrepeating params to the next step
+                        repeat.add(ck[4])
+                else:
+                    repeat.add(ck[4])
                 print(f"{keeping} {ck_i:4d}", cout[ck])
                 ck_i += 1
             ck = None
@@ -1422,7 +1435,6 @@ def smarts_clustering_optimize(
                 step_tracker[name] = 0
 
         pickle.dump([sag, cst, strategy], open("chk.cst.p", "wb"))
-
 
     new_assignments = labeler.assign(cst.hierarchy, gcd, smiles, topo)
     mappings = clustering_build_assignment_mappings(

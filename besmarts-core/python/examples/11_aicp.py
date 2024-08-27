@@ -31,8 +31,8 @@ from besmarts.mechanics import smirnoff_models
 from besmarts.codecs import codec_rdkit
 from besmarts.assign import hierarchy_assign_rdkit
 
-configs.processors = os.cpu_count()
-configs.remote_compute_enable = True
+configs.processors = 1
+configs.remote_compute_enable = False
 # To use additional workers, from a terminal run (on the separate work machine)
 # python -m besmarts.worker <IP> 55555 np
 # where ip is your publically visible IP where this is being run and np is the
@@ -243,6 +243,19 @@ def configure_objectives(opt_mols):
     # Note that only one minimization step is performed. This is the slowest
     # part of each iteration so increasing this will cause a marked reduction
     # in speed.
+
+    for eid in opt_mols:
+        o = fits.objective_config_hessian(
+                assignments.graph_db_address(
+                    eid=[eid],
+                ),
+                scale=1e-4,
+                include=True
+        )
+        o.batch_size = 1
+        o.method_vib_modes = "qm"
+        objs[len(objs)] = o
+
     for eid in opt_mols:
         o = fits.objective_config_position(
                 assignments.graph_db_address(
@@ -251,6 +264,7 @@ def configure_objectives(opt_mols):
                 scale=1
         )
         o.step_limit = 1
+        o.batch_size = 1
         o.tol = 1e-4
         objs[len(objs)] = o
 
@@ -262,18 +276,7 @@ def configure_objectives(opt_mols):
                 scale=1e-9,
                 include=True
         )
-        # objs[len(objs)] = o
-
-    for eid in opt_mols:
-        o = fits.objective_config_hessian(
-                assignments.graph_db_address(
-                    eid=[eid],
-                ),
-                scale=1e-4,
-                include=True
-        )
-        o.batch_size = 1
-        # objs[len(objs)] = o
+        objs[len(objs)] = o
 
     return objs
 
@@ -622,7 +625,10 @@ def main():
         "dihedral_min_k": 1e-3,
         "dihedral_max_k": 5,
     }
-    psys = fits.reset(reset_config, csys, gdb, psystems=psys, verbose=True)
+    ret = fits.reset(reset_config, csys, gdb, psystems=psys, verbose=True)
+    psys = ret.value
+    print("\n".join(ret.out))
+
     print("After resetting and initializing, the parameters are:")
     fits.print_chemical_system(csys)
     smirnoff_models.smirnoff_write_version_0p3(csys, prefix + "out.offxml")

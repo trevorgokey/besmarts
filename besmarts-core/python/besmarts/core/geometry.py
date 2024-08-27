@@ -607,18 +607,22 @@ def measure_angle(xyz1, xyz2, xyz3):
 
     return result
 
+
 def measure_dihedral(xyz1, xyz2, xyz3, xyz4):
     result = []
     for a, b, c, d in zip(xyz1, xyz2, xyz3, xyz4):
 
         v1 = array_difference(b, a)
         v2 = array_difference(c, b)
+        c2 = array_cross(v1, v2)
+
         v3 = array_difference(d, c)
         c1 = array_cross(v2, v3)
-        c2 = array_cross(v1, v2)
+
         y = sum(array_multiply(v1, c1)) * array_magnitude(v2)
         x = sum(array_multiply(c1, c2))
         theta = math.atan2(y, x)
+
         result.append([theta])
         # rr10 = (x0 - x1),  (y0 - y1), (z0 - z1)
         # r10  = sum([x**2 for x in rr10])**.5

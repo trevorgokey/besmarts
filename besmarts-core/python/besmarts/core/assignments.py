@@ -1038,7 +1038,7 @@ def graph_db_add_single_molecule_state(
     gradients: graph_assignment = None,
     hessian: graph_assignment = None,
     energy: float = None
-) -> eid_t:
+) -> Tuple[eid_t, gid_t]:
     """
     A simple function to add a SMILES and positions to a gdb dataset
 
@@ -1103,18 +1103,6 @@ def graph_db_add_single_molecule_state(
         gde.tables[tid] = gdt
 
     return eid, gid
-
-
-def graph_db_add_positions(db, gid, sel: graph_db_table):
-
-    assert sel.topology == topology.atom
-
-    for sid, data in sel.selections.items():
-        for xyz in data:
-            assert len(xyz) == 3
-
-    graph_db_add_selection(db, gid, POSITIONS, sel)
-    return aid
 
 
 def graph_db_set_positions(gdb, eid, gid, sel, rid=None) -> rid_t:

@@ -11,11 +11,14 @@ from besmarts.core import trees
 from besmarts.core import arrays
 from besmarts.core import tree_iterators
 from besmarts.core import perception
-import pprint
+from besmarts.core import configs
+
 from besmarts.mechanics import molecular_models as mm
 from besmarts.mechanics import smirnoff_xml
 from besmarts.mechanics import force_harmonic, force_periodic, force_pairwise
 
+PRECISION = configs.precision
+sigma2rmin_half =  1 / 2 ** (5 / 6)
 
 def chemical_model_bond_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     cm = mm.chemical_model("B", "Bonds", topology.bond)
@@ -402,7 +405,7 @@ def chemical_model_to_xml_dict(csys):
     }
 
     root_attrib = {
-        "version":"0.3", "aromaticity_model":"MDL"
+        "version": "0.3", "aromaticity_model": "MDL"
     }
     xml = {
         "SMIRNOFF": {
@@ -473,6 +476,18 @@ def chemical_model_to_xml_dict(csys):
             ),
             "parameters": []
         },
+        "LibraryCharges": {
+            "options": dict(
+                version="0.3",
+            ),
+            "parameters": []
+        },
+        "ToolkitAM1BCC": {
+            "options": dict(
+                version="0.3",
+            ),
+            "parameters": []
+        },
     }
     units = {
         "bond_l": " * angstrom",
@@ -492,13 +507,21 @@ def chemical_model_to_xml_dict(csys):
 
     for root in trees.tree_index_roots(tree):
         for node in tree_iterators.tree_iter_dive(tree, root):
-            if root.index == node.index:
+            if node.type != 'parameter':
                 continue
+            k = round(
+                cm.topology_terms["k"].values[node.name][0],
+                PRECISION
+            )
+            l0 = round(
+                cm.topology_terms["l"].values[node.name][0],
+                PRECISION
+            )
             pvals = {
                 "smirks": hier.smarts[node.index],
                 "id": node.name,
-                "k": str(round(cm.topology_terms["k"].values[node.name][0], 12)) + units["bond_k"],
-                "length": str(round(cm.topology_terms["l"].values[node.name][0], 12)) + units["bond_l"]
+                "k": str(k) + units["bond_k"],
+                "length": str(l0) + units["bond_l"]
             }
             xml["Bonds"]["parameters"].append({"Bond": pvals})
 
@@ -507,13 +530,21 @@ def chemical_model_to_xml_dict(csys):
     tree = hier.index
     for root in trees.tree_index_roots(tree):
         for node in tree_iterators.tree_iter_dive(tree, root):
-            if root.index == node.index:
+            if node.type != 'parameter':
                 continue
+            k = round(
+                cm.topology_terms["k"].values[node.name][0],
+                PRECISION
+            )
+            l0 = round(
+                math.degrees(cm.topology_terms["l"].values[node.name][0]),
+                PRECISION
+            )
             pvals = {
                 "smirks": hier.smarts[node.index],
                 "id": node.name,
-                "k": str(round(cm.topology_terms["k"].values[node.name][0], 12)) + units["angle_k"],
-                "angle": str(round(cm.topology_terms["l"].values[node.name][0]*180/math.pi, 12)) + units["angle_l"]
+                "k": str(k) + units["angle_k"],
+                "angle": str(l0) + units["angle_l"]
             }
             xml["Angles"]["parameters"].append({"Angle": pvals})
 
@@ -523,11 +554,17 @@ def chemical_model_to_xml_dict(csys):
 
     for root in trees.tree_index_roots(tree):
         for node in tree_iterators.tree_iter_dive(tree, root):
-            if root.index == node.index:
+            if node.type != 'parameter':
                 continue
             nl = cm.topology_terms["n"].values[node.name]
-            pl = arrays.array_round(cm.topology_terms["p"].values[node.name], 12)
-            kl = arrays.array_round(cm.topology_terms["k"].values[node.name], 12)
+            pl = arrays.array_round(
+                cm.topology_terms["p"].values[node.name],
+                PRECISION
+            )
+            kl = arrays.array_round(
+                cm.topology_terms["k"].values[node.name],
+                PRECISION
+            )
 
             pvals = {
                 "smirks": hier.smarts[node.index],
@@ -538,6 +575,7 @@ def chemical_model_to_xml_dict(csys):
                 pvals["periodicity"+i] = str(int(n))
                 pvals["phase"+i] = str(p*180/math.pi) + units["dihedral_p"]
                 pvals["k"+i] = str(k) + units["dihedral_k"]
+                pvals["idiv"+i] = "1"
 
             xml["ProperTorsions"]["parameters"].append({"Proper": pvals})
 
@@ -546,11 +584,17 @@ def chemical_model_to_xml_dict(csys):
     tree = hier.index
     for root in trees.tree_index_roots(tree):
         for node in tree_iterators.tree_iter_dive(tree, root):
-            if root.index == node.index:
+            if node.type != 'parameter':
                 continue
             nl = cm.topology_terms["n"].values[node.name]
-            pl = arrays.array_round(cm.topology_terms["p"].values[node.name], 12)
-            kl = arrays.array_round(cm.topology_terms["k"].values[node.name], 12)
+            pl = arrays.array_round(
+                cm.topology_terms["p"].values[node.name],
+                PRECISION
+            )
+            kl = arrays.array_round(
+                cm.topology_terms["k"].values[node.name],
+                PRECISION
+            )
 
             pvals = {
                 "smirks": hier.smarts[node.index],
@@ -568,17 +612,26 @@ def chemical_model_to_xml_dict(csys):
     tree = hier.index
     for root in trees.tree_index_roots(tree):
         for node in tree_iterators.tree_iter_dive(tree, root):
-            if root.index == node.index:
+            if node.type != 'parameter':
                 continue
-        pvals = {
-            "smirks": hier.smarts[node.index],
-            "id": node.name,
-            "epsilon": str(round(cm.topology_terms["e"].values[node.name][0], 12)) + units["vdw_e"],
-            "rmin_half": str(round(cm.topology_terms["e"].values[node.name][0] / 2 ** (5 / 6), 12)) + units["vdw_r"]
-        }
-        xml["vdW"]["parameters"].append({"Atom": pvals})
+            eps = round(
+                cm.topology_terms["e"].values[node.name][0],
+                PRECISION
+            )
+            sig = round(
+                cm.topology_terms["r"].values[node.name][0] * sigma2rmin_half,
+                PRECISION
+            )
+            pvals = {
+                "smirks": hier.smarts[node.index],
+                "id": node.name,
+                "epsilon": str(eps) + units["vdw_e"],
+                "rmin_half": str(sig) + units["vdw_r"]
+            }
+            xml["vdW"]["parameters"].append({"Atom": pvals})
 
     return xml
+
 
 def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     cm = force_pairwise.chemical_model_lennard_jones(pcp)
@@ -652,7 +705,7 @@ def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
         pcp, cm.topology_terms
     )
     pid = len(cm.procedures)
-    proc.name = f"vdW scaling"
+    proc.name = "vdW scaling"
     uid = 0
     proc.smarts_hierarchies = {
         uid: hierarchies.structure_hierarchy(

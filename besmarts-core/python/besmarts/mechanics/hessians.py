@@ -175,7 +175,7 @@ def project_ics(B, H):
     return Q
 
 
-def project_gradient(B, gx):
+def project_gradient(B, gx, shm=None):
 
     gx = np.array(gx, dtype=float)
     gx = gx.round(PRECISION)
@@ -300,9 +300,9 @@ def hessian_project_onto_ics(
 
     hess_qm_ic = np.array(np.diag(hess_qm_ic))
 
-    if (hess_qm_ic < 0).any():
+    if (hess_qm_ic < 0).any() and verbose:
         print("Warning, negative force constants found")
-    if (hess_qm_ic > 4000).any():
+    if (hess_qm_ic > 4000).any() and verbose:
         print("Warning, large force constants found")
 
     hess_qm_ic[hess_qm_ic < 0] = 0.0
@@ -310,8 +310,9 @@ def hessian_project_onto_ics(
 
     ic_qm_fcs = dict(zip(ics, hess_qm_ic))
 
-    print("Projected MM Fcs")
-    pprint.pprint(ic_qm_fcs, sort_dicts=False)
+    if verbose:
+        print("Projected MM Fcs")
+        pprint.pprint(ic_qm_fcs, sort_dicts=False)
 
     return assignments.graph_assignment(pos.smiles, ic_qm_fcs, pos.graph)
 
@@ -342,6 +343,6 @@ def hessian_frequencies(g, hess_mm, grad_mm, DL, ics, B, B2):
     hess_mm_au = vibration.hessian_transform_mass_weighted(hess_mm - hgx, mass)
     hess_mm_freq = np.diag(np.dot(np.dot(DL.T, hess_mm_au), DL))
     hess_mm_freq = vibration.converteig(hess_mm_freq)
-    hess_mm_freq = np.round(hess_mm_freq, 12)
+    hess_mm_freq = np.round(hess_mm_freq, PRECISION)
 
     return hess_mm_freq
