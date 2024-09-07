@@ -132,7 +132,8 @@ class bitvec:
 
         # [[1,0,1,0,1]] = v
         elif isinstance(i, bitvec):
-            mask = sum(1 << x for x in bitvec_on(i))
+            on = bitvec_on(i)
+            mask = sum(1 << x for x in on)
             if v:
                 self.v |= mask
             else:
@@ -216,8 +217,14 @@ class bitvec:
     def on(self) -> List[int]:
         return bitvec_on(self)
 
+    def on_first(self) -> int:
+        return bitvec_on_first(self)
+
     def off(self) -> List[int]:
         return bitvec_off(self)
+
+    def off_first(self) -> int:
+        return bitvec_off_first(self)
 
     def bits(self, maxbits=False) -> int:
         return bitvec_bits(self, maxbits=maxbits)
@@ -262,8 +269,24 @@ def bitvec_on(bv: bitvec) -> List[int]:
     return [i for i in range(bv.maxbits) if (bv.v >> i) & 1]
 
 
+def bitvec_on_first(bv: bitvec) -> List[int]:
+
+    for i in range(bv.maxbits):
+        if (bv.v >> i) & 1:
+            return i
+    return None
+
+
 def bitvec_off(bv: bitvec) -> List[int]:
     return [i for i in range(bv.maxbits) if not (bv.v >> i) & 1]
+
+
+def bitvec_off_first(bv: bitvec) -> List[int]:
+
+    for i in range(bv.maxbits):
+        if not (bv.v >> i) & 1:
+            return i
+    return None
 
 
 def bitvec_explicit_flip(bv: bitvec) -> None:

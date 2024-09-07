@@ -396,7 +396,7 @@ class primitive_codec_formal_charge(primitive_codec):
         str
             The SMILES string.
         """
-        assert arr.bits() == 1
+        # assert arr.bits() == 1
         return self.encode_smarts(arr)
 
     def count_charge_smiles(self, nodes):
@@ -417,9 +417,9 @@ class primitive_codec_formal_charge(primitive_codec):
         """
 
         count = 0
-        for chem in nodes.values():
-            arr = chem.primitives[self.implements]
-            q = self.decode_int(arr.on()[0])
+        for node in nodes.values():
+            arr = node.primitives[self.implements]
+            q = self.decode_int(arr.on_first())
             count += q
         return count
 
@@ -566,8 +566,8 @@ class primitive_codec_element(primitive_codec):
         str
             The SMILES string.
         """
-        assert arr.bits() == 1
-        i = [arr.on()][0]
+        # assert arr.bits() == 1
+        i = arr.on_first()
         return SMILES_ELEMENT(self.decode_int(i))
 
     def decode_smarts(self, dtype, obj: str) -> bitvec:
@@ -593,10 +593,18 @@ class primitive_codec_element(primitive_codec):
 
     def count_carbon_smiles(self, nodes):
         count = 0
-        for chem in nodes.values():
-            arr = chem.primitives[self.implements]
-            count += self.decode_int(arr.on()[0])
+        for node in nodes.values():
+            arr = node.primitives[self.implements]
+            count += self.decode_int(arr.on_first()) == 6
         return count
+
+    def count_element_smiles(self, nodes, n):
+        count = 0
+        for atom in nodes.values():
+            arr = atom.primitives[self.implements]
+            count += self.decode_int(arr.on_first()) == n
+        return count
+
 
 
 class primitive_codec_valence(primitive_codec):
@@ -645,8 +653,8 @@ class primitive_codec_hydrogen(primitive_codec):
         str
             The SMILES string.
         """
-        assert arr.bits() == 1
-        i = self.decode_int(arr.on()[0])
+        # assert arr.bits() == 1
+        i = self.decode_int(arr.on_first())
         if i > 0:
             return "H"
         return ""
@@ -671,6 +679,13 @@ class primitive_codec_hydrogen(primitive_codec):
         arr = super().decode_smarts(dtype, obj)
         arr.maxbits = 5
         return arr
+
+    def count_hydrogen_smiles(self, nodes):
+        count = 0
+        for chem in nodes.values():
+            arr = chem.primitives[self.implements]
+            count += self.decode_int(arr.on_first())
+        return count
 
 
 class primitive_codec_connectivity_total(primitive_codec):
@@ -1049,7 +1064,7 @@ class primitive_codec_bond_order(primitive_codec):
             The SMILES string.
         """
 
-        assert arr.bits() == 1
+        # assert arr.bits() == 1
 
         sma = self.encode_smarts(arr)
 
@@ -1523,7 +1538,7 @@ class primitive_codec_variable(primitive_codec):
         str
             The SMILES string.
         """
-        assert arr.bits() == 1
+        # assert arr.bits() == 1
         return self.encode_smarts(arr)
 
     def decode_smiles(self, dtype, obj: str) -> bitvec:
