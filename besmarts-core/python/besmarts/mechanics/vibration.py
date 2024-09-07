@@ -236,6 +236,7 @@ def trans_rot_modes(xyz, mass, X, rot=True):
     D[5][:] = np.array([(P[i,x]*X[j,y] - P[i,y]*X[j,x]) * sqrt_mass[i] \
             for i in range(na) for j in range(nd)])
 
+    D = np.array([d for d in D if np.linalg.norm(d) > 0.0])
     if debug:
         print("TR_MODES")
         for row in np.dot(D,D.T):
@@ -331,6 +332,7 @@ def hessian_modes( hess, syms, xyz, mass, mol_number, remove=0, stdtr=True, debu
     #    norm = np.dot(d,d.T)
     #    if(norm > 1e-7):
     #        D[i] /= np.sqrt(norm)
+    N = D.shape[0]
     D = D.T
     TR = D
     if debug:
@@ -356,7 +358,7 @@ def hessian_modes( hess, syms, xyz, mass, mol_number, remove=0, stdtr=True, debu
                 print("{:11.8f} ".format( val), end="")
             print()
     D, _ = np.linalg.qr( D, mode='complete')
-    Q, _ = np.linalg.qr( D[:,:6], mode='complete')
+    Q, _ = np.linalg.qr( D[:,:N], mode='complete')
     
     # D = np.round(D, 12)
     # Q = np.round(Q, 12)
@@ -371,7 +373,7 @@ def hessian_modes( hess, syms, xyz, mass, mol_number, remove=0, stdtr=True, debu
         printmat( np.dot( Q.T, D), 2)
     #D /= np.linalg.norm( D, axis=0)
     if debug:
-        TR = D[ :, :6]
+        TR = D[ :, :N]
         testmat = np.dot( TR.T, TR)
         print("TR AFTER QR DOTS")
         for row in testmat:
@@ -401,8 +403,8 @@ def hessian_modes( hess, syms, xyz, mass, mol_number, remove=0, stdtr=True, debu
     if debug:
         print("Q (sqrt(m)):")
         print(q)
-        print("Dot first 6 with qr first 6")
-        for i in range(6):
+        print("Dot first N with qr first N")
+        for i in range(N):
             x = D[:,i]
             y = TR[:,i]
             print(np.dot(x/np.linalg.norm(x),y/np.linalg.norm(y)))
@@ -442,8 +444,8 @@ def hessian_modes( hess, syms, xyz, mass, mol_number, remove=0, stdtr=True, debu
     if not stdtr:
         _,D = np.linalg.eigh(hess)
     if remove > 0:
-        TR = np.array(D[:,:remove])
-        D = np.array(D[:,remove:])
+        TR = np.array(D[:,:min(N, remove)])
+        D = np.array(D[:,min(N, remove):])
         if debug:
             print("TR.shape")
             print(TR.shape)
@@ -538,7 +540,7 @@ def hessian_modes( hess, syms, xyz, mass, mol_number, remove=0, stdtr=True, debu
     if remove > 0:
         mol_modes = np.hstack((TR_modes, mol_modes))
         freq_ic = np.hstack((freq_TR, freq_mol))
-        mol_modes[:,:remove] = TR_modes
+        mol_modes[:,:min(remove, N)] = TR_modes
     if debug:
         print("EIGS FULL AFTER COMBINE:", converteig(freq_ic[:10]))
     #else:
