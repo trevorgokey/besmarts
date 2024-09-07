@@ -76,6 +76,109 @@ def physical_system_force(psys: mm.physical_system, csys):
     return arrays.array_scale(force, 4.184)
 
 
+def physical_system_bmatrix(psys: mm.physical_system, csys):
+    """
+    csys is for the reference functions and system params
+    psys is for the positions and param values
+    """
+
+    jac = {}
+
+    for m, pm in enumerate(psys.models):
+
+        refpos = pm.positions[0]
+        pos = assignments.graph_assignment_float(
+                refpos.graph,
+                {k: v.copy() for k, v in refpos.selections.items()}
+        )
+
+        if csys.models[m].derivative_function:
+
+            jac[m] = csys.models[m].derivative_function(pos)
+
+
+    return jac
+
+
+def physical_system_internals(psys: mm.physical_system, csys):
+    """
+    csys is for the reference functions and system params
+    psys is for the positions and param values
+    """
+
+    ic = {}
+
+    for m, pm in enumerate(psys.models):
+
+        refpos = pm.positions[0]
+        pos = assignments.graph_assignment_float(
+                refpos.graph,
+                {k: v.copy() for k, v in refpos.selections.items()}
+        )
+
+        if csys.models[m].derivative_function:
+
+            icq = csys.models[m].internal_function(pos)
+
+            ic[m] = {
+                ic: [x for y in v for x in y] for ic, v in icq.selections.items()
+            }
+
+    return ic
+
+
+def physical_system_force_internal(psys: mm.physical_system, csys):
+    """
+    csys is for the reference functions and system params
+    psys is for the positions and param values
+    """
+
+    force = {}
+
+    for m, pm in enumerate(psys.models):
+
+        refpos = pm.positions[0]
+        pos = assignments.graph_assignment_float(
+                refpos.graph,
+                {k: v.copy() for k, v in refpos.selections.items()}
+        )
+
+        if csys.models[m].derivative_function:
+
+            force[m] = {}
+            icq = csys.models[m].internal_function(pos)
+
+            system_terms = {
+                k: v.values for k, v in csys.models[m].system_terms.items()
+            }
+
+            params = pm.values
+            f = mm.smiles_assignment_function(
+                csys.models[m].force_function,
+                system_terms,
+                params,
+                icq
+            )
+            force[m] = {
+                ic: [x*4.184 for y in v for x in y] for ic, v in f.items()
+            }
+
+    return force
+
+
+def physical_system_gradient_internal(psys: mm.physical_system, csys):
+    """
+    csys is for the reference functions and system params
+    psys is for the positions and param values
+    """
+    force = physical_system_force_internal(psys, csys)
+    grad = {}
+    for m, vals in force.items():
+        grad[m] = {ic: arrays.array_scale(v, -1) for ic, v in vals.items()}
+
+    return grad
+
+
 def physical_system_energy(psys: mm.physical_system, csys):
     energy = 0
 
