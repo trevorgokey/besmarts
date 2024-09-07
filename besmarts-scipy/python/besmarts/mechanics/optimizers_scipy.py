@@ -225,12 +225,23 @@ def objective_gradient_gdb(
 
     chunksize = 300
 
-    targetbatch = 300*len(keys)
-    if not return_gradient:
-        targetbatch *= 3
+    # targetbatch = 1000*len(keys)
+    # if not return_gradient:
+    #     targetbatch *= 3
     objbatches = []
     cur_batch_score = 0
     cur_batch = []
+
+    # total_cost = 0
+    # for i, obj in objlst.items():
+    #     bsz = obj.batch_size
+    #     if bsz is None:
+    #         total_cost += 1
+    #     else:
+    #         total_cost += len(keys) // bsz + bool(len(keys) % bsz)
+
+    targetbatch = 10000
+
 
     for i, obj in objlst.items():
         bsz = obj.batch_size
@@ -258,7 +269,7 @@ def objective_gradient_gdb(
 
         line = (
             f"{logs.timestamp()} Processing objectives in "
-            f"{len(objbatches)} batches "
+            f"{len(objbatches)} batches (target cost {targetbatch})"
         )
         print(line)
 
