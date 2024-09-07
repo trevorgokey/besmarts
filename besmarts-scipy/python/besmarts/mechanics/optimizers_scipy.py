@@ -754,14 +754,14 @@ def objective_gdb(
 
     for obsz, obj in enumerate(
         arrays.batched(objlst.items(), objbatchsize),
-        1
+        0
     ):
 
         tasks = {}
         full_results = {}
         batch_map = {}
         chunk = {}
-        for idx, (i, x) in enumerate(obj, 1 + objbatchsize*(obsz-1)):
+        for idx, (i, x) in enumerate(obj, 1 + objbatchsize*(obsz)):
             psys = None
             if psysref:
                 psys = psysref[x.addr.eid[0]]
