@@ -6,6 +6,7 @@ import copy
 import sys
 
 from besmarts.core import graphs
+from besmarts.core import geometry
 from besmarts.core import perception
 from besmarts.core import assignments
 from besmarts.core import arrays
@@ -87,11 +88,16 @@ def physical_system_to_openmm_system(psys):
         xyz.append(arrays.array_scale(pos.selections[i,][0], 0.1))
     ctx.setPositions(xyz)
 
+    # out = []
     # for i, f in enumerate(system.getForces()):
-    #     state = sim.context.getState(getEnergy=True, groups={i})
-    #     print(f.getName(), state.getPotentialEnergy())
+    #     state = sim.context.getState(getEnergy=True, getForces=True, groups={i})
+    #     grad = " ".join(map(
+    #         "{:12.5e}".format, [-x/x.unit/100 for y in state.getForces() for x in y]
+    #     ))
+    #     out.append(f"{f.getName()} {state.getPotentialEnergy()} {grad}")
     # state = sim.context.getState(getEnergy=True)
-    # print("Total:", state.getPotentialEnergy())
+    # out.append(f"Total: {str(state.getPotentialEnergy())}")
+    # print("\n".join(out))
 
     return sim
 
@@ -151,7 +157,7 @@ def physical_system_force_openmm(psys, csys):
     sim.context.setPositions(xyz)
 
     state = sim.context.getState(getForces=True)
-    grad = [x/x.unit for y in state.getForces() for x in y]
+    grad = [x/x.unit/10.0 for y in state.getForces() for x in y]
     return grad
 
 def physical_system_gradient_openmm(psys, csys):
@@ -308,12 +314,16 @@ def assign_torsions(psys, atom_map):
     pos = psys.models[0].positions[0]
     frc = openmm.openmm.PeriodicTorsionForce()
     id_map = {}
-    for i in graphs.graph_torsions(pos.graph):
+    for i in list(assignments.smiles_assignment_geometry_torsions_nonlinear(
+        pos
+    ).selections):
+    # for i in graphs.graph_torsions(pos.graph):
         ic = atom_map[i[0]], atom_map[i[1]], atom_map[i[2]], atom_map[i[3]]
         vals = psys.models[2].values[0].get(i)
         if vals:
             for n, p, k in zip(vals['n'], vals['p'], vals['k']):
-                id_map[i] = frc.addTorsion(*ic, n, p, k * 4.184)
+                if abs(k) > 1e-7:
+                    id_map[i] = frc.addTorsion(*ic, n, p, k * 4.184)
     return frc, id_map
 
 def assign_outofplanes(psys, atom_map):
@@ -325,7 +335,8 @@ def assign_outofplanes(psys, atom_map):
         vals = psys.models[3].values[0].get(i)
         if vals:
             for n, p, k in zip(vals['n'], vals['p'], vals['k']):
-                id_map[i] = frc.addTorsion(*ic, n, p, k * 4.184)
+                if abs(k) > 1e-7:
+                    id_map[i] = frc.addTorsion(*ic, n, p, k * 4.184)
     return frc, id_map
 
 def assign_nonbonded(psys, atom_map):
