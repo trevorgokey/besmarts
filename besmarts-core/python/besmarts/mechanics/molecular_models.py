@@ -582,6 +582,9 @@ def physical_model_values_copy(pm):
     return values
 
 
+warn_linear = True
+
+
 def chemical_system_groupby_names(
     csys,
     m,
@@ -593,6 +596,8 @@ def chemical_system_groupby_names(
     from chemical_model m, group the assn by the labels in physical_model m
     """
     kv = {k[2]: [] for k in chemical_system_iter_keys(csys) if k[0] == m}
+    global warn_linear
+    warned = False
 
     for i, (psys, measure) in enumerate(zip(psystems, selections), 1):
         pm: physical_model = psys.models[m]
@@ -602,12 +607,17 @@ def chemical_system_groupby_names(
             if names and lbl not in names:
                 continue
             if ic not in measure:
-                print(f"Warning, key {ic} did not have data (linear torsion?). Skipping.")
+                if warn_linear:
+                    print(f"Warning, key {ic} did not have data (linear torsion?). Skipping.")
+                    warned = True
             else:
                 x = measure[ic][0]
                 if lbl not in kv:
                     kv[lbl] = []
                 kv[lbl].extend(x)
+    if warned:
+        warn_linear = False
+
     return kv
 
 
@@ -673,17 +683,19 @@ def chemical_system_get_angle_means(csys, psystems, names=None) -> dict:
     return chemical_system_get_ic_measure_means(csys, 1, kv)
 
 
-def chemical_system_reset_angles(csys, psystems, names=None) -> dict:
+def chemical_system_reset_angles(csys, psystems, names=None, skip=None) -> dict:
     kv = chemical_system_get_angle_means(csys, psystems, names=names)
     for k, v in kv.items():
-        chemical_system_set_value(csys, k, v)
+        if k[2] not in skip:
+            chemical_system_set_value(csys, k, v)
     return kv
 
 
-def chemical_system_reset_bond_lengths(csys, psystems, names=None) -> dict:
+def chemical_system_reset_bond_lengths(csys, psystems, names=None, skip=None) -> dict:
     kv = chemical_system_get_bond_length_means(csys, psystems, names=names)
     for k, v in kv.items():
-        chemical_system_set_value(csys, k, v)
+        if k[2] not in skip:
+            chemical_system_set_value(csys, k, v)
     return kv
 
 
