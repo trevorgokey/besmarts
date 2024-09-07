@@ -29,7 +29,6 @@ class test_import(unittest.TestCase):
             splits,
             topology,
             tree_iterators,
-            tree_merge,
             trees,
         )
 
@@ -37,6 +36,7 @@ class test_import(unittest.TestCase):
         from besmarts.codecs import (
             codec_native,
         )
+
     def test_import_cluster(self):
         from besmarts.cluster import (
             cluster_assignment,
