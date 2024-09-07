@@ -996,7 +996,10 @@ def remote_connect(mgr, timeout=TIMEOUT):
             success,
         ),
     )
-    t.start()
+    try:
+        t.start()
+    except RuntimeError:
+        return False
 
     connected = True
 
@@ -1065,7 +1068,10 @@ def manager_remote_get_status(wq, timeout=5.0):
         args=(wq, out),
     )
     print("manager_remote_get_status: starting thread")
-    t.start()
+    try:
+        t.start()
+    except RuntimeError:
+        return workspace_status.INVALID
 
     t.join(timeout=timeout)
     if len(out):
@@ -1083,7 +1089,10 @@ def manager_remote_get_state(wq, timeout=TIMEOUT):
         args=(wq, out),
     )
     print("manager_remote_get_state: starting thread")
-    t.start()
+    try:
+        t.start()
+    except RuntimeError:
+        return None
 
     t.join(timeout=timeout)
     if len(out):
@@ -1140,7 +1149,10 @@ def workqueue_remote_get_workspaces(wq, timeout=TIMEOUT):
         target=workqueue_remote_get_workspaces_thread,
         args=(wq.remote_workspaces, out, success),
     )
-    t.start()
+    try:
+        t.start()
+    except RuntimeError:
+        return {}
 
     t.join(timeout=timeout)
     if (not t.is_alive()) or success.is_set():
@@ -1157,7 +1169,10 @@ def workqueue_remote_put_workspaces(wq, wss, timeout=TIMEOUT):
         target=workqueue_remote_put_workspaces_thread,
         args=(wq.mgr, wss, success),
     )
-    t.start()
+    try:
+        t.start()
+    except RuntimeError:
+        return False
     t.join(timeout=timeout)
 
     return success.is_set()
@@ -1320,6 +1335,7 @@ def queue_get_nowait(q, block=False, timeout=TIMEOUT, n=1):
     # print(f"queue_get_nowait")
     # success = threading.Event()
     out = []
+    result = None
     thread_timeout = timeout
     if timeout is not None and timeout > 1.0:
         # give some space since the timeout is really for the thread timeout
@@ -1327,7 +1343,10 @@ def queue_get_nowait(q, block=False, timeout=TIMEOUT, n=1):
     t = threading.Thread(
         target=queue_get_nowait_thread, args=(q, out, n, block, timeout)
     )
-    t.start()
+    try:
+        t.start()
+    except RuntimeError:
+        return result
     # print(f"queue_get_nowait starting thread")
     t.join(timeout=thread_timeout)
     # print(f"queue_get_nowait joined")
@@ -1336,7 +1355,6 @@ def queue_get_nowait(q, block=False, timeout=TIMEOUT, n=1):
     # print(f"queue_get_nowait alive {alive}")
     # is_success = success.is_set()
     # print(f"queue_get_nowait success {is_success}")
-    result = None
     # print(f"out is {out}")
     if out:
         result = out[0]
@@ -1353,7 +1371,10 @@ def manager_remote_queue_qsize(q, timeout=TIMEOUT):
         target=manager_remote_queue_qsize_thread, args=(q, out)
     )
     # print(f"manager_remote_queue_qsize starting thread")
-    t.start()
+    try:
+        t.start()
+    except RuntimeError:
+        return sz
 
     t.join(timeout=timeout)
     # print(f"manager_remote_get_iqueue joined")
@@ -1373,7 +1394,10 @@ def manager_remote_get_iqueue(mgr, timeout=TIMEOUT):
         target=manager_remote_get_iqueue_thread, args=(mgr, out)
     )
     print(f"manager_remote_get_iqueue starting thread")
-    t.start()
+    try:
+        t.start()
+    except RuntimeError:
+        return iq
 
     t.join(timeout=timeout)
     # print(f"manager_remote_get_iqueue joined")
@@ -1391,7 +1415,10 @@ def manager_remote_queue_put(oq, obj, timeout=TIMEOUT, n=1):
     t = threading.Thread(
         target=manager_remote_queue_put_thread, args=(oq, obj, n, success)
     )
-    t.start()
+    try:
+        t.start()
+    except RuntimeError:
+        return False
     t.join(timeout=timeout)
 
     return (not t.is_alive()) or success.is_set()
@@ -1405,7 +1432,10 @@ def manager_remote_get_oqueue(mgr, timeout=TIMEOUT):
     t = threading.Thread(
         target=manager_remote_get_oqueue_thread, args=(mgr, out)
     )
-    t.start()
+    try:
+        t.start()
+    except RuntimeError:
+        return oq
 
     t.join(timeout=timeout)
     if out:
@@ -2697,7 +2727,10 @@ def workspace_local_run(ws: workspace_local):
     which can be a (low latency) local pool or a (high latency) manager
     """
     t = threading.Thread(target=workspace_local_run_thread, args=(ws,))
-    t.start()
+    try:
+        t.start()
+    except RuntimeError:
+        return None
     return t
 
 
@@ -2716,7 +2749,6 @@ def workspace_submit_and_flush(
         batchsize = n
 
     todo = iterable
-
 
     if clear:
         ws.holding.clear()
@@ -2923,7 +2955,9 @@ def workspace_flush(ws: workspace_local, indices, timeout: float = TIMEOUT, maxw
 
         t01 = time.perf_counter()
         dt = t01 - t00
-        if dt < timeout:
+        if timeout is None:
+            time.sleep(waittime)
+        elif dt < timeout:
             # print("Sleeping for", timeout - dt)
             time.sleep(timeout - dt)
         # print("JOINING GOT", i)
@@ -3240,7 +3274,10 @@ def workspace_remote_shm_init(ws, timeout=TIMEOUT):
     t = threading.Thread(
         target=workspace_remote_shm_init_thread, args=(ws.mgr, out)
     )
-    t.start()
+    try:
+        t.start()
+    except RuntimeError:
+        return False
     t.join(timeout=timeout)
 
     if out:
@@ -3250,7 +3287,10 @@ def workspace_remote_shm_init(ws, timeout=TIMEOUT):
         t = threading.Thread(
             target=remote_init_thread, args=(remote_init, shm_proxy, out)
         )
-        t.start()
+        try:
+            t.start()
+        except RuntimeError:
+            return False
         t.join(timeout=timeout)
         if out:
             ws.shm = out[0]
@@ -3335,7 +3375,12 @@ def workspace_run(distfun: distributed_function, workspace_address=None):
         shm = shm_local()
     else:
         shm = SHM_GLOBAL[workspace_address]
-    return fn(*args, **kwargs, shm=shm)
+    try:
+        result = fn(*args, **kwargs, shm=shm)
+    except TypeError:
+        result = fn(*args, **kwargs)
+    return result
+
 
 
 def workspace_run_init(procs_per_task, t0=None):
