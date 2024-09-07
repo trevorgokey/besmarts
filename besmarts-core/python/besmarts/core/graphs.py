@@ -515,13 +515,13 @@ def graph_remove_hydrogen(g: graph) -> graph:
 
     Parameters
     ----------
-    g : structure
-        The input structure
+    g : graph
+        The input graph
 
     Returns
     -------
     structure
-        A new structure without hydrogen
+        A new graph without hydrogen
     """
 
     nodes = {
