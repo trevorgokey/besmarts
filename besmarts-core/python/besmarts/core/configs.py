@@ -13,6 +13,7 @@ compute_verbosity = 0
 # to this precision
 precision = 12
 
+match_print_limit = 100
 
 class smiles_perception_config:
     def __init__(
