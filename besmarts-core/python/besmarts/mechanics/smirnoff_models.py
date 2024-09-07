@@ -340,16 +340,9 @@ def chemical_model_electrostatics_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     # proc.topology_parameters[(0, i.name)] = {"s": i.name}
     # cm.topology_terms["s"].values[i.name] = [0.0]
 
-    # 13 scaling (on)
-    i = proc.smarts_hierarchies[0].index.node_add_below(None)
-    i.name = "s3"
-    i.type = "parameter"
-    i.category = [-1, pid, uid]
-    proc.smarts_hierarchies[0].smarts[i.index] = "[*:1]~[*]~[*:2]"
-    proc.topology_parameters[(0, i.name)] = {"s": i.name}
-    cm.topology_terms["s"].values[i.name] = [0.0]
-
     # 14 scaling (0.83)
+    # Put this before s3 because rings would match this first, when 1-3 is
+    # closer (think r5)
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "s4"
     i.type = "parameter"
@@ -359,54 +352,19 @@ def chemical_model_electrostatics_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     cm.topology_terms["s"].values[i.name] = [1 / 1.2]
     cm.procedures.append(proc)
 
+    # 13 scaling (on)
+    i = proc.smarts_hierarchies[0].index.node_add_below(None)
+    i.name = "s3"
+    i.type = "parameter"
+    i.category = [-1, pid, uid]
+    proc.smarts_hierarchies[0].smarts[i.index] = "[*:1]~[*]~[*:2]"
+    proc.topology_parameters[(0, i.name)] = {"s": i.name}
+    cm.topology_terms["s"].values[i.name] = [0.0]
+
     return cm
 
 def chemical_model_to_xml_dict(csys):
 
-    name_to_model = {
-        "Bonds": "Bonds",
-        "Angles": "Angles",
-        "Torsions": "ProperTorsion",
-        "OutOfPlanes": "ImproperTorsion",
-        "vdW": "vdW",
-        "LibraryCharges": "LibraryCharge",
-        "Constraints": "Constraint",
-        "ChargeIncrementModel": "ChargeIncrement"
-    }
-    model_to_parameter = {
-        "Bonds": "Bond",
-        "Angles": "Angle",
-        "ProperTorsions": "ProperTorsion",
-        "ImproperTorsions": "ImproperTorsion",
-        "vdW": "Atom",
-        "LibraryCharges": "LibraryCharge",
-        "Constraints": "Constraint",
-        "ChargeIncrementModel": "ChargeIncrement"
-    }
-    model_keys = {
-        "Bonds": ["smirks", "id", "k", "length"],
-        "Angles": ["smirks", "id", "k", "angle"],
-        "ProperTorsions": ["smirks", "id", "periodicity", "k", "phase"],
-        "ImproperTorsions": ["smirks", "id", "periodicity", "k", "phase"],
-        "vdW": ["smirks", "id", "epsilon", "sigma"],
-        "LibraryCharges": ["smirks", "id", "charge"],
-        "Constraints": ["smirks", "id", "c"],
-        "ChargeIncrementModel": ["smirks", "id", "charge"]
-    }
-    model_multi_parameter = {
-        "Bonds": False,
-        "Angles": False,
-        "ProperTorsions": True,
-        "ImproperTorsions": True,
-        "vdW": False,
-        "LibraryCharges": True,
-        "Constraints": True,
-        "ChargeIncrementModel": True
-    }
-
-    root_attrib = {
-        "version": "0.3", "aromaticity_model": "MDL"
-    }
     xml = {
         "SMIRNOFF": {
             "options": {"version":"0.3", "aromaticity_model":"MDL"},
@@ -433,8 +391,6 @@ def chemical_model_to_xml_dict(csys):
                 version="0.4",
                 potential="k*(1+cos(periodicity*theta-phase))",
                 default_idivf="auto",
-                fractional_bondorder_method="AM1-Wiberg",
-                fractional_bondorder_interpolation="linear"
             ),
             "parameters": []
         },
@@ -443,8 +399,6 @@ def chemical_model_to_xml_dict(csys):
                 version="0.3",
                 potential="k*(1+cos(periodicity*theta-phase))",
                 default_idivf="auto",
-                fractional_bondorder_method="AM1-Wiberg",
-                fractional_bondorder_interpolation="linear"
             ),
             "parameters": []
         },
@@ -575,7 +529,7 @@ def chemical_model_to_xml_dict(csys):
                 pvals["periodicity"+i] = str(int(n))
                 pvals["phase"+i] = str(p*180/math.pi) + units["dihedral_p"]
                 pvals["k"+i] = str(k) + units["dihedral_k"]
-                pvals["idiv"+i] = "1"
+                pvals["idivf"+i] = "1"
 
             xml["ProperTorsions"]["parameters"].append({"Proper": pvals})
 
@@ -730,6 +684,18 @@ def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     # proc.topology_parameters[(0, i.name)] = {"s": i.name}
     # cm.topology_terms["s"].values[i.name] = [0.0]
 
+    # 14 scaling (0.5)
+    # Put this before s3 because rings would match this first, when 1-3 is
+    # closer (think r5)
+    i = proc.smarts_hierarchies[0].index.node_add_below(None)
+    i.name = "s4"
+    i.type = "parameter"
+    i.category = [-1, pid, uid]
+    proc.smarts_hierarchies[0].smarts[i.index] = "[*:1]~[*]~[*]~[*:2]"
+    proc.topology_parameters[(0, i.name)] = {"s": i.name}
+    cm.topology_terms["s"].values[i.name] = [0.5]
+    cm.procedures.append(proc)
+
     # 13 scaling (on)
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "s3"
@@ -739,15 +705,6 @@ def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     proc.topology_parameters[(0, i.name)] = {"s": i.name}
     cm.topology_terms["s"].values[i.name] = [0.0]
 
-    # 14 scaling (0.5)
-    i = proc.smarts_hierarchies[0].index.node_add_below(None)
-    i.name = "s4"
-    i.type = "parameter"
-    i.category = [-1, pid, uid]
-    proc.smarts_hierarchies[0].smarts[i.index] = "[*:1]~[*]~[*]~[*:2]"
-    proc.topology_parameters[(0, i.name)] = {"s": i.name}
-    cm.topology_terms["s"].values[i.name] = [0.5]
-    cm.procedures.append(proc)
 
     return cm
 
