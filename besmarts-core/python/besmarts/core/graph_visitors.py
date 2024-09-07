@@ -218,10 +218,10 @@ class smiles_visitor(encoding_visitor):
 
         ret = []
         element = smarts.primitives[primitive_key.ELEMENT]
-        assert element.bits() == 1
+        # assert element.bits() == 1
 
         codec = self.primitive_codecs[primitive_key.ELEMENT]
-        element_smarts = [str(codec.decode_int(i)) for i in element.on()][0]
+        element_smarts = str(codec.decode_int(element.on_first()))
         element_smiles = element_tr[element_smarts]
 
         aromaticity = smarts.primitives.get(primitive_key.AROMATIC)
@@ -236,10 +236,7 @@ class smiles_visitor(encoding_visitor):
         hydrogen_smarts = ""
 
         if tag or (arr is not None and codec is not None):
-            hydrogen_smarts = [
-                "H" + str(codec.decode_int(i)) for i in arr.on()
-            ][0]
-
+            hydrogen_smarts = "H" + str(codec.decode_int(arr.on_first()))
         if hydrogen_smarts == "H1":
             hydrogen_smarts = "H"
 
@@ -251,15 +248,9 @@ class smiles_visitor(encoding_visitor):
         formal_charge_smarts = ""
         if formal_charge is not None:
             if not formal_charge[0]:
-                formal_charge_smarts = [
-                    j
-                    for j in (
-                        [
-                            self.primitive_codecs[name].decode_int(i)
-                            for i in formal_charge.on()
-                        ]
-                    )
-                ][0]
+                formal_charge_smarts = self.primitive_codecs[name].decode_int(
+                    formal_charge.on_first()
+                )
                 if formal_charge_smarts == -1:
                     formal_charge_smarts = "-"
                 elif formal_charge_smarts == 1:
@@ -306,7 +297,9 @@ class smiles_visitor(encoding_visitor):
         closures = {}
         joiner = ""
 
-        for edge in [edge for edge in self.ring_edges if idx in edge]:
+        for n, edge in enumerate([edge for edge in self.ring_edges ], 1):
+            if idx not in edge:
+                continue
             chem = self.ring_edges[edge][primitive_key.BOND_ORDER]
             bo = self.primitive_codecs[primitive_key.BOND_ORDER].encode_smiles(
                 chem
@@ -315,10 +308,10 @@ class smiles_visitor(encoding_visitor):
             if edge in self.ring_counter:
                 n = self.ring_counter[edge]
             elif self.ring_counter:
-                n = max(self.ring_counter.values()) + 1
+                # n = max(self.ring_counter.values()) + 1
                 self.ring_counter[edge] = n
             else:
-                n = 1
+                # n = 1
                 self.ring_counter[edge] = n
 
             closures[n] = bo
