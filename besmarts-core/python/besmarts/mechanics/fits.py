@@ -4684,7 +4684,7 @@ def reset(reset_config, csys, gdb, psystems=None, use_min_gradients=True, verbos
         reset_angle_l,
         reset_torsion_k
     ]):
-        return psystems
+        return returns.success(psystems)
 
     if ws:
         ws.reset()
