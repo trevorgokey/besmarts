@@ -685,6 +685,8 @@ def chemical_system_get_angle_means(csys, psystems, names=None) -> dict:
 
 def chemical_system_reset_angles(csys, psystems, names=None, skip=None) -> dict:
     kv = chemical_system_get_angle_means(csys, psystems, names=names)
+    if skip is None:
+        skip = []
     for k, v in kv.items():
         if k[2] not in skip:
             chemical_system_set_value(csys, k, v)
@@ -693,6 +695,8 @@ def chemical_system_reset_angles(csys, psystems, names=None, skip=None) -> dict:
 
 def chemical_system_reset_bond_lengths(csys, psystems, names=None, skip=None) -> dict:
     kv = chemical_system_get_bond_length_means(csys, psystems, names=names)
+    if skip is None:
+        skip = []
     for k, v in kv.items():
         if k[2] not in skip:
             chemical_system_set_value(csys, k, v)
