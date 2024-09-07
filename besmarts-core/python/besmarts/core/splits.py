@@ -836,7 +836,7 @@ def process_split_distributed(pack, shm=None):
 
     try:
         bit, mapping = pack[0]
-    except:
+    except Exception:
         pack = (pack,)
 
     bj = None
@@ -1006,7 +1006,7 @@ def process_split_difference_distributed(pack, T, S0, splitter, A, selections, i
 
     try:
         bit, mapping = pack[0]
-    except:
+    except Exception:
         pack = (pack,)
 
     makes_split = False
@@ -1042,7 +1042,7 @@ def process_split_difference_distributed(pack, T, S0, splitter, A, selections, i
         # print(f"4WORKER DIFFERENCE FOR A {hash(Sj)} SPLITS {makes_split}")
         return Tsj, shard, h, matches, makes_split
 
-    if S0 == Sj:
+    if graphs.graph_same(S0, Sj):
         # print(f"4WORKER DIFFERENCE FOR A {hash(Sj)} SPLITS {makes_split}")
         return None, shard, h, matches, makes_split
 
@@ -1085,7 +1085,7 @@ def process_split_intersect_distributed(pack, T, S0, splitter, A, selections, ic
 
     try:
         bit, mapping = pack[0]
-    except:
+    except Exception:
         pack = (pack,)
 
     makes_split = False
@@ -1118,7 +1118,7 @@ def process_split_intersect_distributed(pack, T, S0, splitter, A, selections, ic
         # print(f"4WORKER INTERSECT FOR A {hash(Sj)} SPLITS {makes_split}")
         return Tsj, shard, h, matches, makes_split
 
-    if S0 == Sj:
+    if graphs.graph_same(S0, Sj):
         return None, shard, h, matches, makes_split
 
     matches, makes_split = process_split_matches(Sj, A, selections, icd, False)
@@ -1460,7 +1460,13 @@ def split_subgraphs_distributed(
     # this should be encoded and whatnot before start
     # shm = shm_split_subgraphs(splitter, S0, A)
 
-    shm = {"splitter": splitter, "S0": S0, "G": G, "selections": selections, "icd": icd}
+    shm = {
+        "splitter": splitter,
+        "S0": S0,
+        "G": G,
+        "selections": selections,
+        "icd": icd
+    }
 
     # we need 1 for this main process, and the other for the workspace server
     nproc = max(1, configs.processors - 1)
@@ -1552,7 +1558,7 @@ def split_subgraphs_distributed(
         for i in range(min_bits, uptobits):
             n = offsets[i]
             these_results = compute.workspace_flush(
-                ws, set([x[0] for x in batch if x[0] < n]), timeout=0.0,
+                ws, set([x[0] for x in batch if x[0] < n]), timeout=0.1,
             )
             for idx, splits in sorted(
                 these_results.items(), key=lambda x: x[0]
@@ -1607,10 +1613,12 @@ def split_subgraphs_distributed(
 
                     if matches is None or len(matches) == 0:
                         # print(f"MATCHES IS {matches}")
+                        # print(f"CND SPLITS=O {sma}")
                         continue
 
                     if hashshard in visited:
                         # print(f"HASH DUP: {hashshard}")
+                        # print(f"{idx+1:5d} CND DUPLICATE {sma}")
                         continue
                     else:
                         # print(f"HASH NEW: {hashshard}")
@@ -1619,6 +1627,7 @@ def split_subgraphs_distributed(
                     sma = gcd.smarts_encode(Sj)
 
                     if sma in sma_visited:
+                        # print(f"{idx+1:5d} CND DUPLICATE {sma}")
                         continue
                     else:
                         sma_visited.add(sma) 
@@ -1640,8 +1649,9 @@ def split_subgraphs_distributed(
                             print("     ", f"{str(is_match):6s}", sma)
                         print()
 
-                    unique_split = matches not in matched
-                    if makes_split and ((not splitter.unique) or unique_split):
+                    makes_split_str = "Y" if makes_split else "N"
+                    print(f"{idx+1:5d} CND SPLITS={makes_split_str}  {sma}")
+                    if makes_split: #and ((not splitter.unique) or unique_split):
                         hits += 1
                         S.append(Tsj)
                         shards.append(shard)
@@ -1763,31 +1773,58 @@ def split_subgraphs_distributed(
         ws.close()
         ws = None
 
+        cnd_lines = {}
+
+        keep = []
+        all_S = S
+        all_shards = shards
+        all_matched = matched
+        kept = {}
+
         if splitter.unique:
-            
             indices = set(range(len(selections)))
             keep = {}
             # reverse because usually simplist patterns are first and
             # we want to prioritize those for the same match
-            for i, (Sj, bj, match) in enumerate(reversed(list(zip(S, shards, matched)))):
+            M = 0
+            N = 0
+            for i, (Sj, bj, match) in enumerate(reversed(list(zip(S, shards, matched))), 1):
 
                 unmatch = sorted(indices.difference(match))
-
-                key = match
+                N = len(unmatch)
+                M = len(match)
+                key = tuple(match)
+                if key not in kept:
+                    kept[key] = []
                 if splitter.unique_complements:
-                    if len(unmatch) < len(match):
+                    if N < M:
                         key = unmatch
                 key = tuple(key)
+
+                if key not in kept:
+                    kept[key] = []
 
                 if key in keep:
                     # prefer the one that matched the least
                     if splitter.unique_complements_prefer_min:
-                        if len(keep[key][2]) > len(match):
+                        if len(keep[key][2]) > M:
                             keep[key] = Sj, bj, match
-                    elif len(keep[key][2]) < len(match):
+                            kept[key].insert(0, i)
+                            # print("insert", i, key)
+                        else:
+                            kept[key].append(i)
+                            # print("append", i, key)
+                    elif len(keep[key][2]) < M:
                             keep[key] = Sj, bj, match
+                            kept[key].insert(0, i)
+                            # print("insert", i, key)
+                    else:
+                        kept[key].append(i)
+                        # print("append", i, key)
                 else:
                     keep[key] = Sj, bj, match
+                    kept[key].insert(0, i)
+                    # print("insert", i, key)
 
             S, shards, matched = [], [], []
 
@@ -1802,7 +1839,39 @@ def split_subgraphs_distributed(
                 end="\n",
             )
             hits = unique_hits
-            
+        if kept is not None:
+            sj = [*reversed(all_S)]
+            for key, ilst in kept.items():
+
+                if not ilst:
+                    continue
+
+                i = ilst[0]
+                match = [*reversed(all_matched)][i-1]
+                unmatch = sorted(indices.difference(match))
+                N = len(unmatch)
+                M = len(match)
+                sma = gcd.smarts_encode(sj[i-1].H)
+                line = f"{i:5d} HIT S0= {N:<5d} -> Sj= {M:<5d} {sma}"
+                print(line)
+                for i in ilst[1:]:
+                    sma = gcd.smarts_encode(sj[i-1].H)
+                    line = f"{i:5d}     DUP {sma}"
+                    print(line)
+        else:
+            for i, (Sj, bj, match) in enumerate(
+                reversed(list(zip(all_S, all_shards, all_matched))),
+                1
+            ):
+                key = match
+                unmatch = sorted(indices.difference(match))
+                N = len(unmatch)
+                M = len(match)
+                is_uniq = "X"
+                sma = gcd.smarts_encode(Sj.H)
+                line = f"{i:5d} HIT S0= {N:<5d} -> Sj= {M:<5d} UNIQUE={is_uniq} {sma}"
+                print(line)
+
     print(
         datetime.datetime.now(),
         f"Searching atoms done; data={len(selections)} hits={hits}",
