@@ -644,7 +644,7 @@ def smarts_clustering_optimize(
                     g = graphs.structure_remove_unselected(g)
                     # if g not in seen:
                     # seen_g.add(g)
-                    if seen_i < 100:
+                    if seen_i < (configs.match_print_limit or len(assn_s)+1):
                         print(
                             f"{seen_i:06d} {str(i):24s}",
                             objective.report([x]),
@@ -652,7 +652,7 @@ def smarts_clustering_optimize(
                         )
                         seen.add(g)
                 print()
-                if len(seen) < 2 and len(assn_s) < 100:
+                if len(seen) < 2 and len(assn_s) < (configs.match_print_limit or len(assn_s)+1):
                     print(f"Skipping {S.name} since all graphs are the same")
                     step_tracker[S.name] = strategy.cursor
                     continue
@@ -662,7 +662,7 @@ def smarts_clustering_optimize(
                     step_tracker[S.name] = strategy.cursor
                     continue
 
-                if len(seen) < 2 and len(assn_s) < 100:
+                if len(seen) < 2 and len(assn_s) < (configs.match_print_limit or len(assn_s)+1):
                     print(f"Skipping {S.name} since all graphs are the same")
                     step_tracker[S.name] = strategy.cursor
                     continue
@@ -1915,3 +1915,62 @@ def clustering_insert_split_candidates(
             )
 
     return pq, candidates
+
+
+def smarts_filter_data(
+    gcd: codecs.graph_codec,
+    labeler: assignments.smarts_hierarchy_assignment,
+    sag: assignments.smiles_assignment_group,
+    hierarchy: hierarchies.smarts_hierarchy,
+    bounds: Dict[str, Tuple[float, float]]
+) -> List[int]:
+    smiles = [a.smiles for a in sag.assignments]
+
+    lbl_assn = labeler.assign(hierarchy, gcd, smiles, sag.topology)
+
+    keep = []
+    for i, (mol, lbls) in enumerate(zip(sag.assignments, lbl_assn.assignments)):
+        valid = True
+        for ic, r in mol.selections.items():
+            lbl = lbls.selections.get(ic)
+            if lbl is None:
+                print(f"Warning, bond {ic} was not assigned a label")
+                continue
+            R = bounds.get(lbl)
+            if R is None:
+                print(f"Warning, cutoff for {lbl} was not provided")
+                continue
+            sma = gcd.smarts_encode(
+                graphs.structure_remove_unselected(graphs.graph_to_structure(
+                    mol.graph, ic, sag.topology
+                ))
+            )
+
+            lR, rR = R
+            status = "filter:"
+            if (
+                (rR is not None and r[0] >= rR) or
+                (lR is not None and r[0] <= lR)
+            ):
+                valid = False
+            else:
+                status = "keep:  "
+
+            print(
+                status, i, ic, r, R, lbl, sma
+            )
+        if valid:
+            keep.append(i)
+
+    return keep
+
+def smarts_filter_bond_lengths(
+    gcd: codecs.graph_codec,
+    labeler: assignments.smarts_hierarchy_assignment,
+    sag: assignments.smiles_assignment_group,
+    hierarchy: hierarchies.smarts_hierarchy,
+    cutoffs: Dict[str, float]
+) -> List[int]:
+
+    bounds = {k: [0, v] for k, v in cutoffs.items()}
+    return smarts_filter_data(gcd, labeler, sag, hierarchy, bounds)
