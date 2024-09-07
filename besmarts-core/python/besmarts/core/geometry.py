@@ -136,6 +136,8 @@ def jacobian_angle(xyz1, xyz2, xyz3):
         v, v_norm =  basis(b, c)
         w =  array_cross(u, v)
         w_norm = sum([x**2 for x in w])**.5
+        if w_norm < 1e-9:
+            w_norm = 1.0
         w = array_scale(w, 1/w_norm)
 
         # w = w_prime / np.linalg.norm(w_prime)
