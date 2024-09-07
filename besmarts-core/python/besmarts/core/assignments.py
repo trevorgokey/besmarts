@@ -565,6 +565,10 @@ def smiles_assignment_group_outofplanes(assignments: List[smiles_assignment]):
     return smiles_assignment_group(assignments, topology.outofplane_topology())
 
 
+def smiles_assignment_group_pairs(assignments: List[smiles_assignment]):
+    return smiles_assignment_group(assignments, topology.pair_topology())
+
+
 def structure_assignment_group_copy(stuag: structure_assignment_group):
     assignments = [graph_assignment_copy(x) for x in stuag.assignments]
     topo = stuag.topology
