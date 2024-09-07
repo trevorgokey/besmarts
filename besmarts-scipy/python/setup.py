@@ -17,6 +17,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     packages=[
         'besmarts',
+        'besmarts.core',
         'besmarts.mechanics',
     ],
     install_requires=requirements,
