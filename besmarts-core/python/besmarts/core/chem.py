@@ -124,7 +124,13 @@ class bechem:
         return self & ans
 
     def __eq__(self, o) -> bool:
-        return hash(self) == hash(o)
+        """
+        We can't use hashes here because hash(-1) == hash(-2), so ~0b0 == ~0b1
+        """
+        return all([
+            o.primitives[name] == self.primitives[name]
+            for name in self.select
+        ])
 
     def __lt__(self, o) -> bool:
         a, b = bechem_reduce_longest(self, o)
@@ -143,7 +149,13 @@ class bechem:
         return a >= b
 
     def __ne__(self, o) -> bool:
-        return not self == o
+        """
+        We can't use hashes here because hash(-1) == hash(-2), so ~0b0 == ~0b1
+        """
+        return any([
+            o.primitives[name] != self.primitives[name]
+            for name in self.select
+        ])
 
     def bits(self, maxbits=False) -> int:
         return bechem_bits(self, maxbits=maxbits)
