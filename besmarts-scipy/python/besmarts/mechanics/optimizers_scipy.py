@@ -283,7 +283,7 @@ def objective_gradient_gdb(
         chunk = {}
         batches_cum_sum += len(obj)
         # for idx, (i, x) in enumerate(obj, 1 + objbatchsize*(obsz-1)):
-        for idx, (i, x) in enumerate(obj, batches_cum_sum - len(obj)):
+        for idx, (i, x) in enumerate(obj, batches_cum_sum - len(obj) + 1):
             psys = None
             if psysref:
                 psys = psysref[x.addr.eid[0]]
