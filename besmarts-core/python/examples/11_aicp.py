@@ -273,7 +273,7 @@ def configure_objectives(opt_mols):
                 assignments.graph_db_address(
                     eid=[eid],
                 ),
-                scale=1e-9,
+                scale=1e-7,
                 include=True
         )
         objs[len(objs)] = o
