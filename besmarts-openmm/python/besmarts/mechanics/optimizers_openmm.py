@@ -67,7 +67,7 @@ def physical_system_to_openmm_system(psys):
     res = topo.addResidue("MOL", chain)
 
     for i, j in sorted(atom_map.items(), key=lambda x: x[1]):
-        n = pos.graph.nodes[i].primitives['element'].on()[0]
+        n = pos.graph.nodes[i].primitives['element'].on_first()
         elem = openmm.app.element.Element.getByAtomicNumber(n)
         topo.addAtom(str(n), elem, res, id=j)
 
@@ -463,13 +463,17 @@ def assign_scales_lj(psys, atom_map, frc):
 
     return frc, id_map
 
-def molecular_dynamics(psys, ts, steps):
+def molecular_dynamics(psys, ts, steps, temperature=278.15):
 
     pos = psys.models[0].positions[0]
     sim = physical_system_to_openmm_system(psys)
 
     # integ = openmm.openmm.VerletIntegrator(ts)
-    integ = openmm.openmm.LangevinMiddleIntegrator(300, 1.0, ts)
+    print("Temp: ", temperature)
+    print("Timestep: ", ts)
+    print("Steps: ", steps)
+
+    integ = openmm.openmm.LangevinMiddleIntegrator(temperature, 1.0, ts)
     platform = openmm.openmm.Platform.getPlatform(0)
 
     sim = openmm.app.simulation.Simulation(sim.topology, sim.system, integ, platform)
@@ -480,7 +484,8 @@ def molecular_dynamics(psys, ts, steps):
         xyz.append(arrays.array_scale(pos.selections[j,][0], 0.1))
     ctx.setPositions(xyz)
 
-    sim.reporters.append(openmm.app.PDBReporter('output.pdb', 1))
+    pdbreport = openmm.app.PDBReporter('output.pdb', 1)
+    sim.reporters.append(pdbreport)
     sim.reporters.append(openmm.app.StateDataReporter(sys.stdout, 1, step=True,
         potentialEnergy=True, temperature=True))
 

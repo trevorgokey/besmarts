@@ -1707,7 +1707,6 @@ def split_subgraphs_distributed(
             ip = "127.0.0.1"
             nproc = len(iterable)
 
-
         ws = compute.workqueue_new_workspace(
             wq, (ip, port), shm=shm, nproc=nproc
         )
@@ -1734,7 +1733,7 @@ def split_subgraphs_distributed(
                 # a worker. Try to make this about the number of processors per
                 # remote compute worker. This will make a single queue get to
                 # saturate the worker
-                for chunk in arrays.batched(unfinished, 200):
+                for chunk in arrays.batched(unfinished, 40):
                     tasks = {}
                     for (idx, i), (T, x) in chunk:
                         tasks[(idx, i)] = (

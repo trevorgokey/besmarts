@@ -404,6 +404,7 @@ def smarts_clustering_optimize(
         print()
             
             
+        compute.workqueue_remove_workspace(wq, ws)
         ws.close()
         #threading.Thread(target=ws.close).start()
         ws = None
@@ -1024,6 +1025,7 @@ def smarts_clustering_optimize(
                 len(iterable),
                 verbose=True
             )
+            compute.workqueue_remove_workspace(wq, ws)
             ws.close()
             ws = None
 

@@ -122,12 +122,15 @@ class Connection(connection.Connection):
 
     def _send(self, buf, write=_write):
         remaining = len(buf)
-        while True:
-            n = write(self._handle, buf)
-            remaining -= n
-            if remaining == 0:
-                break
-            buf = buf[n:]
+        try:
+            while True:
+                n = write(self._handle, buf)
+                remaining -= n
+                if remaining == 0:
+                    break
+                buf = buf[n:]
+        except BrokenPipeError:
+            sys.exit(-1)
 
     def _recv(self, size, read=_read):
         buf = io.BytesIO()
@@ -407,7 +410,7 @@ class Server(managers.Server):
         process.current_process()._manager_server = self
         try:
             # self.accepter()
-            accepter = threading.Thread(target=self.accepter, name="listener")
+            accepter = threading.Thread(target=self.accepter)
             accepter.daemon = True
             accepter.start()
             try:
@@ -426,7 +429,7 @@ class Server(managers.Server):
         dprint("ACCEPTING CONNECTIONS")
         # pool = ThreadPool(32)
         # with ThreadPool(32) as pool:
-        thread_name_set("listener")
+        thread_name_set(f"listener_{self.address[1]}")
         recvs = {}
         sends = {}
         procs = {}
@@ -1737,8 +1740,8 @@ class workspace_local(workspace):
 
         self.start()
 
-        if configs.compute_verbosity > 0:
-            print(f"Started local workspace on {self.mgr.address} procs={self.nproc} tasks={self.ntasks}")
+        # if configs.compute_verbosity > 0 and self.mgr.address[0] != '127.0.0.1':
+        print(f"Started local workspace on {self.mgr.address} procs={self.nproc} tasks={self.ntasks}")
 
         register_workspace(self)
 
@@ -1920,6 +1923,7 @@ class workspace_local(workspace):
             unregister_pool(self.pool)
             self.pool.close()
             self.pool.terminate()
+            self.pool.join()
             for p in self.pool._pool:
                 if p.pid is not None:
                     try:
@@ -1950,13 +1954,22 @@ class workspace_local(workspace):
                 self.run_thread.join()
                 self.run_thread = None
 
+            self.clear_iqueue()
+            self.clear_oqueue()
+
             if self.mgr is not None and self.mgr._state.value == 1:
                 self.mgr.shutdown()
-                if self.mgr._process.pid is not None:
-                    try:
-                        os.kill(self.mgr._process.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
+                self.mgr.join()
+                # if self.mgr._process.pid is not None:
+                #     try:
+                #         os.kill(self.mgr._process.pid, signal.SIGKILL)
+                #     except ProcessLookupError:
+                #         pass
+            self.iqueue.queue.clear()
+            self.oqueue.queue.clear()
+            self.holding.clear()
+            self.holding_remote.clear()
+
             self.remote_iqueue = None
             self.remote_oqueue = None
         except BrokenPipeError:
@@ -2786,7 +2799,13 @@ def workspace_submit_and_flush(
     return results
 
 
-def workspace_flush(ws: workspace_local, indices, timeout: float = TIMEOUT, maxwait=None, verbose=True):
+def workspace_flush(
+    ws: workspace_local,
+    indices,
+    timeout: float = TIMEOUT,
+    maxwait=None,
+    verbose=True
+):
     if len(indices) == 0:
         return {}
     results = {}
@@ -3008,7 +3027,7 @@ def workqueue_new_workspace(
 def workqueue_remove_workspace(wq: workqueue_local, ws: workspace_local):
     address = ws.mgr.address
 
-    print(f"Removing workspace {address}")
+    #print(f"Removing workspace {address}")
     for addr, t in list(wq.threads.items()):
         if len(addr) == 1:
             continue
