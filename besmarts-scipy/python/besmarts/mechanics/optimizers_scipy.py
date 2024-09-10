@@ -437,7 +437,7 @@ def objective_gradient_gdb(
                             out.extend(retout)
 
                     grad_keys = []
-            if verbose:
+            if verbose and async_compute:
                 print(
                     f"\r{logs.timestamp()}",
                     f"{obsz:10d}/{n_objbatches:<10d}",
