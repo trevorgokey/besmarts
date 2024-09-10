@@ -9,6 +9,5 @@ Subpackages
 .. toctree::
    :maxdepth: 3
 
-   besmarts.assign
-   besmarts.codecs
-   besmarts.perception
+   besmarts.core
+   besmarts.mechanics

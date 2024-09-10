@@ -1,11 +1,13 @@
 besmarts namespace
 ==================
 
+.. py:module:: besmarts
+
 Subpackages
 -----------
 
 .. toctree::
-   :maxdepth: 4
+   :maxdepth: 3
 
    besmarts.assign
    besmarts.cluster
@@ -17,6 +19,8 @@ Submodules
 ----------
 
 .. toctree::
-   :maxdepth: 4
+   :maxdepth: 3
 
+   besmarts.sample
+   besmarts.smiles
    besmarts.worker

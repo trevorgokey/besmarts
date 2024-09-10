@@ -48,4 +48,11 @@ with `am1bcc` using the `sqm` program from `ambertools` suite. Consequently,
 make sure `sqm` is in your `PATH` by installing via `conda` (`conda install
 -c conda-forge ambertools`) or by other means.
 
+Basic OpenMM acceleration for minimizations, gradients, and energies (and by
+extension Hessians) is also available and can be installed via the
+`besmarts-openmm` subpackage:
 
+.. code-block:: bash
+
+    cd besmarts-git/besmarts-openmm/python
+    python -m pip install .

@@ -3,8 +3,6 @@ Package Contents
 ================
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 3
 
-   bes/besmarts.rst
-   besmarts-rdkit/modules.rst
-   besmarts-scipy/modules.rst
+   besmarts/modules.rst

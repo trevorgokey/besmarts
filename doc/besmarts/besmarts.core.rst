@@ -1,11 +1,13 @@
 besmarts.core namespace
 =======================
 
+.. py:module:: besmarts.core
+
 Submodules
 ----------
 
 .. toctree::
-   :maxdepth: 4
+   :maxdepth: 3
 
    besmarts.core.arrays
    besmarts.core.assignments
@@ -25,10 +27,11 @@ Submodules
    besmarts.core.optimization
    besmarts.core.perception
    besmarts.core.primitives
+   besmarts.core.resolve
    besmarts.core.returns
+   besmarts.core.rulesets
    besmarts.core.splits
    besmarts.core.topology
    besmarts.core.tree_iterators
-   besmarts.core.tree_merge
    besmarts.core.tree_visitors
    besmarts.core.trees

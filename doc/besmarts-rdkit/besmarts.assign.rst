@@ -9,4 +9,4 @@ Submodules
 .. toctree::
    :maxdepth: 3
 
-   besmarts.assign.hierarchy_assign_native
+   besmarts.assign.hierarchy_assign_rdkit
