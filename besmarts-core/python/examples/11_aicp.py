@@ -254,6 +254,7 @@ def configure_objectives(opt_mols):
         )
         o.batch_size = 1
         o.method_vib_modes = "qm"
+        o.verbose = 2
         objs[len(objs)] = o
 
     for eid in opt_mols:
@@ -266,16 +267,18 @@ def configure_objectives(opt_mols):
         o.step_limit = 1
         o.batch_size = 1
         o.tol = 1e-4
+        o.verbose = 2
         objs[len(objs)] = o
 
     for eid in opt_mols:
         o = fits.objective_config_gradient(
-                assignments.graph_db_address(
-                    eid=[eid],
-                ),
-                scale=1e-7,
-                include=True
+            assignments.graph_db_address(
+                eid=[eid],
+            ),
+            scale=1e-7,
+            include=True
         )
+        o.verbose = 2
         objs[len(objs)] = o
 
     return objs
