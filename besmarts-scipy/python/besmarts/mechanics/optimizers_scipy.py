@@ -736,7 +736,7 @@ def objective_gdb(
 
     n_finished = 0
 
-    chunksize = 20*10  # aim for about the expected size of workers
+    chunksize = 20  # aim for about the expected size of workers
 
     objbatchsize = 5000 if len(objlst) > 5000 else len(objlst)
     if objbatchsize < len(objlst):
