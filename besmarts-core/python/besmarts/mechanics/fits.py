@@ -1425,7 +1425,7 @@ def objective_tier_run(
     shm = {"csys": csys}
     if wq and configs.remote_compute_enable:
         ws = compute.workqueue_new_workspace(wq, address=None, shm=shm)
-    elif configs.processors > 1 and len(ot.objectives) > 5:
+    elif configs.processors > 1:
         addr = ('127.0.0.1', 0)
         ws = compute.workspace_local(*addr, shm=shm)
 
@@ -5794,7 +5794,7 @@ def process_tiers(
                 r = calc_tier_distributed(*v[0], **v[1], shm=shm)
                 work[k] = r
         # elif len(tier.objectives) < 500 and len(candidates) > 1 and configs.remote_compute_enable:
-        elif configs.remote_compute_enable:
+        elif configs.processors > 1 or configs.remote_compute_enable:
             print(logs.timestamp(), f"Each worker will compute a full candidate N={len(iterable)}")
             ws = compute.workqueue_new_workspace(wq, address=addr, nproc=procs, shm=shm)
             # # this modifies the csys, relabels and computes objective
