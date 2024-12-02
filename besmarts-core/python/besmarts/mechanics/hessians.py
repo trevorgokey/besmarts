@@ -67,9 +67,13 @@ def transform(B):
 
     # w = []
 
+    c = 0.99
+    s = 0
+    N = sum(u)
     ginv = np.zeros_like(G)
     for ui, vi in zip(u[::-1], v.T[::-1]):
-        if ui > 1e-11:
+        s += ui
+        if s/N < c:
             # w.append(vi)
             # ginv += np.outer(vi/ui,vi)
             vv = np.outer(vi/ui, vi)
@@ -264,8 +268,8 @@ def hessian_project_onto_ics(
 
     sym = list(sym.values())
     remove1_3 = True
-    torsions = False
-    outofplanes = False
+    torsions = True
+    outofplanes = True
     pairs = False
 
     hess_qm_freq, hess_qm_modes = vibration.hessian_modes(
@@ -317,7 +321,7 @@ def hessian_project_onto_ics(
     return assignments.graph_assignment(pos.smiles, ic_qm_fcs, pos.graph)
 
 
-def hessian_frequencies(g, hess_mm, grad_mm, DL, ics, B, B2):
+def hessian_transform(g, hess_mm, grad_mm, DL, ics, B, B2):
 
     sym = graphs.graph_symbols(g)
     mass = np.array([[vibration.mass_table[sym[n]]]*3 for n in sym])
@@ -341,8 +345,15 @@ def hessian_frequencies(g, hess_mm, grad_mm, DL, ics, B, B2):
     #                     hgx[3*a + i][3*b + j] += ic_grad[ic] * b2ab
 
     hess_mm_au = vibration.hessian_transform_mass_weighted(hess_mm - hgx, mass)
-    hess_mm_freq = np.diag(np.dot(np.dot(DL.T, hess_mm_au), DL))
+    hess_mm_freq = np.dot(np.dot(DL.T, hess_mm_au), DL)
     hess_mm_freq = vibration.converteig(hess_mm_freq)
     hess_mm_freq = np.round(hess_mm_freq, PRECISION)
 
     return hess_mm_freq
+
+
+def hessian_frequencies(g, hess_mm, grad_mm, DL, ics, B, B2):
+
+    return np.diag(hessian_transform(g, hess_mm, grad_mm, DL, ics, B, B2))
+
+
