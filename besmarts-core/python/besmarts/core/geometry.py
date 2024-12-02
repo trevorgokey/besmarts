@@ -585,18 +585,24 @@ def jacobian2_torsion_term_reduce(coef, terms):
         x = array_add(array_scale(term, a), x)
     return x
 
+
 def measure_angle(xyz1, xyz2, xyz3):
     result = []
-    for (x0,y0,z0), (x1,y1,z1), (x2,y2,z2) in zip(xyz1, xyz2, xyz3):
-        rr10 = (x0 - x1),  (y0 - y1), (z0 - z1)
+    for (x0, y0, z0), (x1, y1, z1), (x2, y2, z2) in zip(xyz1, xyz2, xyz3):
+        rr10 = (x0 - x1), (y0 - y1), (z0 - z1)
         r10 = sum([x**2 for x in rr10])**.5
-        rr10 = [x/r10 for x in rr10]
 
         rr12 = (x2 - x1),  (y2 - y1), (z2 - z1)
         r12 = sum([x**2 for x in rr12])**.5
+
+        if r10 == 0.0 or r12 == 0.0:
+            result.append([0.0])
+            continue
+
+        rr10 = [x/r10 for x in rr10]
         rr12 = [x/r12 for x in rr12]
 
-        proj = sum([a*b for a,b in zip(rr10, rr12)])
+        proj = sum([a*b for a, b in zip(rr10, rr12)])
 
         if proj >= 1.0:
             theta = 0.0

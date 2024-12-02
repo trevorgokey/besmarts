@@ -2066,6 +2066,7 @@ def union_list_distributed(
                 len(iterable),
                 verbose=True
             )
+            compute.workqueue_remove_workspace(wq, ws)
             ws.close()
             work = list(work.values())
         else:

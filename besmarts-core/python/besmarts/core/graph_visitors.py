@@ -235,13 +235,14 @@ class smiles_visitor(encoding_visitor):
         codec = self.primitive_codecs.get(name)
         hydrogen_smarts = ""
 
-        if tag or (arr is not None and codec is not None):
-            hydrogen_smarts = "H" + str(codec.decode_int(arr.on_first()))
-        if hydrogen_smarts == "H1":
-            hydrogen_smarts = "H"
+        # if tag or (arr is not None and codec is not None):
+        #     hydrogen_smarts = "H" + str(codec.decode_int(arr.on_first()))
+        # if hydrogen_smarts == "H1":
+        #     hydrogen_smarts = "H"
 
-        if hydrogen_smarts == "H0":
-            hydrogen_smarts = ""
+        # if hydrogen_smarts == "H0":
+        #     hydrogen_smarts = ""
+        # hydrogen_smarts = ""
 
         name = primitive_key.FORMAL_CHARGE
         formal_charge = smarts.primitives.get(name)

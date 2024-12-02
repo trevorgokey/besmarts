@@ -2673,5 +2673,5 @@ def graph_complexity(g: graph, scale=1.0, offset=0.0):
     # C = len(g.nodes) + graphs.graph_bits_max(g) / graphs.graph_bits(g)  / len(g.nodes) / 100
     # return scale*C + offset
 
-    C = graph_bits(g) / len(g.nodes)
+    C = graph_bits(g) / (len(g.nodes) + len(g.edges))
     return C

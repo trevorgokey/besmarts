@@ -237,6 +237,7 @@ def optimization_strategy_repeat_step(oi):
 def optimization_iteration_is_done(oi):
     return (not oi.repeat) and oi.cursor >= len(oi.steps)
 
+
 def optimization_iteration_next(oi) -> optimization_step:
 
     if oi.repeat and oi.cursor > 0:
@@ -252,7 +253,7 @@ def optimization_iteration_next(oi) -> optimization_step:
 
     return step
 
-    
+
 def optimization_strategy_iteration_next(
     oi: optimization_strategy, clusters: List[trees.tree_node]
 ) -> optimization_iteration:
@@ -348,7 +349,7 @@ def optimization_strategy_build_macro_iterations(strat: optimization_strategy):
                             bits,
                             bits,
                             0,
-                            branches,
+                            min(bits, bounds.branch_limit),
                             branch_d,
                             branch_d,
                             strat.bounds.splitter.unique,

@@ -538,7 +538,19 @@ def chemical_system_set_value(csys, key, value):
 
     if len(key) == 4:
         m, t, l, i = key
-        csys.models[m].topology_terms[t].values[l][i] = value
+        if t not in csys.models[m].topology_terms:
+            raise IndexError(f"chemical_system_set_value: {t} not present")
+        if l not in csys.models[m].topology_terms[t].values:
+            raise IndexError(f"chemical_system_set_value: {l} not present")
+        N = len(csys.models[m].topology_terms[t].values[l])
+        if i < N:
+            csys.models[m].topology_terms[t].values[l][i] = value
+        else:
+            print(f"Warning: chemical_system_set_value: index {i} not present. Adding")
+            if csys.models[m].topology_terms[t].values[l] is None:
+                csys.models[m].topology_terms[t].values[l] = []
+            to_add = list([None]*(i-N)) + [value]
+            csys.models[m].topology_terms[t].values[l].extend(to_add)
 
     elif len(key) == 3:
         m, t, i = key
@@ -562,10 +574,14 @@ def physical_system_set_value(psys: physical_system, key, value):
         assert False
 
 
-def chemical_system_get_value(csys, key):
+def chemical_system_get_value(csys, key, missing=None):
     if len(key) == 4:
         m, t, l, i = key
-        return csys.models[m].topology_terms[t].values[l][i]
+        try:
+            v = csys.models[m].topology_terms[t].values[l][i]
+            return v
+        except IndexError:
+            return missing
     elif len(key) == 3:
         m, t, i = key
         return csys.models[m].system_terms[t].values[i]
@@ -769,7 +785,8 @@ def chemical_system_smarts_complexity(csys: chemical_system, B=1.0, C=1.0):
                     continue
                 cm = chemical_system_get_node_model(csys, node)
                 if cm.symbol in "IT":
-                    t = sum(cm.topology_terms['n'].values[node.name])
+                    t = sum([2 for x in cm.topology_terms['n'].values[node.name] if x < 4])
+                    t += sum([x*x for x in cm.topology_terms['n'].values[node.name] if x > 3])
                 elif cm.symbol in "ABN":
                     t = 2
                 elif cm.symbol in "Q":
@@ -787,22 +804,26 @@ def chemical_system_smarts_complexity(csys: chemical_system, B=1.0, C=1.0):
                             # e.g. recursive smarts
                             continue
                         hidx.subgraphs[node.index] = g
-                        c = graphs.graph_complexity(g, scale=.01, offset=-M*.01)
+                        c = graphs.graph_complexity(g, scale=.01)
                         C0.append(c)
                         atoms += len(g.nodes)
                         parameters += 1
                         terms += t
                 elif type(g) is not str:
-                    c = graphs.graph_complexity(g, scale=.01, offset=-M*.01)
+                    c = graphs.graph_complexity(g, scale=.01)
                     C0.append(c)
-                    atoms += len(g.nodes)
+                    # atoms += len(g.nodes) - M
                     parameters += 1
                     terms += t
 
-    CX = sum(C0)/len(C0)*B
-    CY = atoms*C
+    # this is average (average bits per atom) of
+    BX = sum(C0)/len(C0)
+    # this is the scaled number of all atoms
+    # CY = atoms*C
 
-    return terms - (CX - CY) / parameters
+    c = terms * BX / 1000 * C
+    # print(f"{c=} {terms=} {BX=} {parameters=}")
+    return c
 
 
 def chemical_system_print(csys, show_parameters=None):

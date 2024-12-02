@@ -449,7 +449,7 @@ def split_partition(
 
         winner = False
         this_lhs_nummoves = len(lhs_removeA) + len(lhs_removeB)
-        if (lhs_nummoves == 0) and lhs:
+        if (this_lhs_nummoves == 0) and lhs:
             relabel = {x: i for i, x in enumerate(lhs.select, 1)}
             for i, x in enumerate(lhs.nodes, len(lhs.select) + 1):
                 if x not in lhs.select:
@@ -463,7 +463,7 @@ def split_partition(
             winner = True
             lhs_nummoves = this_lhs_nummoves
         this_rhs_nummoves = len(rhs_removeA) + len(rhs_removeB)
-        if (rhs_nummoves == 0) and rhs:
+        if (this_rhs_nummoves == 0) and rhs:
             relabel = {x: i for i, x in enumerate(rhs.select, 1)}
             for i, x in enumerate(rhs.nodes, len(rhs.select) + 1):
                 if x not in rhs.select:
@@ -479,10 +479,15 @@ def split_partition(
         if winner:
             break
 
-        lhs_better = lhs and this_lhs_nummoves < lhs_nummoves
-        rhs_better = rhs and this_rhs_nummoves < rhs_nummoves
-        first = (bestlhs is None and bestrhs is None) and (lhs or rhs)
-        if first or lhs_better:
+        lhs_better = bool(lhs and this_lhs_nummoves <= lhs_nummoves)
+        rhs_better = bool(rhs and this_rhs_nummoves <= rhs_nummoves)
+        if lhs_better and rhs_better:
+            if lhs_nummoves <= rhs_nummoves:
+                rhs_better = False
+            else:
+                lhs_better = False
+        first = bool((bestlhs is None and bestrhs is None) and (lhs or rhs))
+        if lhs and (first or lhs_better):
             relabel = {x: i for i, x in enumerate(lhs.select, 1)}
             for i, x in enumerate(lhs.nodes, len(lhs.select) + 1):
                 if x not in lhs.select:
@@ -491,10 +496,16 @@ def split_partition(
             if gcd:
                 print("BESTLHS: ", gcd.smarts_encode(lhs))
             bestlhs = graphs.structure_copy(lhs)
+
             best_lhs_removeA = lhs_removeA
             best_lhs_removeB = lhs_removeB
+
+            best_rhs_removeA = rhs_removeA
+            best_rhs_removeB = rhs_removeB
             lhs_nummoves = this_lhs_nummoves
-        if first or rhs_better:
+            rhs_nummoves = this_rhs_nummoves
+
+        if rhs and (first or rhs_better):
             relabel = {x: i for i, x in enumerate(rhs.select, 1)}
             for i, x in enumerate(rhs.nodes, len(rhs.select) + 1):
                 if x not in rhs.select:
@@ -503,8 +514,12 @@ def split_partition(
             if gcd:
                 print("BESTRHS: ", gcd.smarts_encode(rhs))
             bestrhs = graphs.structure_copy(rhs)
+
+            best_lhs_removeA = lhs_removeA
+            best_lhs_removeB = lhs_removeB
             best_rhs_removeA = rhs_removeA
             best_rhs_removeB = rhs_removeB
+            lhs_nummoves = this_lhs_nummoves
             rhs_nummoves = this_rhs_nummoves
 
     return success(
@@ -1509,22 +1524,25 @@ def split_subgraphs_distributed(
     k = 0
     n = 0
     chunksize = nproc
-    while len(completed) < len(iterable):
+    while len(iterable):
         Bn = n_ops * (
             math.factorial(len(single_bits))
             // (math.factorial(len(single_bits) - i) * math.factorial(i))
         )
 
-
-        unfinished = {
-            idx: unit
-            for idx, unit in iterable.items()
-            if idx not in completed
-        }
-        for batch in arrays.batched(unfinished.items(), 100000):
-            for chunk in arrays.batched(batch, 20):
+        # unfinished = {
+        #     idx: unit
+        #     for idx, unit in iterable.items()
+        #     if idx not in completed
+        # }
+        # clear the queue
+        compute.workspace_submit_and_flush(ws, None, {})
+        for batch in arrays.batched(list(iterable.items()), 1000000):
+            ids = set()
+            for chunk in arrays.batched(batch, 2000):
                 tasks = {}
                 for idx, unit in chunk:
+                    ids.add(idx)
                     if idx % n_ops:
                         if splitter.split_specific:
                             tasks[idx] = (
@@ -1554,119 +1572,129 @@ def split_subgraphs_distributed(
 
                 compute.workspace_local_submit(ws, tasks)
 
-        k = 0
-        for i in range(min_bits, uptobits):
-            n = offsets[i]
+            k = 0
             these_results = compute.workspace_flush(
-                ws, set([x[0] for x in batch if x[0] < n]), timeout=0.1,
+                ws, ids, timeout=.1
             )
-            for idx, splits in sorted(
-                these_results.items(), key=lambda x: x[0]
-            ):
-                if idx not in completed:
-                    completed.add(idx)
-                    all_completed += 1
+            while these_results:
+                for i in range(min_bits, uptobits):
+                    n = offsets[i]
+                    n0 = 0
+                    if i > min_bits:
+                        n0 = offsets[i-1]
+                    for idx, splits in sorted(
+                        these_results.items(), key=lambda x: x[0]
+                    ):
 
-                for j, unit in enumerate(splits):
-                    matches = None
-                    shard = None
-                    Tsj = None
 
-                    if unit is not None:
-                        Tsj, shard, hashshard, matches, makes_split = unit
-                    else:
-                        # print(f"unit IS NONE")
-                        continue
+                        if idx >= n or idx < n0:
+                            continue
 
-                    # if jj + j == clen * ci + len(work) and j == len(splits):
-                    progress = int(len([x for x in completed if x < n]) / Bn * 10)
-                    report_number = progress
-                    if (verbose and debug) and (report_number not in updates):
-                        updates.add(report_number)
-                        print(
-                            datetime.datetime.now(),
-                            f"Searching atoms={len(shard.nodes)}"
-                            f" data={len(selections)}"
-                            f" bit_depth={i}/{uptobits-1}"
-                            f" b_j={all_completed}/{Bn}"
-                            f" hits={hits}            ",
-                            end="\n",
-                        )
+                        if idx in iterable:
+                            iterable.pop(idx)
+                            these_results.pop(idx)
+                            all_completed += 1
 
-                    if Tsj is None:
-                        # print(f"Tsj IS NONE")
-                        continue
+                        for j, unit in enumerate(splits):
+                            matches = None
+                            shard = None
+                            Tsj = None
 
-                    Sj = Tsj.H
+                            if unit is not None:
+                                Tsj, shard, hashshard, matches, makes_split = unit
+                            else:
+                                # print(f"unit IS NONE")
+                                continue
 
-                    if verbose and debug:
-                        print(
-                            "S0 =>",
-                            gcd.smarts_encode(Tsj.G),
-                            "\nSj =>",
-                            gcd.smarts_encode(Sj),
-                            "\nbj =>",
-                            gcd.smarts_encode(shard),
-                            makes_split,
-                            hashshard,
-                        )
+                            # if jj + j == clen * ci + len(work) and j == len(splits):
+                            progress = int(len([x for x in completed if x < n]) / Bn * 10)
+                            report_number = progress
+                            if (verbose and debug) and (report_number not in updates):
+                                updates.add(report_number)
+                                print(
+                                    datetime.datetime.now(),
+                                    f"Searching atoms={len(shard.nodes)}"
+                                    f" data={len(selections)}"
+                                    f" bit_depth={i}/{uptobits-1}"
+                                    f" b_j={all_completed}/{Bn}"
+                                    f" hits={hits}            ",
+                                    end="\n",
+                                )
 
-                    if matches is None or len(matches) == 0:
-                        # print(f"MATCHES IS {matches}")
-                        # print(f"CND SPLITS=O {sma}")
-                        continue
+                            if Tsj is None:
+                                # print(f"Tsj IS NONE")
+                                continue
 
-                    if hashshard in visited:
-                        # print(f"HASH DUP: {hashshard}")
-                        # print(f"{idx+1:5d} CND DUPLICATE {sma}")
-                        continue
-                    else:
-                        # print(f"HASH NEW: {hashshard}")
-                        visited.add(hashshard)
+                            Sj = Tsj.H
 
-                    sma = gcd.smarts_encode(Sj)
+                            if verbose and debug:
+                                print(
+                                    "S0 =>",
+                                    gcd.smarts_encode(Tsj.G),
+                                    "\nSj =>",
+                                    gcd.smarts_encode(Sj),
+                                    "\nbj =>",
+                                    gcd.smarts_encode(shard),
+                                    makes_split,
+                                    hashshard,
+                                )
 
-                    if sma in sma_visited:
-                        # print(f"{idx+1:5d} CND DUPLICATE {sma}")
-                        continue
-                    else:
-                        sma_visited.add(sma) 
+                            if matches is None or len(matches) == 0:
+                                # print(f"MATCHES IS {matches}")
+                                # print(f"CND SPLITS=O {sma}")
+                                continue
 
-                    _matches = list([matches[0]] * matches[1])
+                            if hashshard in visited:
+                                # print(f"HASH DUP: {hashshard}")
+                                # print(f"{idx+1:5d} CND DUPLICATE {sma}")
+                                continue
+                            else:
+                                # print(f"HASH NEW: {hashshard}")
+                                visited.add(hashshard)
 
-                    if matches[1] < len(selections):
-                        _matches.append(not matches[0])
+                            sma = gcd.smarts_encode(Sj)
 
-                    matches = _matches
+                            if sma in sma_visited:
+                                # print(f"{idx+1:5d} CND DUPLICATE {sma}")
+                                continue
+                            else:
+                                sma_visited.add(sma) 
 
-                    if len(matches) < len(selections):
-                        matches.extend([None] * (len(selections) - len(matches)))
+                            _matches = list([matches[0]] * matches[1])
 
-                    matches = tuple(matches)
-                    if False and verbose and debug:
-                        for ii, sma in enumerate(smarts):
-                            is_match = mapper.mapper_match(A[ii], Sj)
-                            print("     ", f"{str(is_match):6s}", sma)
-                        print()
+                            if matches[1] < len(selections):
+                                _matches.append(not matches[0])
 
-                    makes_split_str = "Y" if makes_split else "N"
-                    print(f"{idx+1:5d} CND SPLITS={makes_split_str}  {sma}")
-                    if makes_split: #and ((not splitter.unique) or unique_split):
-                        hits += 1
-                        S.append(Tsj)
-                        shards.append(shard)
-                        matched.append(matches)
-                        if (
-                            splitter.max_splits > 0
-                            and hits > splitter.max_splits
-                        ):
-                            break
-            if splitter.max_splits > 0 and hits > splitter.max_splits:
-                break
-        k = len(completed)
-        print(f"Progress: {k/n*100:5.2f}%  {k:8d}/{n}")
-        if splitter.max_splits > 0 and hits > splitter.max_splits:
-            break
+                            matches = _matches
+
+                            if len(matches) < len(selections):
+                                matches.extend([None] * (len(selections) - len(matches)))
+
+                            matches = tuple(matches)
+                            if False and verbose and debug:
+                                for ii, sma in enumerate(smarts):
+                                    is_match = mapper.mapper_match(A[ii], Sj)
+                                    print("     ", f"{str(is_match):6s}", sma)
+                                print()
+
+                            makes_split_str = "Y" if makes_split else "N"
+                            print(f"{idx+1:5d} CND SPLITS={makes_split_str}  {sma}")
+                            if makes_split: #and ((not splitter.unique) or unique_split):
+                                hits += 1
+                                S.append(Tsj)
+                                shards.append(shard)
+                                matched.append(matches)
+                                if (
+                                    splitter.max_splits > 0
+                                    and hits > splitter.max_splits
+                                ):
+                                    break
+                    if splitter.max_splits > 0 and hits > splitter.max_splits:
+                        break
+                k = all_completed
+                # print(f"Progress: {k/n*100:5.2f}%  {k:8d}/{n}")
+                if splitter.max_splits > 0 and hits > splitter.max_splits:
+                    break
     if n > 0:
         print(f"Finished: {k/n*100:5.2f}%  {k:8d}/{n}")
         if len(completed) < len(iterable) and not (splitter.max_splits > 0 and hits > splitter.max_splits):
@@ -1696,8 +1724,8 @@ def split_subgraphs_distributed(
             matched.append(array.array(code))
 
         iterable = {
-            (idx, j): (unit, array.array(code, chunk))
-            for idx, unit in enumerate(S, 0)
+            (idx, j): ((tsj.H, array.array(code, chunk)), {})
+            for idx, tsj in enumerate(S, 0)
             for j, chunk in enumerate(arrays.batched(range(len(selections)), chunksize))
         }
 
@@ -1714,55 +1742,79 @@ def split_subgraphs_distributed(
         j = 0
         n = len(iterable)
         print(f"Submitting {n} packets of work")
-        while len(completed) < n:
-            unfinished_all = [
-                (key, unit)
-                for key, unit in iterable.items()
-                if key not in completed
-            ]
-            # break into large chunks or else memory becomes an issue since
-            # the jobs are sections of matches. The sections are condensed here
-            # so we need to take a breath every once in awhile
-            compute_chunksize = min(len(unfinished_all), 50000)
-            unfinished_chunks = arrays.batched(
-                unfinished_all, compute_chunksize
-            )
 
-            for unfinished in unfinished_chunks:
-                # this chunk is for how many are packed into a single task for
-                # a worker. Try to make this about the number of processors per
-                # remote compute worker. This will make a single queue get to
-                # saturate the worker
-                for chunk in arrays.batched(unfinished, 40):
-                    tasks = {}
-                    for (idx, i), (T, x) in chunk:
-                        tasks[(idx, i)] = (
-                            process_split_matches_distributed,
-                            (T.H, x),
-                            {},
-                        )
-                    compute.workspace_local_submit(ws, tasks)
-                # print("Flushing")
-                new_results = compute.workspace_flush(
-                    ws, set((key for key, _ in unfinished)), timeout=0.0
-                )
-                # print("Flushing Done")
-                # completed.update(new_results)
-                # print("Collecting results")
-                for (idx, i), matches in new_results.items():
-                    if (idx, i) not in completed:
-                        completed.add((idx, i))
-                        j = len(completed)
-                        matched[idx].extend(array.array(code, matches))
-                j = len(completed)
-                print(f"Chunk: {j/n*100:5.2f}%  {j:8d}/{n}", end="\n")
-        j = len(completed)
-        print(
-            f"Finished: {j/n*100:5.2f}%  {j:8d}/{n}"
+        results = compute.workspace_submit_and_flush(
+            ws,
+            process_split_matches_distributed,
+            iterable,
+            chunksize=100,
+            batchsize=50000,
+            verbose=True
         )
-        if j < n:
-            breakpoint()
-            print("something is wrong")
+
+        for (idx, i), matches in results.items():
+            if (idx, i) not in completed:
+                completed.add((idx, i))
+                j = len(completed)
+                matched[idx].extend(array.array(code, matches))
+        # while len(completed) < n:
+        #     unfinished_all = [
+        #         (key, unit)
+        #         for key, unit in iterable.items()
+        #         if key not in completed
+        #     ]
+        #     # break into large chunks or else memory becomes an issue since
+        #     # the jobs are sections of matches. The sections are condensed here
+        #     # so we need to take a breath every once in awhile
+        #     compute_chunksize = min(len(unfinished_all), 50000)
+        #     unfinished_chunks = arrays.batched(
+        #         unfinished_all, compute_chunksize
+        #     )
+
+        #     for unfinished in unfinished_chunks:
+        #         # this chunk is for how many are packed into a single task for
+        #         # a worker. Try to make this about the number of processors per
+        #         # remote compute worker. This will make a single queue get to
+        #         # saturate the worker. However, if there is a lot of work and
+        #         # the workers finish too fast it came gum up the queues.
+        #         for chunk in arrays.batched(unfinished, 100):
+        #             tasks = {}
+        #             for (idx, i), (T, x) in chunk:
+        #                 tasks[(idx, i)] = (
+        #                     process_split_matches_distributed,
+        #                     (T.H, x),
+        #                     {},
+        #                 )
+        #             compute.workspace_local_submit(ws, tasks)
+        #         # print("Flushing")
+        #         new_results = compute.workspace_flush(
+        #             ws, set((key for key, _ in unfinished)), timeout=0.0
+        #         )
+        #         new_results = compute.workspace_submit_and_flush(
+        #             ws,
+        #             process_split_matches_distributed,
+        #             unfinished_all,
+        #             chunksize=100,
+        #             batchsize=50000,
+        #             verbose=True
+        #         )
+        #         # print("Flushing Done")
+        #         # completed.update(new_results)
+        #         # print("Collecting results")
+        #         for (idx, i), matches in new_results.items():
+        #             if (idx, i) not in completed:
+        #                 completed.add((idx, i))
+        #                 j = len(completed)
+        #                 matched[idx].extend(array.array(code, matches))
+        #         j = len(completed)
+        #         print(f"Chunk: {j/n*100:5.2f}%  {j:8d}/{n}", end="\n")
+        # j = len(completed)
+        # print(
+        #     f"Finished: {j/n*100:5.2f}%  {j:8d}/{n}"
+        # )
+        # if j < n:
+        #     breakpoint()
+        #     print("something is wrong")
 
         for i, row in enumerate(matched):
             matched[i] = array.array(code, sorted(set(row)))

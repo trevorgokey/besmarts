@@ -8,7 +8,13 @@ processors = os.cpu_count()
 remote_compute_enable = True
 workqueue_port = 55555
 compute_verbosity = 0
+compute_task_chunksize = 1000
 
+compute_runtime = {
+    "is_remote": False,
+    "verbosity": 0,
+    "task_chunksize": 1000,
+}
 # for computations that may suffer from error accumulation, round the numbers
 # to this precision
 precision = 12

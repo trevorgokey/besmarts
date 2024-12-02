@@ -23,6 +23,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 4:
         queue_size=int(sys.argv[4])
 
+    configs.compute_runtime["is_remote"] = True
     try:
         compute.compute_remote(ip, pt, processes=processes, queue_size=queue_size)
         print("Exiting normally.")

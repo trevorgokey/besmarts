@@ -819,7 +819,7 @@ def smarts_clustering_optimize(
                 for k, v in new_candidates.items():
                     k = (k[0], k[1], k[2]+p_j_max)
                     candidates[k] = v
-                new_candidates.clear()
+                new_candidates = None
 
                 p_j_max = -1
                 if candidates:
@@ -827,7 +827,7 @@ def smarts_clustering_optimize(
                 for k, v in new_candidates_direct.items():
                     k = (k[0], k[1], k[2]+p_j_max)
                     candidates[k] = v
-                new_candidates_direct.clear()
+                new_candidates_direct = None
 
             elif step.operation == strategy.MERGE:
 
@@ -1832,6 +1832,7 @@ def clustering_build_ordinal_mappings(
         assert a.smiles == b.smiles
 
         for sel, x in a.selections.items():
+            assert x is not None
             if select is None or x in select:
                 y = b.selections.get(sel)
                 mapping[x].append(y)
