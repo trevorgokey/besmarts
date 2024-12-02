@@ -8,7 +8,7 @@ find the best parameters that give the best fit as well.
 
 This example tries to split the parameter b4 from OpenFF 2.1.0 using a single
 molecule. The force field can be found `here
-<https://github.com/openforcefield/openff-forcefields/blob/main/openforcefields/offxml/openff-2.1.0.offxml>`.
+<https://github.com/openforcefield/openff-forcefields/blob/main/openforcefields/offxml/openff-2.1.0.offxml>`_.
 The SMILES is "C1=CC=C(C(=O)Cl)O1" although we need a fully hydrogenated,
 indexed SMILES in order for the code to work (to match the xyz coordinates
 produced by a DFT optimization). The physical objectives to fit to are the
