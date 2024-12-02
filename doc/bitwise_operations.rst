@@ -42,7 +42,7 @@ subgraphs manually:
 >>> g = 'CCC=O'
 >>> g = gcd.smiles_decode(g)
 >>>
->>> A, B = graphs.graph_to_structure_atoms(g)[:2]:
+>>> A, B = graphs.graph_to_structure_atoms(g)[:2]
 >>>
 >>> min_depth = 1
 >>> max_depth = 1
