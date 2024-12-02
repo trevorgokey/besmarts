@@ -28,6 +28,16 @@ def energy_function_coulomb_mix(*, eps, c, s, qq, x) -> float:
 def force_function_coulomb_mix(*, eps, c, s, qq, x) -> float:
     return [[s[0]*eps[0]*q/(xi*xi) if xi < c[0] else 0.0 for q in qq] for xi in x[0]]
 
+def force_gradient_function_coulomb_mix(*, eps, c, s, qq, x) -> float:
+    return [[(q*-s[0]*eps[0]*2/(xi*xi*xi)) if xi < c[0] else 0.0 for q in qq] for xi in x[0]]
+
+def force_system_coulomb_mix(*, eps, c, s, qq, x) -> float:
+    return [[(q, s[0]*eps[0]/(xi*xi)) if xi < c[0] else 0.0 for q in qq] for xi in x[0]]
+
+def force_gradient_system_coulomb_mix(*, eps, c, s, qq, x) -> float:
+    return [[(q, -s[0]*eps[0]*2/(xi*xi*xi)) if xi < c[0] else 0.0 for q in qq] for xi in x[0]]
+
+
 # vdW
 def energy_function_lennard_jones_combined(*, s, c, ee, rr, x) -> float:
     xx = [[math.pow(ri/xi, 6) if xi < c[0] else 0.0 for ri in rr] for xi in x[0]]
@@ -35,7 +45,19 @@ def energy_function_lennard_jones_combined(*, s, c, ee, rr, x) -> float:
 
 def force_function_lennard_jones_combined(*, s, c, ee, rr, x) -> float:
     xx = [[math.pow(ri/xi, 6) if xi < c[0] else 0.0 for ri in rr] for xi in x[0]]
-    return [[24.0*s[0]*ei*(2.0*xi*xi - xi)/x0/ri for ei, xi, ri, x0 in zip(ee, xxi, rr, x[0])] for xxi in xx]
+    return [[24.0*s[0]*ei*(2.0*xi*xi - xi)/ri for ei, xi, ri, x0 in zip(ee, xxi, rr, x[0])] for xxi in xx]
+
+def force_gradient_function_lennard_jones_combined(*, s, c, ee, rr, x) -> float:
+    xx = [[math.pow(ri/xi, 6) if xi < c[0] else 0.0 for ri in rr] for xi in x[0]]
+    return [[(ei* -24.0*s[0]*(26.0*xi*xi - 7.0*xi)/(ri*ri)) for ei, xi, ri, x0 in zip(ee, xxi, rr, x[0])] for xxi in xx]
+
+def force_system_lennard_jones_combined(*, s, c, ee, rr, x) -> float:
+    xx = [[math.pow(ri/xi, 6) if xi < c[0] else 0.0 for ri in rr] for xi in x[0]]
+    return [[(ei, 24.0*s[0]*(2.0*xi*xi - xi)/ri) for ei, xi, ri, x0 in zip(ee, xxi, rr, x[0])] for xxi in xx]
+
+def force_gradient_system_lennard_jones_combined(*, s, c, ee, rr, x) -> float:
+    xx = [[math.pow(ri/xi, 6) if xi < c[0] else 0.0 for ri in rr] for xi in x[0]]
+    return [[(ei, -24.0*s[0]*(26.0*xi*xi - 7.0*xi)/(ri*ri)) for ei, xi, ri, x0 in zip(ee, xxi, rr, x[0])] for xxi in xx]
 
 class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
     """
@@ -231,6 +253,11 @@ def chemical_model_coulomb(perception):
 
     cm.energy_function = energy_function_coulomb_mix
     cm.force_function = force_function_coulomb_mix
+    cm.force_gradient_function = force_gradient_function_coulomb_mix
+
+    cm.force_system = force_system_coulomb_mix
+    cm.force_gradient_system = force_gradient_system_coulomb_mix
+
     cm.internal_function = assignments.graph_assignment_geometry_pairs
     cm.derivative_function = assignments.graph_assignment_jacobian_pairs
     cm.system_terms = {
@@ -249,7 +276,6 @@ def chemical_model_coulomb(perception):
     }
     cm.topology_terms["s"] = mm.topology_term("s", "scale", "float", "", {}, "", {})
 
-
     return cm
 
 def chemical_model_lennard_jones(perception) -> mm.chemical_model:
@@ -258,6 +284,11 @@ def chemical_model_lennard_jones(perception) -> mm.chemical_model:
 
     cm.energy_function = energy_function_lennard_jones_combined
     cm.force_function = force_function_lennard_jones_combined
+    cm.force_gradient_function = force_gradient_function_lennard_jones_combined
+
+    cm.force_system = force_function_lennard_jones_combined
+    cm.force_gradient_system = force_gradient_system_lennard_jones_combined
+
     cm.internal_function = assignments.graph_assignment_geometry_pairs
     cm.derivative_function = assignments.graph_assignment_jacobian_pairs
 

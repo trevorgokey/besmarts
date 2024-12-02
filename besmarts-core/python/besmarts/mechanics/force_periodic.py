@@ -19,17 +19,20 @@ def energy_function_periodic_cosine_2term(*, k, n, p, x) -> float:
 def force_function_periodic_cosine_2term(*, k, n, p, x) -> float:
     return [[ki*ni*math.sin(ni * xi - pi) for ki, ni, pi in zip(k, n, p)] for xi in x[0]]
 
-# chemical models
-def chemical_model_torsion_periodic(pcp: perception.perception_model) -> mm.chemical_model:
-    """
-    """
+def force_gradient_function_periodic_cosine_2term(*, k, n, p, x) -> float:
+    return [[ki*ni*ni*math.cos(ni * xi - pi) for ki, ni, pi in zip(k, n, p)] for xi in x[0]]
 
-    cm = mm.chemical_model("T", "torsions", topology.torsion)
+def force_system_periodic_cosine_2term(*, k, n, p, x) -> float:
+    return [[(ki, ni*math.sin(ni * xi - pi)) for ki, ni, pi in zip(k, n, p)] for xi in x[0]]
+
+def force_gradient_system_periodic_cosine_2term(*, k, n, p, x) -> float:
+    return [[(ki, ni*ni*math.cos(ni * xi - pi)) for ki, ni, pi in zip(k, n, p)] for xi in x[0]]
+
+def init_dihedral_common(cm):
 
     cm.energy_function = energy_function_periodic_cosine_2term
     cm.force_function = force_function_periodic_cosine_2term 
-    cm.internal_function = assignments.graph_assignment_geometry_torsions
-    cm.derivative_function = assignments.graph_assignment_jacobian_torsions
+    cm.force_gradient_function = force_gradient_function_periodic_cosine_2term
 
     # define the terms of this model
     cm.topology_terms = {
@@ -37,26 +40,26 @@ def chemical_model_torsion_periodic(pcp: perception.perception_model) -> mm.chem
         "k": mm.topology_term("height", "k", "float", "kcal/mol", {}, "", {}),
         "p": mm.topology_term("phase", "p", "float", "deg", {}, "", {}),
     }
+    return cm
+
+# chemical models
+def chemical_model_torsion_periodic(pcp: perception.perception_model) -> mm.chemical_model:
+    """
+    """
+
+    cm = mm.chemical_model("T", "torsions", topology.torsion)
+    cm = init_dihedral_common(cm)
+    cm.internal_function = assignments.graph_assignment_geometry_torsions
+    cm.derivative_function = assignments.graph_assignment_jacobian_torsions
 
     return cm
 
 def chemical_model_outofplane_periodic(pcp: perception.perception_model) -> mm.chemical_model:
     """
     """
-
     cm = mm.chemical_model("I", "outofplane", topology.outofplane)
-
-    cm.energy_function = energy_function_periodic_cosine_2term
-    cm.force_function = force_function_periodic_cosine_2term 
+    cm = init_dihedral_common(cm)
     cm.internal_function = assignments.graph_assignment_geometry_outofplanes
     cm.derivative_function = assignments.graph_assignment_jacobian_outofplanes
-
-    # define the terms of this model
-    cm.topology_terms = {
-        "n": mm.topology_term("periodicity", "n", "int", "", {}, "", {}),
-        "k": mm.topology_term("height", "k", "float", "kcal/mol", {}, "", {}),
-        "p": mm.topology_term("phase", "p", "float", "rad", {}, "", {}),
-    }
-
 
     return cm

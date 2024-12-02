@@ -10,6 +10,7 @@ from besmarts.core import primitives
 from besmarts.core import assignments
 from besmarts.mechanics import molecular_models as mm
 
+import numpy as np
 
 def array_flatten_assignment(selections):
     lst = []
@@ -76,6 +77,81 @@ def physical_system_force(psys: mm.physical_system, csys):
     return arrays.array_scale(force, 4.184)
 
 
+def physical_system_gradient_system(psys: mm.physical_system, csys):
+    f = physical_system_force_system(psys)
+    for ic, x in f.items():
+        f[ic] = [(k, -q) for k, q in x]
+    return f
+
+def physical_system_force_system(psys: mm.physical_system, csys):
+    """
+    csys is for the reference functions and system params
+    psys is for the positions and param values
+    """
+    force = list([0.0]*3*len(psys.models[0].positions[0].graph.nodes))
+
+    for m, pm in enumerate(psys.models):
+
+        refpos = pm.positions[0]
+        pos = assignments.graph_assignment_float(
+                refpos.graph,
+                {k: v.copy() for k, v in refpos.selections.items()}
+        )
+
+        if csys.models[m].derivative_function:
+
+            icq = csys.models[m].internal_function(pos)
+
+            system_terms = {
+                k: v.values for k, v in csys.models[m].system_terms.items()
+            }
+
+            params = pm.values
+            f = mm.smiles_assignment_function(
+                csys.models[m].force_system,
+                system_terms,
+                params,
+                icq
+            )
+
+    return f
+
+
+def physical_system_force_gradient(psys: mm.physical_system, csys):
+    """
+    csys is for the reference functions and system params
+    psys is for the positions and param values
+    """
+    force = list([0.0]*3*len(psys.models[0].positions[0].graph.nodes))
+
+    hq = {}
+    for m, pm in enumerate(psys.models):
+
+        refpos = pm.positions[0]
+        pos = assignments.graph_assignment_float(
+                refpos.graph,
+                {k: v.copy() for k, v in refpos.selections.items()}
+        )
+
+        if csys.models[m].derivative_function:
+
+            icq = csys.models[m].internal_function(pos)
+
+            system_terms = {
+                k: v.values for k, v in csys.models[m].system_terms.items()
+            }
+
+            params = pm.values
+            f = mm.smiles_assignment_function(
+                csys.models[m].force_gradient_system,
+                system_terms,
+                params,
+                icq
+            )
+            hq[m] = f
+
+    return hq
+
 def physical_system_bmatrix(psys: mm.physical_system, csys):
     """
     csys is for the reference functions and system params
@@ -125,6 +201,58 @@ def physical_system_internals(psys: mm.physical_system, csys):
             }
 
     return ic
+
+
+def physical_system_force_gradient_internal(psys: mm.physical_system, csys):
+    """
+    csys is for the reference functions and system params
+    psys is for the positions and param values
+    """
+
+    fgrad = {}
+
+    for m, pm in enumerate(psys.models):
+
+        refpos = pm.positions[0]
+        pos = assignments.graph_assignment_float(
+                refpos.graph,
+                {k: v.copy() for k, v in refpos.selections.items()}
+        )
+
+        if csys.models[m].derivative_function:
+
+            fgrad[m] = {}
+            icq = csys.models[m].internal_function(pos)
+
+            system_terms = {
+                k: v.values for k, v in csys.models[m].system_terms.items()
+            }
+
+            params = pm.values
+            f = mm.smiles_assignment_function(
+                csys.models[m].force_gradient_function,
+                system_terms,
+                params,
+                icq
+            )
+            fgrad[m] = {
+                ic: [x*4.184 for y in v for x in y] for ic, v in f.items()
+            }
+
+    return fgrad
+
+
+def physical_system_gradient_gradient_internal(psys: mm.physical_system, csys):
+    """
+    csys is for the reference functions and system params
+    psys is for the positions and param values
+    """
+    fgrad = physical_system_force_gradient_internal(psys, csys)
+    ggrad = {}
+    for m, vals in fgrad.items():
+        ggrad[m] = {ic: arrays.array_scale(v, -1) for ic, v in vals.items()}
+
+    return ggrad
 
 
 def physical_system_force_internal(psys: mm.physical_system, csys):
@@ -218,6 +346,74 @@ def physical_system_hessian(psys: mm.physical_system, csys: mm.chemical_model, h
 
     return hess
 
+def physical_system_hessian_analytic(psys: mm.physical_system, csys: mm.chemical_model, use_gradients=False):
+    """
+    csys is for the reference functions and system params
+    psys is for the positions and param values
+    """
+
+    # args, keys = array_flatten_assignment(psys.models[0].positions[0].selections)
+    # hess = array_geom_hessian(args, keys, csys, psys, h=h)
+
+
+    pos = psys.models[0].positions[0]
+
+    # get the bmatrix and project hq into hx
+    psys_hq = physical_system_force_gradient_internal(psys, csys)
+    ics, B = assignments.bmatrix(
+        pos,
+        bonds=True,
+        angles=True,
+        torsions=True,
+        outofplanes=True,
+        pairs=True,
+        remove1_3=False,
+        linear_torsions=None
+    )
+    B = dict(zip(ics, B))
+
+    hqmat = np.diag([-h[0] for mhq in psys_hq.values() for h in mhq.values()])
+    hqic = [ic for mhq in psys_hq.values() for ic in mhq]
+    bmat = np.array([B[ic] for ic in hqic])
+    hxmat = np.dot(bmat.T, np.dot(hqmat, bmat))
+
+    if not use_gradients:
+        return hxmat.tolist()
+
+    # this part incorporates the gradient correction, but requires 10x more
+    # compute and the frequency MAE is ~< 1 cm-1. Skipping this makes sense
+    # for large scale fits
+    psys_gq = physical_system_gradient_internal(psys, csys)
+    ics, B2 = assignments.b2matrix(
+        pos,
+        torsions=True,
+        outofplanes=True,
+        pairs=True,
+    )
+    B2 = dict(zip(ics, B2))
+    gqmat = [g[0] for mgq in psys_gq.values() for g in mgq.values()]
+    gqic = [ic for mgq in psys_gq.values() for ic in mgq]
+    # b2tens = np.array([B2[ic][0] for ic in gqic])
+    # for gq, b2mat in zip(gqmat, b2tens):
+    #     hxmat += gq * b2mat
+
+    hgx = np.zeros_like(hxmat)
+
+    id_map = {v: k for k, v in enumerate(pos.graph.nodes)}
+
+    for ic, gq in zip(gqic, gqmat):
+        b2 = B2[ic][0]
+        for ai, a in enumerate(ic):
+            a = id_map[a]
+            for bi, b in enumerate(ic):
+                b = id_map[b]
+                for i in range(3):
+                    for j in range(3):
+                        b2ab = b2[3*ai + i][3*bi + j]
+                        hgx[3*a + i][3*b + j] += gq * b2ab
+
+    return (hxmat + hgx).tolist()
+
 
 def array_geom_energy(args, keys, csys, psys: mm.physical_system):
 
@@ -308,6 +504,8 @@ def array_geom_energy_gradient(args, keys, csys, psys: mm.physical_system):
                         grad[nic*idx + (i-1)*3 + 1] -= fq*dq[j][1]
                         grad[nic*idx + (i-1)*3 + 2] -= fq*dq[j][2]
 
+    # print("Pos:", pos.selections)
+    # print("Energy", energy, "Gradient", grad)
     return energy*4.184, arrays.array_scale(grad, 4.184)
 
 

@@ -41,7 +41,7 @@ from besmarts.mechanics import vibration
 from besmarts.mechanics import molecular_models as mm
 from besmarts.mechanics import smirnoff_models
 
-# import scipy.optimize
+import scipy.optimize
 # import scipy.stats
 eid_t = int
 
@@ -69,6 +69,8 @@ class compute_config:
         self.enable_minimization = True
         self.fc_reset_config = None
         self.method_vib_modes = "min"
+        self.analytic = True
+        self.analytic_use_gradients = False
 
     def run(self) -> List[Dict[assignments.tid_t, assignments.graph_db_table]]:
 
@@ -292,9 +294,9 @@ class compute_config_gradient(compute_config):
                             psys = reset(
                                 self.fc_reset_config,
                                 csys,
-                                assignments.graph_db_get_entries(gdb, eid),
+                                assignments.graph_db_get_entries(gdb, [eid]),
                                 psystems={eid: psys}
-                            )[eid].value
+                            ).value[eid]
 
                     gx = optimizers_openmm.physical_system_gradient_openmm(
                         psys,
@@ -393,15 +395,16 @@ class compute_config_hessian(compute_config):
                             psys = reset_unique(
                                 self.fc_reset_config,
                                 gde,
-                                psys
+                                psys,
+                                verbose=True
                             )
                         else:
                             psys = reset(
                                 self.fc_reset_config,
                                 csys,
-                                assignments.graph_db_get_entries(gdb, eid),
+                                assignments.graph_db_get_entries(gdb, [eid]),
                                 psystems={eid: psys}
-                            )[eid].value
+                            ).value[eid]
 
                     if self.enable_minimization or self.method_vib_modes == "min":
                         minpos = optimizers_openmm.optimize_positions_openmm(csys, psys, tol=1e-7)
@@ -409,27 +412,65 @@ class compute_config_hessian(compute_config):
                         tbl_pos.values = minpos
                         psys.models[0].positions[0] = minpos
 
+
+                    # print("PSYS:")
                     # for m, pm in enumerate(psys.models):
                     #     print(m)
                     #     for ic, terms in pm.values[0].items():
                     #         print(m, ic, terms)
+
+                    # hess_mm = objectives.physical_system_hessian(
+                    #     psys,
+                    #     csys,
+                    #     h=1e-4
+                    # )
+                    # if self.analytic:
+                    # hess_mm = objectives.physical_system_hessian_analytic(psys, csys, use_gradients=self.analytic_use_gradients)
+                    # else:
 
                     hess_mm = optimizers_openmm.physical_system_hessian_openmm(
                         psys,
                         csys,
                         h=1e-4
                     )
+                    # xyz = list([x[0] for x in pos.selections.values()])
 
+                    # sym = graphs.graph_symbols(pos.graph)
+                    # mass = [[vibration.mass_table[sym[n]]]*3 for n in sym]
+                    # sym = list(sym.values())
+
+                    # for i, row in enumerate(hess_mm):
+                    #     hess_mm[i] = arrays.array_scale(row, 1/4.184)
+
+                    # freq, modes, DL = vibration.hessian_modes(
+                    #     hess_mm,
+                    #     sym,
+                    #     xyz,
+                    #     mass,
+                    #     0,
+                    #     remove=0,
+                    #     stdtr=True,
+                    #     return_DL=True,
+                    #     verbose=False
+                    # )
+                    # print(freq)
+
+                    # print(list(hessians.hessian_frequencies(
+                    #     pos.graph, hess_mm, None, DL, None, None, None)
+                    # ))
                     hx = []
+                    # print("MM Hessian")
                     for i, row in enumerate(hess_mm):
                         hx.append(arrays.array_scale(row, 1/4.184))
+                        # hx.append(arrays.array_scale(row, 1))
+                        # print(hx[-1])
                     tbl_hess.values.extend(hx)
 
-                    gx = optimizers_openmm.physical_system_gradient_openmm(
-                        psys,
-                        csys
-                    )
-                    gx = arrays.array_scale(gx, 1/4.184)
+                    # gx = optimizers_openmm.physical_system_gradient_openmm(
+                    #     psys,
+                    #     csys
+                    # )
+                    gx = list([0.0] * len(pos.selections)*3)
                     tbl_grad.values.extend(gx)
 
                 r = {
@@ -512,9 +553,9 @@ class compute_config_position(compute_config):
                                 psys = reset(
                                     self.fc_reset_config,
                                     csys,
-                                    assignments.graph_db_get_entries(gdb, eid),
+                                    assignments.graph_db_get_entries(gdb, [eid]),
                                     psystems={eid: psys}
-                                )[eid].value
+                                ).value[eid]
 
 
                         # print(f"Initial xyz for EID {eid}:")
@@ -582,7 +623,12 @@ class objective_config:
         self.enable_minimization = True
         self.fc_reset_config = None
         self.method_vib_modes = "min"
+        # forward difference 1st order
+        self.grad_mode = "f1"
         self.verbose = 0
+
+        self.fit_models = {}
+        self.fit_symbols = {}
 
     def get_task(
         self,
@@ -609,6 +655,34 @@ class objective_config:
         cc.fc_reset_config = self.fc_reset_config
         return cc
 
+    def compute_gradient(
+        self,
+        ref,
+        evals,
+        h
+    ):
+        """
+        Compute the parameter gradients of this objective.
+        """
+
+        f = []
+        for D in evals:
+            dxa = []
+            for dtbls in D:
+                for tid, dtbl in dtbls.items():
+                    for gid, dgdg in dtbl.graphs.items():
+                        for rid, dgdr in dgdg.rows.items():
+                            for cid, dgdc in dgdr.columns.items():
+                                for dv in dgdc.selections.values():
+                                    dxa.extend(dv)
+            f.append(dxa)
+
+        if self.grad_mode == "f1":
+            dxdp, d2xdp2 = finite_difference_forward_1(f, h)
+        elif self.grad_mode == "c2":
+            dxdp, d2xdp2 = finite_difference_central_2(f, h)
+
+        return dxdp, d2xdp2
 
     def compute_gradient_2pt(
         self,
@@ -736,6 +810,36 @@ class objective_config_gradient(objective_config):
         cc.fc_reset_config = self.fc_reset_config
         return cc
 
+    def compute_gradient(self, ref, evals, h):
+
+        dxa = []
+        gde = ref.entries[self.addr.eid[0]]
+        f = []
+        for E0 in evals:
+            dxa = []
+            for dtbls in E0:
+                for tid, dtbl in dtbls.items():
+                    x0 = dtbl.values
+                    if self.coordinate_system == "D":
+                        gid = list(gde[POSITIONS].graphs)[0]
+                        g = ref.graphs[gid]
+                        smiles = ref.smiles[gid]
+                        sel = gde[POSITIONS][gid][0][0].selections
+                        sel = {k: [v] for k, v in sel.items()}
+                        pos = assignments.graph_assignment(smiles, sel, g)
+                        x0 = array_numpy.dlcmatrix_project_gradients(pos, x0)
+
+                    dxa.extend(x0)
+            f.append(dxa)
+
+        if self.grad_mode == "f1":
+            dxdp, d2xdp2 = finite_difference_forward_1(f, h)
+        elif self.grad_mode == "c2":
+            dxdp, d2xdp2 = finite_difference_central_2(f, h)
+
+        return dxdp, d2xdp2
+
+
     def compute_gradient_2pt(self, ref, X0, E0, E1, h):
 
         dxa = []
@@ -759,7 +863,7 @@ class objective_config_gradient(objective_config):
                 dxb.extend(x1)
 
         dxdp = arrays.array_difference(dxb, dxa)
-        dxdp = arrays.array_round(dxdp, PRECISION) 
+        dxdp = arrays.array_round(dxdp, PRECISION)
         dxdp = arrays.array_scale(dxdp, 1/(2*h))
 
         d2xdp2 = arrays.array_add(
@@ -782,11 +886,13 @@ class objective_config_gradient(objective_config):
 
         out = []
         X = []
+        N = 0
+        coord = "DLC" if self.coordinate_system == "D" else "CART"
         for (eid, gde), tbls in zip(GDB.entries.items(), D):
             rmse = []
             for tid, tbl in tbls.items():
-                x0 = gde.tables[tid].values
-                x1 = tbl.values
+                x0cart = x0 = gde.tables[tid].values
+                x1cart = x1 = tbl.values
 
                 if self.coordinate_system == "D":
                     gid = list(gde.tables[POSITIONS].graphs)[0]
@@ -796,35 +902,45 @@ class objective_config_gradient(objective_config):
                     sel = {k: [v] for k, v in sel.items()}
                     pos = assignments.graph_assignment(smiles, sel, g)
 
-                    x1 = array_numpy.dlcmatrix_project_gradients(pos, x1)
+                    x1 = array_numpy.dlcmatrix_project_gradients(pos, x1cart)
 
                     if "D:x0" not in self.cache:
-                        x0 = array_numpy.dlcmatrix_project_gradients(pos, x0)
-                        self.cache['D:x0'] = x0
+                        self.cache['D:x0cart'] = x0cart
+                        # x0 = array_numpy.dlcmatrix_project_gradients(pos, x0)
+                        self.cache['D:x0'] = (
+                            array_numpy.dlcmatrix_project_gradients(pos, x0cart)
+                        )
                     else:
                         x0 = self.cache['D:x0']
+                        x0cart = self.cache['D:x0cart']
+                else:
+                    x0 = x0cart
+                    x1 = x1cart
 
                 x = arrays.array_difference(x1, x0)
+                xcart = arrays.array_difference(x1cart, x0cart)
                 nlines = len(out)
-                if self.verbose > 1:
+                if self.verbose > 0:
                     out.append(f" EID {eid} Gradient objective:")
                     totalx0 = [0.0, 0.0, 0.0]
                     totalx1 = [0.0, 0.0, 0.0]
                     totalxx = [0.0, 0.0, 0.0]
-                    for i in range(len(x1)//3):
-                        xx = x[3*i:3*i+3]
-                        totalx0 = arrays.array_add(totalx0, x0[3*i:3*i+3])
-                        totalx1 = arrays.array_add(totalx1, x1[3*i:3*i+3])
+                    for i in range(len(x1cart)//3):
+                        xx = xcart[3*i:3*i+3]
+                        totalx0 = arrays.array_add(totalx0, x0cart[3*i:3*i+3])
+                        totalx1 = arrays.array_add(totalx1, x1cart[3*i:3*i+3])
                         totalxx = arrays.array_add(totalxx, xx)
-                        xyz1 = " ".join([f"{xi:12.4e}" for xi in x1[3*i:3*i+3]])
-                        xyz0 = " ".join([f"{xi:12.4e}" for xi in x0[3*i:3*i+3]])
+                        xyz1 = " ".join([f"{xi:12.4e}" for xi in x1cart[3*i:3*i+3]])
+                        xyz0 = " ".join([f"{xi:12.4e}" for xi in x0cart[3*i:3*i+3]])
                         dxyz = " ".join([f"{xi:12.4e}" for xi in xx])
-                        out.append(f"   {i+1:4d} MM: {xyz1} QM: {xyz0} dG: {dxyz}")
+                        if self.verbose > 1:
+                            out.append(f"   {i+1:4d} MM: {xyz1} QM: {xyz0} dG: {dxyz}")
                         rmse.append(arrays.array_inner_product(xx, xx))
-                    xyz1 = " ".join([f"{xi:12.4e}" for xi in totalx1])
-                    xyz0 = " ".join([f"{xi:12.4e}" for xi in totalx0])
-                    dxyz = " ".join([f"{xi:12.4e}" for xi in totalxx])
-                    out.append(f"   Sum: MM: {xyz1} QM: {xyz0} dG: {dxyz}")
+                    # if self.verbose > 1:
+                    #     xyz1 = " ".join([f"{xi:12.4e}" for xi in totalx1])
+                    #     xyz0 = " ".join([f"{xi:12.4e}" for xi in totalx0])
+                    #     dxyz = " ".join([f"{xi:12.4e}" for xi in totalxx])
+                    #     out.append(f"   Sum: MM: {xyz1} QM: {xyz0} dG: {dxyz}")
 
                     # show the IC grads
                     # i = len(out)
@@ -850,8 +966,8 @@ class objective_config_gradient(objective_config):
             X2 = arrays.array_inner_product(X, X)
             if self.verbose > 0:
                 out.append(" ".join([
-                    f" Total Gradient SSE: {X2:10.5f} (kJ/mol/A)^2",
-                    f"RMSE: {rmse:10.5f} kJ/mol/A"
+                    f"Total {coord} Gradient SSE: {X2:10.5f} (kJ/mol/A)^2",
+                    f"CART RMSE: {rmse:10.5f} kJ/mol/A"
                 ]))
         return returns.success(arrays.array_round(X, PRECISION), out=out, err=[])
 
@@ -864,6 +980,8 @@ class objective_config_hessian(objective_config):
         self.method_vib_modes = kwds.get("method_vib_modes", "min")
         if self.method_vib_modes == "min":
             self.enable_minimization = True
+
+        self.freq_range = (-5000, 5000)
 
     def get_task(
         self,
@@ -888,6 +1006,85 @@ class objective_config_hessian(objective_config):
         cc.fc_reset_config = self.fc_reset_config
 
         return cc
+
+    def compute_gradient(self, ref, evals, h):
+
+        f = []
+        gde = ref.entries[self.addr.eid[0]]
+
+        for E in evals:
+            dxa = []
+            for etbls in E:
+                # for tid, dtbl in dtbls.items():
+
+                # x0 = etbls[tid].values
+                # x1 = dtbl.values
+
+                gid = list(gde.tables[POSITIONS].graphs)[0]
+                g = ref.graphs[gid]
+                DL = self.cache['IC:dl']
+                (ics, B, B2) = self.cache['IC:b']
+
+                if self.enable_minimization or self.method_vib_modes == "min":
+                    pos1 = etbls[POSITIONS].values
+                    xyz = list([x[0] for x in pos1.selections.values()])
+
+                if self.method_vib_modes in ["min", "mm"]:
+                    sym = graphs.graph_symbols(g)
+                    mass = [[vibration.mass_table[sym[n]]]*3 for n in sym]
+                    sym = list(sym.values())
+
+                    remove = 0
+                    if self.method_vib_modes == "mm":
+                        remove = 0
+
+                    hess_mm = etbls[HESSIANS].values
+                    x1, mm_modes, mm_dl = vibration.hessian_modes(
+                        hess_mm,
+                        sym,
+                        xyz,
+                        mass,
+                        0,
+                        remove=remove,
+                        stdtr=True,
+                        return_DL=True
+                    )
+                    cost = np.abs(np.dot(np.array(DL).T, mm_dl))
+                    # s_row, s_col = scipy.optimize.linear_sum_assignment(1 - cost)
+                    # x1 = [x1[i] for i in s_row]
+                    x1 = list(x1)
+
+                elif self.method_vib_modes == "qm":
+
+                    hess_mm = etbls[HESSIANS].values
+                    grad_mm = list(etbls[GRADIENTS].values)
+
+                    # x1mat = list(hessians.hessian_transform(
+                    #     g, hess_mm, grad_mm, DL, ics, B, B2)
+                    # )
+                    # x1 = [x1mat[i][i] for i in range(len(x1mat))]
+                    # x1offdiag = [
+                    #     x1mat[i][j] for i in range(len(x1mat)) for j in range(i)
+                    # ]
+                    # x1.extend(x1offdiag)
+                    x1 = list(hessians.hessian_frequencies(
+                        g, hess_mm, grad_mm, DL, ics, B, B2)
+                    )
+                    # x1 = arrays.array_scale(x1, 2)
+
+                # keep this for when I want to try internal hess
+                # x0 = array_numpy.dlcmatrix_project_gradients(pos, x0)
+                # x1 = array_numpy.dlcmatrix_project_gradients(pos, x1)
+
+                dxa.extend(x1)
+            f.append(dxa)
+
+        if self.grad_mode == "f1":
+            dxdp, d2xdp2 = finite_difference_forward_1(f, h)
+        elif self.grad_mode == "c2":
+            dxdp, d2xdp2 = finite_difference_central_2(f, h)
+
+        return dxdp, d2xdp2
 
     def compute_gradient_2pt(self, ref, X0, E0, E1, h):
 
@@ -936,9 +1133,9 @@ class objective_config_hessian(objective_config):
                     return_DL=True
                 )
                 cost = np.abs(np.dot(np.array(DL).T, mm_dl))
-                s_row, s_col = scipy.optimize.linear_sum_assignment(1 - cost)
-                x1 = [x1[i] for i in s_row]
-                # x1 = list(x1)
+                # s_row, s_col = scipy.optimize.linear_sum_assignment(1 - cost)
+                # x1 = [x1[i] for i in s_row]
+                x1 = list(x1)
 
             elif self.method_vib_modes == "qm":
                 grad_mm = list(etbls[GRADIENTS].values)
@@ -999,19 +1196,19 @@ class objective_config_hessian(objective_config):
             if True or self.coordinate_system == "IC":
                 if "IC:qm_freq" not in self.cache:
 
-                    torsions = False
+                    torsions = True
                     pairs = False
                     ics, B = assignments.bmatrix(
                         hess_qm_pos,
                         torsions=torsions,
                         pairs=pairs,
-                        remove1_3=False
+                        remove1_3=True
                     )
                     ics, B2 = assignments.b2matrix(
                         hess_qm_pos,
                         torsions=torsions,
                         pairs=pairs,
-                        remove1_3=False
+                        remove1_3=True
                     )
 
                     hess_qm_freq, hess_qm_modes, DL = vibration.hessian_modes(
@@ -1025,6 +1222,14 @@ class objective_config_hessian(objective_config):
                         return_DL=True,
                         verbose=False
                     )
+                    keep_modes = [
+                        i
+                        for i, w in enumerate(hess_qm_freq)
+                        if w > self.freq_range[0] and w < self.freq_range[1]
+                    ]
+                    DL = DL[:, keep_modes]
+                    hess_qm_freq = [hess_qm_freq[i] for i in keep_modes]
+
 
                     self.cache['IC:qm_freq'] = hess_qm_freq
                     self.cache['IC:b'] = (ics, B, B2)
@@ -1035,7 +1240,7 @@ class objective_config_hessian(objective_config):
                 grad_mm = list(tbls[GRADIENTS].values)
 
                 # grad1 = list(tbls[GRADIENTS].values)
-                if self.enable_minimization or self.method_vib_modes == "min":
+                if self.method_vib_modes == "min":
                     pos1 = tbls[POSITIONS].values
                     xyz = list([x[0] for x in pos1.selections.values()])
 
@@ -1044,7 +1249,8 @@ class objective_config_hessian(objective_config):
                         f"EID {self.addr.eid[0]} "
                         f"FC reset mode is {self.fc_reset_config}"
                     )
-                if False and self.method_vib_modes in ["min", "mm"]:
+
+                if self.method_vib_modes in ["min", "mm"]:
                     sym = graphs.graph_symbols(g)
                     mass = [[vibration.mass_table[sym[n]]]*3 for n in sym]
                     sym = list(sym.values())
@@ -1064,6 +1270,35 @@ class objective_config_hessian(objective_config):
                         return_DL=True,
                         verbose=False
                     )
+                    DL = self.cache['IC:dl']
+                    # if self.method_vib_modes in ["min", "mm"]:
+                    #     DL = mm_dl
+                    cost = np.abs(np.dot(np.array(DL).T, mm_dl))
+                    costheta = np.degrees(np.arccos(np.dot(np.array(DL).T, mm_dl)))
+                    costheta[costheta > 90] -= 180
+                    # s_row, s_col = scipy.optimize.linear_sum_assignment(cost)
+                    # x1 = [x1[i] for i in s_col]
+                    x1 = list(x1)
+                    # angle = np.arccos(
+                    #     np.abs(cost[s_row, s_col]).sum()/len(cost)
+                    # )
+                    angle = np.arccos(np.diag(cost))
+                    if self.verbose > 2:
+                        out.append(
+                            f"1Cost for EID {self.addr.eid[0]} "
+                            f"is total {np.sum(angle)} "
+                            f"mean {np.mean(angle)} "
+                            f"degrees {np.degrees(np.mean(angle))}"
+                        )
+                        for i in range(len(cost)):
+                            out.append(
+                                f"Unmapped Vib. assignment {i+1} -> {i+1} "
+                                f"QMfreq {x0[i]} "
+                                f"cost {cost[i][i]} "
+                                f"angle {costheta[i][i]} "
+                            )
+                        # print("\n".join(out))
+
                     cost = 1 - np.abs(np.dot(np.array(DL).T, mm_dl))
                     costheta = np.degrees(np.arccos(np.dot(np.array(DL).T, mm_dl)))
                     costheta[costheta > 90] -= 180
@@ -1075,58 +1310,48 @@ class objective_config_hessian(objective_config):
                     )
                     if self.verbose > 2:
                         out.append(
-                            f"Cost for EID {self.addr.eid[0]} "
-                            f"is total {cost[s_row, s_col].sum()} "
-                            f"mean {angle} "
-                            f"degrees {np.degrees(angle)}"
+                            f"2Cost for EID {self.addr.eid[0]} "
+                            f"is total {np.sum(angle)} "
+                            f"mean {np.mean(angle)} "
+                            f"degrees {np.degrees(np.mean(angle))}"
                         )
                         for i, j in zip(s_row, s_col):
                             out.append(
-                                f"Vib. assignment {i} -> {j} "
-                                f"cost {cost[i][j]}"
-                                f"angle {costheta[i][j]}"
-                            )
-                        print("\n".join(out))
-
-                    d = np.abs(np.array(x1) - np.array(x0))
-
-                    cost = np.log(np.outer(d, d)) * np.abs(np.dot((np.array(DL)).T, mm_dl))
-                    s_row, s_col = scipy.optimize.linear_sum_assignment(cost)
-                    x2 = [x1[i] for i in s_col]
-                    # x1 = list(x1)
-                    angle = np.arccos(
-                        np.abs(cost[s_row, s_col]).sum()/len(cost)
-                    )
-                    if self.verbose > 2:
-                        out.append(
-                            f"Cost for EID {self.addr.eid[0]} "
-                            f"is total {cost[s_row, s_col].sum()} "
-                            f"mean {angle} "
-                            f"degrees {np.degrees(angle)}"
-                        )
-                        for i, j in zip(s_row, s_col):
-                            out.append(
-                                f"Vib. assignment {i} -> {j} "
+                                f"Mapped Vib. assignment {i+1} -> {j+1} "
+                                f"QMfreq {x0[i]} "
                                 f"cost {cost[i][j]} "
-                                f"angle {costheta[i][j]}"
+                                f"angle {costheta[i][j]} "
                             )
-                        print("\n".join(out))
+                        # print("\n".join(out))
+
+                    # x0 = [x0[i] for i in s_row]
+                    d = np.abs(np.array(x1) - np.array(x0))
 
 
                 elif self.method_vib_modes == "qm":
                     DL = self.cache['IC:dl']
                     (ics, B, B2) = self.cache['IC:b']
 
-                    x1 = list(hessians.hessian_frequencies(
+                    x1mat = list(hessians.hessian_transform(
                         g, hess_mm, grad_mm, DL, ics, B, B2)
                     )
-
+                    x1 = [x1mat[i][i] for i in range(len(x1mat))]
+                    x1offdiag = [
+                        x1mat[i][j] for i in range(len(x1mat)) for j in range(i)
+                    ]
+                    # x1 = list(hessians.hessian_frequencies(
+                    #     g, hess_mm, grad_mm, DL, ics, B, B2)
+                    # )
+                    # x1 = arrays.array_scale(x1, 2)
             x = arrays.array_difference(x1, x0)
             N = len(x)
 
             mae = [abs(xi) for xi in x]
+            t = "Numerical"
+            if self.analytic:
+                t = "Analytic"
             if self.verbose > 0:
-                out.append(f"\nEID {eid} Computed Hessian Frequencies (cm-1):")
+                out.append(f"\nEID {eid} Computed {t} Hessian Frequencies (cm-1):")
             if self.verbose > 1:
                 for i, (f1, f0) in enumerate(zip(x1, x0), 1):
                     out.append(f"     {i:4d} MM: {f1: 8.1f} QM: {f0:8.1f} Diff: {f1-f0:8.1f}")
@@ -1143,6 +1368,11 @@ class objective_config_hessian(objective_config):
             #     for i in range(len(out) - nlines):
             #         print(out[i])
             X.extend(x)
+
+            if self.method_vib_modes == "qm":
+                if verbose > 0:
+                    out.append(f"Off-diag MAE: {sum(map(abs, x1offdiag)): 8.1f}")
+                # X.extend(x1offdiag)
 
         return returns.success(arrays.array_round(X, PRECISION), out=out, err=[])
 
@@ -1206,6 +1436,7 @@ class objective_config_penalty(objective_config):
         assert all([type(n) is int for n in polynomial])
         self.polynomial = polynomial
         self.include = True
+        self.reference_from_reset = False
 
     def get_task(self) -> compute_config:
 
@@ -1328,6 +1559,8 @@ class objective_tier:
         self.fit_symbols = None
         self.fit_names = None
         self.fit_names_exclude = None
+        self.method = "trust-ncg"
+        self.method_config = {}
         self.step_limit = None
         self.maxls = 20
         self.penalties: List[objective_config_penalty] = []
@@ -1338,7 +1571,10 @@ class objective_tier:
         if self.fit_models is None or self.fit_symbols is None:
             return True
 
-        r = (x[0] in self.fit_models) and (x[1] in self.fit_symbols)
+        if type(self.fit_symbols) is dict:
+            r = self.fit_symbols.get(x[0]) == x[1]
+        else:
+            r = (x[0] in self.fit_models) and (x[1] in self.fit_symbols)
         if r and self.fit_names:
             r &= x[2] in self.fit_names
         if r and self.fit_names_exclude:
@@ -1424,6 +1660,7 @@ def objective_tier_run(
     addr = False
     shm = {"csys": csys}
     if wq and configs.remote_compute_enable:
+        shm["compute_verbosity"] = 0
         ws = compute.workqueue_new_workspace(wq, address=None, shm=shm)
     elif configs.processors > 1:
         addr = ('127.0.0.1', 0)
@@ -1435,9 +1672,8 @@ def objective_tier_run(
     if psysref is None:
         psysref = gdb_to_physical_systems(gdb, csys)
 
-    objectives = ot.objectives
     if oid:
-        objectives = {i: objectives[i] for i in oid}
+        ot.objectives = {i: ot.objectives[i] for i in oid}
 
     x0 = [mm.chemical_system_get_value(csys, k) for k in keys]
 
@@ -1496,7 +1732,7 @@ def objective_tier_run(
         keys,
         csys,
         gdb,
-        objectives,
+        ot,
         priors,
         ot.penalties,
         history,
@@ -1516,7 +1752,6 @@ def objective_tier_run(
     )
 
     result, y0, y1, gx = ret.value
-
 
     ret.out.append(f">>> Initial Objective {y0:10.5g}")
     ret.out.append(f">>> Final Objective   {y1:10.5g}")
@@ -1628,8 +1863,8 @@ class forcefield_optimization_strategy(optimization.optimization_strategy):
         self.enable_modify = False
 
         # when modifying dihedrals, set the frequency limit
-        self.modify_outofplane_frequency_limit = 12
-        self.modify_torsion_frequency_limit = 12
+        self.modify_outofplane_frequency_limit = 3
+        self.modify_torsion_frequency_limit = 3
 
         self.steps: List[optimization.optimization_iteration] = []
         self.tree_iterator: Callable = mm.chemical_system_iter_smarts_hierarchies_nodes
@@ -1781,6 +2016,64 @@ def forcefield_optimization_strategy_build_macro_iterations(
                 if search_cursor < strat.cursor:
                     continue
 
+                if strat.enable_split:
+                    steps = []
+                    for m, mbounds in strat.bounds.items():
+
+                        mbounds: configs.smarts_perception_config
+
+                        if mbounds.splitter.bit_search_limit + 1 < bits:
+                            continue
+                        if mbounds.splitter.bit_search_min > bits:
+                            continue
+                        if mbounds.splitter.branch_limit < branches:
+                            continue
+                        if mbounds.splitter.branch_min > branches:
+                            continue
+                        if mbounds.splitter.branch_depth_limit < branch_d:
+                            continue
+                        if mbounds.splitter.branch_depth_min > branch_d:
+                            continue
+
+                        s = optimization.optimization_step()
+                        s.index = len(steps)
+                        s.cluster = None
+                        s.overlap = [0]
+                        s.models.append(m)
+
+                        s.direct_enable = strat.direct_enable
+                        s.direct_limit = strat.direct_limit
+                        s.iterative_enable = strat.iterative_enable
+
+                        s.operation = strat.SPLIT
+
+                        splitter = configs.smarts_splitter_config(
+                            bits,
+                            bits,
+                            0,
+                            branches,
+                            branch_d,
+                            branch_d,
+                            mbounds.splitter.unique,
+                            False,
+                            0,
+                            mbounds.splitter.split_general,
+                            mbounds.splitter.split_specific,
+                            mbounds.splitter.unique_complements,
+                            mbounds.splitter.unique_complements_prefer_min,
+                        )
+                        extender = configs.smarts_extender_config(
+                            branches, branches, mbounds.extender.include_hydrogen
+                        )
+                        config = configs.smarts_perception_config(
+                            splitter, extender
+                        )
+                        s.pcp = config
+
+                        steps.append(s)
+                    macro_step = optimization.optimization_iteration(steps)
+                    macro_iters.append(macro_step)
+
                 if strat.enable_merge:
                     steps = []
                     for m, mbounds in strat.bounds.items():
@@ -1844,7 +2137,7 @@ def forcefield_optimization_strategy_build_macro_iterations(
                         if m not in [2, 3]:
                             continue
 
-                        if mbounds.splitter.bit_search_limit < bits:
+                        if mbounds.splitter.bit_search_limit + 1 < bits:
                             continue
                         if mbounds.splitter.bit_search_min > bits:
                             continue
@@ -1892,64 +2185,6 @@ def forcefield_optimization_strategy_build_macro_iterations(
 
                     macro = optimization.optimization_iteration(steps)
                     macro_iters.append(macro)
-
-                if strat.enable_split:
-                    steps = []
-                    for m, mbounds in strat.bounds.items():
-
-                        mbounds: configs.smarts_perception_config
-
-                        if mbounds.splitter.bit_search_limit + 1 < bits:
-                            continue
-                        if mbounds.splitter.bit_search_min > bits:
-                            continue
-                        if mbounds.splitter.branch_limit < branches:
-                            continue
-                        if mbounds.splitter.branch_min > branches:
-                            continue
-                        if mbounds.splitter.branch_depth_limit < branch_d:
-                            continue
-                        if mbounds.splitter.branch_depth_min > branch_d:
-                            continue
-
-                        s = optimization.optimization_step()
-                        s.index = len(steps)
-                        s.cluster = None
-                        s.overlap = [0]
-                        s.models.append(m)
-
-                        s.direct_enable = strat.direct_enable
-                        s.direct_limit = strat.direct_limit
-                        s.iterative_enable = strat.iterative_enable
-
-                        s.operation = strat.SPLIT
-
-                        splitter = configs.smarts_splitter_config(
-                            bits,
-                            bits,
-                            0,
-                            branches,
-                            branch_d,
-                            branch_d,
-                            mbounds.splitter.unique,
-                            False,
-                            0,
-                            mbounds.splitter.split_general,
-                            mbounds.splitter.split_specific,
-                            mbounds.splitter.unique_complements,
-                            mbounds.splitter.unique_complements_prefer_min,
-                        )
-                        extender = configs.smarts_extender_config(
-                            branches, branches, mbounds.extender.include_hydrogen
-                        )
-                        config = configs.smarts_perception_config(
-                            splitter, extender
-                        )
-                        s.pcp = config
-
-                        steps.append(s)
-                    macro_step = optimization.optimization_iteration(steps)
-                    macro_iters.append(macro_step)
 
     strat.cursor = 0
 
@@ -2128,7 +2363,7 @@ def ff_optimize(
     ]))
 
     print("Initial parameter assignments of dataset:")
-    print_chemical_system(csys, show_parameters=[x[1] for x in assigned_nodes])
+    mm.chemical_system_print(csys, show_parameters=[x[1] for x in assigned_nodes])
 
     assigned_nodes = [
         x for x in assigned_nodes
@@ -2137,7 +2372,7 @@ def ff_optimize(
     assigned_nodes = set([x[1] for x in assigned_nodes])
 
     print("### BESMARTS chemical perception on the following assignments ###")
-    print_chemical_system(csys, show_parameters=assigned_nodes)
+    mm.chemical_system_print(csys, show_parameters=assigned_nodes)
     print("#################################################################")
 
     reuse0 = set(range(len(csys.models))).difference((k[0] for k in keys))
@@ -2150,6 +2385,11 @@ def ff_optimize(
     if configs.processors == 1:
         fitwq = None
 
+    restarting = 0
+    if strategy.cursor > 0 or strategy.step_tracker:
+        restarting = initial_objective.step_limit
+        initial_objective.step_limit = 0
+
     ret = fit(
         csys,
         gdb,
@@ -2161,11 +2401,14 @@ def ff_optimize(
     )
     kv, P00, P0, gp0 = ret.value
 
+    if strategy.cursor > 0 or strategy.step_tracker:
+        initial_objective.step_limit = restarting
+
     print(f"{datetime.datetime.now()} Computing chemical objective")
 
     CX0 = mm.chemical_system_smarts_complexity(csys)
 
-    C00 = chemical_objective(csys, P0=len(G0), C0=CX0)
+    C00 = chemical_objective(csys, P0=math.log(len(psystems)+1), c=CX0)
     C0 = C00
     C = C00
     print(f"{datetime.datetime.now()} C0={C0}")
@@ -2208,7 +2451,7 @@ def ff_optimize(
     union_cache = {}
     step_tracker = strategy.step_tracker
 
-    while True:
+    while strategy.steps:
         if success:
             print("Restarting optimization search")
             strategy = optimization.optimization_strategy_restart(strategy)
@@ -2369,7 +2612,7 @@ def ff_optimize(
         cnd_n = len(candidates)
         t = datetime.datetime.now()
 
-        print_chemical_system(csys, show_parameters=assigned_nodes)
+        mm.chemical_system_print(csys, show_parameters=assigned_nodes)
 
         visited.clear()
         repeat.clear()
@@ -2379,206 +2622,6 @@ def ff_optimize(
         )
 
         print(f"Scoring and filtering {len(candidates)} candidates for operation={step.operation}")
-#         for t, tier in enumerate(tiers):
-#             print(f"Tier {t}: Scoring and filtering {len(candidates)} candidates for operation={step.operation}")
-#             if tier.accept == 0:
-#                 print(f"Tier {t}: Accepting all so we skip")
-#                 continue
-#             elif len(candidates) <= tier.accept:
-#                 print(f"Tier {t}: Accepting all candidates so we skip")
-#                 continue
-#             cnd_keys = {i: k for i, k in enumerate(candidates, 1)}
-# 
-#             fitkeys = objective_tier_get_keys(tier, csys)
-#             fitkeys = [k for k in fitkeys if k[1] in "skeler" and tier.key_filter(k)]
-# 
-#             fitting_models = set([x[0] for x in fitkeys])
-#             fitting_models.update(strategy.bounds)
-# 
-#             reuse=[k for k,_ in enumerate(csys.models) if k not in fitting_models]
-# 
-#             tier_psystems = psystems
-#             reuse = [x for x in range(len(csys.models))]
-#             reset_config_search = reset_config
-#             # reset_config_search = {
-#             #     "bond_l": False,
-#             #     "bond_k": False,
-#             #     "angle_l": False,
-#             #     "angle_k": False
-#             # }
-#             shm = compute.shm_local(0, data={
-#                 "objective": tier,
-#                 "csys": csys,
-#                 "gdb": gdb,
-#                 "reuse": reuse,
-#                 "psysref": tier_psystems,
-#                 "reset_config": reset_config_search,
-#             })
-# 
-#             j = tuple(tier.objectives)
-#             iterable = {
-#                 (i, j): ((S, Sj, step.operation, edits, j), {"verbose": False})
-#                 for i, (
-#                     (edits, _, p_j),
-#                     (S, Sj, step, _, _, _, _),
-#                 ) in enumerate(candidates.items(), 1)
-#                 if mm.chemical_system_get_node_hierarchy(csys, S) is not None
-#             }
-#             print(
-#                 datetime.datetime.now(),
-#                 f"Generated {len(candidates)}",
-#                 f"x {len(tiers[0].objectives)//len(j)}",
-#                 f"= {len(iterable)} candidate evalulation tasks"
-#             )
-# 
-#             chunksize = 10
-# 
-#             if n_ics > 100000000:
-#                 procs = max(1, procs // 10)
-#             elif n_ics > 50000000:
-#                 procs = max(1, procs // 5)
-#             elif n_ics > 10000000:
-#                 procs = max(1, procs // 3)
-#             elif n_ics > 5000000:
-#                 procs = max(1, procs // 2)
-#             if n_ics > len(candidates)*10:
-#                 shm.procs_per_task = 0
-#                 chunksize = 1
-# 
-#             addr = ("", 0)
-#             if len(iterable)*(shm.procs_per_task or procs) <= procs:
-#                 addr = ('127.0.0.1', 0)
-#                 procs=len(iterable)
-# 
-#             if configs.processors == 1 and not configs.remote_compute_enable:
-#                 work = {}
-#                 for k, v in iterable.items():
-#                     r = calc_tier_distributed(*v[0], **v[1], shm=shm)
-#                     work[k] = r
-#             # elif len(tier.objectives) < 500 and len(candidates) > 1 and configs.remote_compute_enable:
-#             elif configs.remote_compute_enable:
-#                 print(logs.timestamp(), f"Each worker will compute a full candidate N={len(iterable)}")
-#                 ws = compute.workqueue_new_workspace(wq, address=addr, nproc=procs, shm=shm)
-#                 # # this modifies the csys, relabels and computes objective
-#                 chunksize = 1
-#                 # need to loop through candidates for large fits rather than one worker per candidate
-#                 work = compute.workspace_submit_and_flush(
-#                     ws,
-#                     calc_tier_distributed,
-#                     iterable,
-#                     chunksize,
-#                     0, #math.log(len(iterable)//10, 10),
-#                     len(iterable),
-#                     verbose=True
-#                 )
-#                 compute.workqueue_remove_workspace(wq, ws)
-#                 ws.close()
-#                 ws = None
-#             else:
-#                 # the means we have candidates with lots of things to compute,
-#                 # so do each one at a time
-#                 print(logs.timestamp(), f"Dispatching candidate tasks= {len(iterable)} in serial")
-#                 work = {}
-#                 for i, unit in iterable.items():
-#                     print(logs.timestamp(), f"Running candidate task {i[0]}/{len(iterable)}")
-#                     args = unit[0]
-#                     kwds = unit[1]
-#                     kwds["wq"] = wq
-#                     kwds["verbose"] = True
-#                     work[i] = calc_tier_distributed(*args, **kwds, shm=shm)
-#             # now just sum over the jobs
-#             # return keep, X, obj, match_len
-#             work_new = {}
-#             for i, _ in enumerate(candidates, 1):
-#                 if i not in work_new:
-#                     work_new[i] = [0, 0, 0, 0, {}, []]
-#                 for ij, j in work:
-#                     if i == ij:
-#                         ret = work[(i, j)]
-#                         line = ret.value
-#                         work_new[i][0] |= int(line[0])
-#                         work_new[i][1] += line[1]
-#                         work_new[i][2] = line[2]
-#                         work_new[i][3] += line[3]
-#                         # probably use average or something else
-#                         work_new[i][4].update(line[4])
-#                         work_new[i][5].extend(ret.out)
-# 
-#             work_full = work
-#             work = work_new
-# 
-#             tier_scores = []
-#             max_line = 0
-#             for j, cnd_i in enumerate(sorted(work), 1):
-#                 (keep, cP, c, match_len, kv, out) = work[cnd_i]
-#                 # cnd_i, key, unit = unit
-#                 (S, Sj, step, _, _, _, _) = candidates[cnd_keys[cnd_i]]
-# 
-#                 cC = chemical_objective(csys, P0=len(G0), C0=CX0, c=c)
-#                 cX = cP + cC
-#                 if keep:
-#                     heapq.heappush(tier_scores, (cX, cnd_i))
-#             accept = tier.accept
-#             if accept:
-#                 if type(accept) is float and accept > 0 and accept < 1:
-#                     accept = max(1, int(len(tier_scores)*accept))
-#                     print(f"Fraction acceptance {tier.accept*100}% N={accept}/{len(tier_scores)}")
-#                 accepted_keys = [
-#                     x[1] for x in heapq.nsmallest(accept, tier_scores)
-#                 ]
-#             else:
-#                 accepted_keys = [
-#                     x[1] for x in heapq.nsmallest(len(tier_scores), tier_scores)
-#                 ]
-# 
-#             cout_line = (
-#                 f" Initial objectives: "
-#                 f" X= {C0+P0:10.5f}"
-#                 f" P= {P0:10.5f}"
-#                 f" C= {C0:10.5f}"
-#             )
-#             print(cout_line)
-#             print(f"Accepted {len(accepted_keys)} candidates from tier summary")
-#             for j, cnd_i in enumerate(accepted_keys + list(set(work).difference(accepted_keys)), 1):
-#                 (keep, cP, c, match_len, kv, out) = work[cnd_i]
-#                 # cnd_i, key, unit = unit
-#                 (S, Sj, step, _, _, _, _) = candidates[cnd_keys[cnd_i]]
-#                 edits = cnd_keys[cnd_i][0]
-#                 if edits:
-#                     edits = str(edits)
-#                 else:
-#                     edits = f"{Sj_sma[cnd_i-1]}"
-#                 cC = chemical_objective(csys, P0=len(G0), C0=CX0, c=c)
-#                 dP = cP - P0
-#                 dC = cC - C0
-#                 cX = cP + cC
-#                 dX = dP + dC
-#                 K = "Y" if j <= len(accepted_keys) else "N"
-#                 F = ">" if j <= len(accepted_keys) else " "
-#                 cout_line = (
-#                     f"{F} Cnd. {cnd_i:4d}/{len(work)}"
-#                     f" N= {match_len:6d}"
-#                     f" dP= {dP:14.5f}"
-#                     f" dC= {dC:14.5f}"
-#                     # f" X0= {X0:10.5f}"
-#                     f" d(P+C)= {dX:14.5f}"
-#                     f" d%= {100*(cX-X0)/(X0):10.3f}%"
-#                     f" {S.name:6s}  " 
-#                     f" {edits}"
-#                 )
-#                 max_line = max(len(cout_line), max_line)
-#                 # print(datetime.datetime.now())
-#                 print(cout_line)
-#                 if j == len(accepted_keys):
-#                     print("-"*max_line)
-#                 sys.stdout.flush()
-# 
-#             Sj_sma = [Sj_sma[k-1] for k in accepted_keys]
-#             candidates = {
-#                 cnd_keys[k]: candidates[cnd_keys[k]]
-#                     for k in accepted_keys
-#             }
-#             cnd_keys = {i: k for i, k in enumerate(candidates, 1)}
 
         candidates, Sj_sma = process_tiers(
             tiers,
@@ -2586,7 +2629,8 @@ def ff_optimize(
             gdb,
             csys,
             psystems,
-            G0,
+            chemical_objective,
+            P00,
             CX0,
             X0,
             C0,
@@ -2611,6 +2655,7 @@ def ff_optimize(
             assigned_nodes,
             reuse0,
             reset_config,
+            chemical_objective,
             initial_objective,
             tiers,
             C0,
@@ -2623,566 +2668,22 @@ def ff_optimize(
             wq
         )
 
-#         macroamt = strategy.macro_accept_max_total
-#         macroampc = strategy.macro_accept_max_per_cluster
-#         microamt = strategy.micro_accept_max_total
-#         microampc = strategy.micro_accept_max_per_cluster
-# 
-#         cnd_n = len(candidates)
-#         cnd_keys = {i: k for i, k in enumerate(candidates, 1)}
-#         n_added = 0
-#         added = True
-#         kept = set()
-#         macro_count = collections.Counter()
-#         ignore = set()
-#         # wq = compute.workqueue_local("", configs.workqueue_port)
-#         # print(f"{datetime.datetime.now()} workqueue started on {wq.mgr.address}")
-#         n_nano = 0
-#         while added:
-# 
-#             case1 = macroamt == 0 or n_added < macroamt
-#             case2 = macroampc == 0 or all([x < macroampc for x in macro_count.values()])
-#             if not (case1 and case2):
-#                 break
-# 
-#             n_nano += 1
-# 
-#             added = False
-#             best = {}
-# 
-#             cout = {}
-#             cout_sorted_keys = []
-# 
-# 
-#             shm = compute.shm_local(0, data={
-#                 "objective": initial_objective,
-#                 "csys": csys,
-#                 "gdb": gdb,
-#                 "reuse": reuse0,
-#                 "psysref": psystems,
-#                 "reset_config": reset_config
-#             }) 
-# 
-#             j = tuple(initial_objective.objectives)
-#             iterable = {
-#                 # (i, j): ((S, Sj, step.operation, edits, [j]), {})
-#                 (i, j): ((S, Sj, step.operation, edits, j), dict(verbose=False))
-#                 for i, (
-#                     (edits, _, p_j),
-#                     (S, Sj, step, _, _, _, _),
-#                 ) in enumerate(candidates.items(), 1)
-#                 if mm.chemical_system_get_node_hierarchy(csys, S) is not None
-#                 # ) in enumerate(candidates.items(), 1) for j in tiers[0].objectives
-#             }
-#             print(
-#                 datetime.datetime.now(),
-#                 f"Generated {len(candidates)} x "
-#                 f"{len(initial_objective.objectives)//len(j)} = "
-#                 f"{len(iterable)} candidate evalulation tasks"
-#             )
-# 
-#             chunksize = 10
-# 
-#             if n_ics > 100000000:
-#                 procs = max(1, procs // 10)
-#             elif n_ics > 50000000:
-#                 procs = max(1, procs // 5)
-#             elif n_ics > 10000000:
-#                 procs = max(1, procs // 3)
-#             elif n_ics > 5000000:
-#                 procs = max(1, procs // 2)
-#             if n_ics > len(candidates)*10:
-#                 shm.procs_per_task = 0
-#                 chunksize = 1
-# 
-#             addr = ("", 0)
-#             if len(iterable)*(shm.procs_per_task or procs) <= procs:
-#                 addr = ('127.0.0.1', 0)
-#                 procs = len(iterable)
-# 
-# 
-#             for k in kept:
-#                 for iterkey in list(iterable):
-#                     if k == iterkey[0]:
-#                         iterable.pop(iterkey)
-# 
-#             for k in ignore:
-#                 for iterkey in list(iterable):
-#                     if k == iterkey[0]:
-#                         iterable.pop(iterkey)
-# 
-# 
-#             if step.operation != strategy.MERGE and (macroamt + macroampc + microamt + microampc == 0):
-#                 # use X0 so later dX will be 0 and kept
-#                 # if we do this for merges, every merge will be taken..
-#                 work = {i: (1, X0, 0.0, 1) for i in cnd_keys}
-# 
-#             else:
-#                 if configs.processors == 1 and not configs.remote_compute_enable:
-#                     work = {}
-#                     for k, v in iterable.items():
-#                         r = calc_tier_distributed(*v[0], **v[1], verbose=True, shm=shm)
-#                         work[k] = r
-#                 elif configs.remote_compute_enable:
-#                     # this means each candidate has relatively few targets to compute, so we can let each worker handle one candidate
-#                     print(logs.timestamp(), f"Each worker will compute a full candidate N={len(iterable)}")
-#                     ws = compute.workqueue_new_workspace(wq, address=addr, nproc=procs, shm=shm)
-#                     # # this modifies the csys, relabels and computes objective
-#                     # so i should use objective_tier_run instead and loop through the iterable
-#                     chunksize = 1
-#                     work = compute.workspace_submit_and_flush(
-#                         ws,
-#                         calc_tier_distributed,
-#                         iterable,
-#                         chunksize,
-#                         0.0,
-#                         len(iterable),
-#                         verbose=True,
-#                     )
-#                     compute.workqueue_remove_workspace(wq, ws)
-#                     ws.close()
-#                     ws = None
-#                 else:
-#                     # the means we have candidates with lots of things to compute,
-#                     # so do each one at a time
-#                     print(logs.timestamp(), f"Dispatching candidate tasks= {len(iterable)} in serial")
-#                     work = {}
-#                     for i, unit in iterable.items():
-#                         print(logs.timestamp(), f"Running candidate task {i[0]}/{len(iterable)}")
-#                         args = unit[0]
-#                         kwds = unit[1]
-#                         kwds["wq"] = wq
-#                         kwds["verbose"] = True
-#                         work[i] = calc_tier_distributed(*args, **kwds, shm=shm)
-# 
-#                 # now just sum over the jobs
-#                 # return keep, X, obj, match_len
-#                 work_new = {}
-#                 for i, _ in enumerate(candidates, 1):
-#                     if i not in work_new:
-#                         work_new[i] = [0, 0, 0, 0, {}, []]
-#                     for ij, j in work:
-#                         if i == ij:
-#                             ret = work[(i,j)]
-#                             line = ret.value
-#                             work_new[i][0] |= int(line[0])
-#                             work_new[i][1] += line[1]
-#                             work_new[i][2]  = line[2]
-#                             work_new[i][3] += line[3]
-#                             work_new[i][4].update(line[4])
-#                             work_new[i][5].extend(ret.out)
-# 
-#                 work_full = work
-#                 work = work_new
-# 
-#             print(f"The unfiltered results of the candidate scan N={len(work)} total={len(iterable)} oper={step.operation}:")
-# 
-# #             cout_line = (
-# #                 f" Initial objectives: "
-# #                 f" X= {C0+P0:10.5f}"
-# #                 f" P= {P0:10.5f}"
-# #                 f" C= {C0:10.5f}"
-# #             )
-# #             print(cout_line)
-# #             cnd_kv = {}
-# #             for j, cnd_i in enumerate(sorted(work), 1):
-# #                 (keep, cP, c, match_len, kv, out) = work[cnd_i]
-# #                 # cnd_i, key, unit = unit
-# #                 (S, Sj, step, _, _, _, _) = candidates[cnd_keys[cnd_i]]
-# # 
-# #                 dP = cP - P0
-# #                 # cC = C0 + dcC
-# #                 cC = chemical_objective(csys, P0=len(G0), C0=CX0, c=c)
-# #                 cX = cP + cC
-# #                 dP = cP - P0
-# #                 dC = cC - C0
-# #                 dX = dP + dC
-# #                 # dX = cX - X0
-# #                 keep = keep and dX <= 0.0
-# # 
-# #                 if step.operation == strategy.SPLIT:
-# #                     visited.add(S.name)
-# #                 elif step.operation == strategy.MERGE:
-# #                     visited.add(Sj.name)
-# #                 elif step.operation == strategy.MODIFY:
-# #                     visited.add(S.name)
-# # 
-# # 
-# #                 reused_line = ""
-# #                 if best_reuse is not None and cnd_i == best_reuse[0]:
-# #                     reused_line="*"
-# #                 K = "Y" if keep else "N"
-# #                 edits = cnd_keys[cnd_i][0]
-# #                 if edits:
-# #                     edits = str(edits)
-# #                 else:
-# #                     edits = f"{Sj_sma[cnd_i-1]}"
-# #                 cout_line = (
-# #                     f"Cnd. {cnd_i:4d}/{len(work)}"
-# #                     f" N= {match_len:6d} K= {K}"
-# #                     f" dP= {dP:14.5f}"
-# #                     f" dC= {dC:14.5f}"
-# #                     f" d(P+C)= {dX:14.5f}"
-# #                     f" d%= {100*(cX-X0)/(X0):10.3f}%"
-# #                     f" {S.name:6s} {reused_line}" 
-# #                     f" {edits}"
-# #                 )
-# #                 max_line = max(len(cout_line), max_line)
-# #                 # print(datetime.datetime.now())
-# #                 print(cout_line, end=" " * (max_line - len(cout_line)) + '\n')
-# #                 sys.stdout.flush()
-# # 
-# #                 if match_len == 0:
-# #                     if step.operation in [strategy.SPLIT, strategy.MODIFY]:
-# #                         keep = False
-# #                         ignore.add(cnd_i)
-# #                         continue
-# # 
-# # 
-# # 
-# #                 # We prefer to add in this order
-# #                 cout_key = None
-# # 
-# #                 # print sorted at the end but only for new
-# #                 # this is to speed things up
-# #                 cout_key = (-int(keep), cX, match_len, cnd_i, S.name)
-# #                 cout[cout_key] = cout_line
-# # 
-# #                 # if this was valid but not accepted, we allow it to be
-# #                 # reconsidered if we repeat the step
-# #                 # if keep:
-# #                 #     step_tracker[(S.category, S.name)] = max(0, strategy.cursor - 1)
-# # 
-# #                 # use these below to determine the best ones to keep
-# #                 heapq.heappush(cout_sorted_keys, cout_key)
-# #                 cnd_kv[cout_key] = kv
-# # 
-# #                 if not keep:
-# #                     ignore.add(cnd_i)
-# #                     continue
-# # 
-# # 
-# #                 if cnd_i in kept:
-# #                     ignore.add(cnd_i)
-# #                     continue
-# # 
-# #             print("\r" + " " * max_line)
-# 
-#             cout, cout_sorted_keys, cnd_kv = process_accepted_candidates(
-#                 candidates,
-#                 cnd_keys,
-#                 work,
-#                 csys,
-#                 strategy,
-#                 Sj_sma,
-#                 C0,
-#                 P0,
-#                 X0,
-#                 CX0,
-#                 G0,
-#                 visited,
-#                 ignore,
-#                 kept,
-#             )
-# 
-# 
-#             # print sorted at the end
-#             print(f"Nanostep {n_nano}: The filtered results of the candidate scan N={len(cout)} total={len(iterable)} oper={step.operation}:")
-#             if len(cout) == 0:
-#                 continue
-# 
-#             cnd_keep, micro_count = select_best_accepted(
-#                 cout,
-#                 cout_sorted_keys,
-#                 cnd_keys,
-#                 strategy,
-#                 X0,
-#                 ignore,
-#                 kept,
-#                 macro_count,
-#             )
-#             micro_added = sum(micro_count.vales())
-#             n_added += micro_added
-#             keys = {x[3]: cnd_keys[x[3]] for x in cnd_keep}
-# 
-# #             ck_i = 1
-# # 
-# #             cnd_keep = []
-# #             best_params = [x[0] for x in best.values()]
-# #             macroamt = strategy.macro_accept_max_total
-# #             macroampc = strategy.macro_accept_max_per_cluster
-# #             microamt = strategy.micro_accept_max_total
-# #             microampc = strategy.micro_accept_max_per_cluster
-# #             micro_added = 0
-# #             micro_count = collections.Counter()
-# # 
-# #             while len(cout_sorted_keys):
-# #                 ck = heapq.heappop(cout_sorted_keys)
-# # 
-# #                 keeping = "  "
-# # 
-# #                 dX = ck[1] - X0
-# #                 case0 = not (strategy.filter_above is not None and strategy.filter_above <= dX)
-# # 
-# # 
-# # 
-# #                 if case0:
-# #                     ignore.add(ck[0])
-# #                 
-# #                 case1 = macroamt == 0 or n_added < macroamt
-# #                 case2 = microamt == 0 or micro_added < microamt
-# #                 if case0 and case1 and case2:
-# #                     sname = ck[4]
-# #                     case3 = macroampc == 0 or macro_count[sname] < macroampc
-# #                     case4 = microampc == 0 or micro_count[sname] < microampc
-# #                     case5 = ck[3] not in ignore
-# #                     if case3 and case4 and case5:
-# #                         cnd_keep.append(ck)
-# #                         micro_count[sname] += 1
-# #                         macro_count[sname] += 1
-# #                         micro_added += 1
-# #                         n_added += 1
-# #                 # if ck[3] in best_params:
-# #                         keeping = "->"
-# #                         kept.add(ck[0])
-# #                 print(f"{keeping} {ck_i:4d}", cout[ck])
-# #                 ck_i += 1
-# #             ck = None
-# # 
-# #             # keys = {x[0]: cnd_keys[x[0]] for x in best.values()}
-# #             keys = {x[3]: cnd_keys[x[3]] for x in cnd_keep}
-# 
-#             # group_number = max(cur_cst.hierarchy.index.nodes)+1
-#             print(f"Performing {len(keys)} operations")
-# 
-#             csys_ref = copy.deepcopy(csys)
-#             csys, nodes = perform_operations(
-#                 csys,
-#                 candidates,
-#                 keys,
-#                 Sj_sma,
-#             )
-# 
-# 
-#             print(f"There are {len(nodes)} nodes returned")
-# 
-#             print("Operations per parameter for this micro:")
-#             print(micro_count)
-#             print(f"Micro total: {sum(micro_count.values())}")
-# 
-#             print("Operations per parameter for this macro:")
-#             print(macro_count)
-#             print(f"Macro total: {sum(macro_count.values())}")
-# 
-#             if len(nodes) == 0:
-#                 success = False
-#                 added = False
-#                 csys = csys_ref
-#                 continue
-# 
-# 
-#             print("The resulting hierarchy is")
-#             print_chemical_system(csys)
-# 
-#             success = False
-#             added = False
-#             if len(keys) == 1 and len(nodes) == 1:
-#                 print("Only one modification, keeping result and printing output:")
-#                 (keep, cP, c, match_len, kv, out) = work[cnd_keep[0][3]]
-#                 print(f"\n".join(out))
-# 
-#                 C = chemical_objective(csys, P0=len(G0), C0=CX0)
-#                 X = cnd_keep[0][1]
-#                 P = X - C
-#                 print(datetime.datetime.now(), f"Macro objective: P={P:13.6g} C={C:13.6g} DX={P+C-X0:13.6g}")
-# 
-#                 kv = cnd_kv[cnd_keep[0]]
-#                 for k, v in kv.items():
-#                     v0 = mm.chemical_system_get_value(csys, k)
-#                     mm.chemical_system_set_value(csys, k, v)
-#                     print(f"{str(k):20s} | New: {v:12.6g} Ref {v0:12.6g} Diff {v-v0:12.6g}")
-# 
-#                 psysref = {
-#                     i: mm.chemical_system_to_physical_system(
-#                         csys,
-#                         psystems[i].models[0].positions,
-#                         ref=psystems[i],
-#                         reuse=reuse0
-#                     ) for i in psystems
-#                 }
-#                 S = list(nodes.values())[0]
-#                 step_tracker[(S.category, S.name)] = 0
-# 
-#             else:
-#                 psysref = {
-#                     i: mm.chemical_system_to_physical_system(
-#                         csys,
-#                         psystems[i].models[0].positions,
-#                         ref=psystems[i],
-#                         reuse=reuse0
-#                     ) for i in psystems
-#                 }
-# 
-#                 if ws:
-#                     compute.workqueue_remove_workspace(wq, ws)
-#                     ws.close()
-#                     ws = None
-#                 ws = None
-#                 if wq:
-#                     ws = compute.workqueue_new_workspace(wq)
-#                 psysref = reset(reset_config, csys, gdb, psysref, verbose=True, ws=ws).value
-#                 if ws:
-#                     compute.workqueue_remove_workspace(wq, ws)
-#                     ws.close()
-#                     ws = None
-#                 print("Multiple modifications, doing another fit with all accepted*")
-# 
-#                 reuse = [x for x in range(len(csys.models))]
-# 
-#                 fitkeys = objective_tier_get_keys(initial_objective, csys)
-#                 fitting_models = set((k[0] for k in fitkeys))
-#                 fitkeys = [k for k in fitkeys if (k[1] in "skeler" and k[2] in assigned_nodes) or k[0] in fitting_models]
-#                 reuse=[k for k,_ in enumerate(csys0.models) if k not in fitting_models]
-#                 
-#                 kv0 = {k: mm.chemical_system_get_value(csys, k) for k in fitkeys}
-#                 # for k, v in kv0.items():
-#                 #     print(f"{str(k):20s} | v0 {v:12.6g}")
-#                 print_chemical_system(csys, show_parameters=assigned_nodes.union([x.name for x in nodes.values()]))
-#                 ret = objective_tier_run(
-#                     initial_objective,
-#                     gdb,
-#                     csys,
-#                     fitkeys,
-#                     psysref=psysref,
-#                     reuse=reuse,
-#                     wq=wq,
-#                     verbose=True
-#                 )
-#                 kv, _, P, gp = ret.value
-#                 print("\n".join(ret.out))
-#                 C = chemical_objective(csys, P0=len(G0), C0=CX0)
-#                 X = P + C
-#                 dX = X - X0
-#                 print(datetime.datetime.now(), f"Macro objective: {P:13.6g} C={C:13.6g} DX={P+C-X0:13.6g}")
-#                 if dX > 0:
-#                     print(datetime.datetime.now(), f"Objective raised. Skipping")
-#                     success = False
-#                     added = False
-#                     csys = csys_ref
-#                     for c in cnd_keep:
-#                         ignore.add(c[3])
-#                         if c[3] in kept:
-#                             kept.remove(c[3])
-#                         sname = c[4]
-#                         micro_count[sname] -= 1
-#                         macro_count[sname] -= 1
-#                         micro_added -= 1
-#                         n_added -= 1
-# 
-#                     continue
-# 
-#                 for k, v in kv.items():
-#                     v0 = kv0[k]
-#                     # v0 = mm.chemical_system_get_value(csys, k)
-#                     mm.chemical_system_set_value(csys, k, v)
-#                     print(f"{str(k):20s} | New: {v:12.6g} Ref {v0:12.6g} Diff {v-v0:12.6g}")
-# 
-# 
-#             recalc = False
-#             for cnd_i, hent in nodes.items():
-#                 key = keys[cnd_i]
-# 
-#                 (S, Sj, step, _, _, _, _) = candidates[key]
-# 
-#                 hidx = mm.chemical_system_get_node_hierarchy(csys, S)
-#                 if hidx is None:
-#                     if S.name in repeat:
-#                         repeat.remove(S.name)
-#                     if S.name in assigned_nodes:
-#                         assigned_nodes.remove(S.name)
-#                     if (S.category, S.name) in step_tracker:
-#                         step_tracker.pop((S.category, S.name))
-#                     if S.name in visited:
-#                         visited.remove(S.name)
-#                     print("Warning, could not find node {S.name} in the hierarchy. Skipping")
-#                     continue
-# 
-#                 repeat.add(S.name)
-#                 sma = Sj_sma[cnd_i-1]
-#                 kept.add(cnd_i)
-#                 # cnd_i = best[S.name][0] 
-#                 # hent = Sj
-#                 visited.add(hent.name)
-#                 edits = step.overlap[0]
-#                 for union_idx in [(S.index, S.name), (hent.index, hent.name)]:
-#                     for k in list(union_cache):
-#                         if union_idx == tuple(k[:2]):
-#                             union_cache.pop(k)
-# 
-#                 if step.operation == strategy.SPLIT:
-# 
-#                     success = True
-#                     added = True
-#                     repeat.add(hent.name)
-#                     assigned_nodes.add(hent.name)
-#                     step_tracker[(hent.category, hent.name)] = 0
-#                     step_tracker[(S.category, S.name)] = 0
-# 
-#                 elif step.operation == strategy.MERGE:
-# 
-#                     if (hent.category, hent.name) in step_tracker:
-#                         step_tracker.pop((hent.category, hent.name))
-#                     else:
-#                         print("WARNING", hent.name, "missing from the tracker")
-#                     step_tracker[(S.category, S.name)] = 0
-# 
-#                     visited.add((S.category, S.name))
-#                     if (hent.category, hent.name) in visited:
-#                         visited.remove((hent.category, hent.name))
-# 
-#                     above = hidx.index.above.get(S.index)
-#                     if above is not None:
-#                         repeat.add((hidx.index.nodes[above].category, hidx.index.nodes[above].name))
-# 
-#                     if hent.name in assigned_nodes:
-#                         assigned_nodes.remove(hent.name)
-#                     success = True
-#                     added = True
-# 
-#                 elif step.operation == strategy.MODIFY:
-#                     step_tracker[(S.category, S.name)] = 0
-#                     repeat.add((S.category, S.name))
-#                     visited.add((S.category, S.name))
-#                     success = True
-#                     added = True
-# 
-#             print(datetime.datetime.now(), "Chemical system after nanostep:")
-#             # print the tree
-#             print_chemical_system(csys, show_parameters=assigned_nodes)
-# 
-#             X0 = X
-#             P0 = P
-#             C0 = C
-#             psystems = psysref
-
-
         if n_added > 0:
 
-            # because we added/modified, we consider the candidates that
-            # weren't accepted since they might perform better after the
-            # new parameters were added
-            # for cnd in candidates.values():
-            #     S = cnd[0]
-            #     Sj = cnd[1]
-            #     k = (S.category, S.name)
-            #     if k in step_tracker and step_tracker[k] == strategy.cursor:
-            #         step_tracker[k] -= 1
-            #     if step.operation == strategy.MERGE:
-            #         k = (Sj.category, Sj.name)
-            #         if k in step_tracker and step_tracker[k] == strategy.cursor:
-            #             step_tracker[k] -= 1
-
             strategy.repeat_step()
+            print((
+                f"{datetime.datetime.now()} "
+                "Saving restart checkpoint to "
+                f"restart_{iteration}_{macro.cursor}.p"
+            ))
+            pickle.dump(
+                [gdb, csys, strategy, psystems],
+                open(f"restart_{iteration}_{macro.cursor}.p", "wb")
+            )
+            smirnoff_models.smirnoff_write_version_0p3(
+                csys,
+                f"restart_{iteration}_{macro.cursor}.offxml"
+            )
 
         print(f"There were {n_added} successful operations")
 
@@ -3191,6 +2692,7 @@ def ff_optimize(
         print(datetime.datetime.now(), "Saving chk.cs.p")
         pickle.dump([gdb, csys, strategy, psystems], open("chk.cst.p", "wb"))
 
+
         print(datetime.datetime.now(), "Macro step done.")
 
         print()
@@ -3198,9 +2700,10 @@ def ff_optimize(
         print()
 
     print(f"{datetime.datetime.now()} Strategy done.")
+    CX0 = mm.chemical_system_smarts_complexity(csys)
+    C = chemical_objective(csys, P0=math.log(len(psystems)+1), c=CX0)
 
     if final_objective and (initial_objective or tiers):
-
 
         print(f"{datetime.datetime.now()} Computing final fit")
 
@@ -3220,10 +2723,10 @@ def ff_optimize(
             ws.close()
             ws = None
 
-        C = chemical_objective(csys, P0=len(G0), C0=CX0)
-        print(f"{datetime.datetime.now()} C0={C0}")
-        X = P + C
-        print(datetime.datetime.now(), f"Final objective: X={X:13.6g} P={P:13.6g} C={C:13.6g}")
+        # C = chemical_objective(csys, P0=len(G0), C0=CX0)
+        # print(f"{datetime.datetime.now()} C0={C0}")
+        # X = P + C
+        print(datetime.datetime.now(), f"Final objective: P={P:13.6g}")
         for k, v in kv.items():
             v0 = mm.chemical_system_get_value(csys, k)
             mm.chemical_system_set_value(csys, k, v)
@@ -3253,7 +2756,7 @@ def ff_optimize(
     wq.close()
     wq = None
 
-    print_chemical_system(csys)
+    mm.chemical_system_print(csys)
 
     print(f"{datetime.datetime.now()} Saving final checkpoint to chk.cst.p")
     pickle.dump([gdb, csys, strategy, psystems], open("chk.cst.p", "wb"))
@@ -3269,6 +2772,7 @@ def calc_tier_distributed(S, Sj, operation, edits, oid, verbose=False, wq=None, 
     # copy once
     csys = copy.deepcopy(shm.csys)
     # csys = shm.csys
+    # print(f"{verbose=}")
 
     hidx = mm.chemical_system_get_node_hierarchy(csys, S)
     cm = mm.chemical_system_get_node_model(csys, S)
@@ -3348,7 +2852,17 @@ def calc_tier_distributed(S, Sj, operation, edits, oid, verbose=False, wq=None, 
         addr = ('127.0.0.1', 0)
         ws = compute.workspace_local(*addr, shm={})
 
+    out = []
     ret = reset(shm.reset_config, csys, gdb, psysref, verbose=verbose, ws=ws)
+    out.extend(ret.out)
+
+    # keep a list of keys in case we reset but don't fit
+    kvreset = mm.chemical_system_iter_keys(csys)
+
+    out.append("RESETTING")
+    for k, v in shm.reset_config.items():
+        out.append(f"{k} : {v}")
+    psysref = ret.value
 
     if verbose:
         print("\n".join(ret.out))
@@ -3403,7 +2917,6 @@ def calc_tier_distributed(S, Sj, operation, edits, oid, verbose=False, wq=None, 
 
     # print("Matches", match_len, "Old matches", old_match)
     # C = graphs.graph_bits(Sj) / len(Sj.nodes) /1000 + len(Sj.nodes)
-    out = []
     kv = {}
     if keep:
         ret = objective_tier_run(
@@ -3418,11 +2931,13 @@ def calc_tier_distributed(S, Sj, operation, edits, oid, verbose=False, wq=None, 
             verbose=verbose
         )
         kv, y0, P, gx = ret.value
-        out = ret.out
+        kvreset.update(kv)
+        out.extend(ret.out)
 
     # print(f"{S.name}->{sma:40s} OID={oid} {keep} {X} {C} {match_len}")
 
     c = mm.chemical_system_smarts_complexity(csys)
+    kv = kvreset
 
     return returns.success((keep, P, c, match_len, kv), out=out)
 
@@ -3431,11 +2946,12 @@ def print_chemical_system(csys, show_parameters=None):
     mm.chemical_system_print(csys, show_parameters=show_parameters)
 
 
-def chemical_objective(csys, P0=1.0, C0=1.0, A=0.01, B=1.0, C=1.0, c=None):
+def chemical_objective(csys, P0=1.0, C0=1.0, A=1.0, B=1.0, C=1.0, c=None):
 
     if c is None:
         c = mm.chemical_system_smarts_complexity(csys, B=B, C=C)
-    CC = A * P0 * math.exp(A * (c - C0))
+    CC = A * P0 * c**2
+    # print(f"CHEM OBJECTIVE {CC=} {A=} {c=}")
     return CC
 
 
@@ -3540,7 +3056,7 @@ def chemical_system_cluster_data(csys, m, sag, objective, strategy=None):
 
     hidx = csys.models[m].procedures[0].smarts_hierarchies[0].copy()
 
-    lbls = [n.name for n in hidx.index.nodes.values()] 
+    lbls = [n.name for n in hidx.index.nodes.values()]
     optimization.target_list = lbls
     optimization.reference_list = lbls
     optimization.merge_protect_list = lbls
@@ -3584,15 +3100,15 @@ def chemical_system_cluster_data(csys, m, sag, objective, strategy=None):
         for n in refhidx.index.nodes.values()
         if n.index != root.index
     ]:
-        if idx in refhidx.smarts:
-            refhidx.smarts.pop(idx)
-        name = refhidx.index.nodes[idx].name
-        for (ui, namei) in list(proc.topology_parameters):
-            if namei == name:
-                proc.topology_parameters.pop((ui, namei))
-        for sym, terms in cm.topology_terms.items():
-            if name in terms.values:
-                terms.values.pop(name)
+    #     if idx in refhidx.smarts:
+    #         refhidx.smarts.pop(idx)
+    #     name = refhidx.index.nodes[idx].name
+    #     for (ui, namei) in list(proc.topology_parameters):
+    #         if namei == name:
+    #             proc.topology_parameters.pop((ui, namei))
+    #     for sym, terms in cm.topology_terms.items():
+    #         if name in terms.values:
+    #             terms.values.pop(name)
 
         trees.tree_index_node_remove(refhidx.index, idx)
 
@@ -3624,26 +3140,27 @@ def chemical_system_cluster_data(csys, m, sag, objective, strategy=None):
 
         pkey = (0, new_node.name)
 
-        if m == 0:
-            terms = {"k": new_node.name, "l": new_node.name}
-            proc.topology_parameters[pkey] = terms
-            kval = 10.0
-            lval = 1.3
-            cm.topology_terms["k"].values[new_node.name] = [kval]
-            cm.topology_terms["l"].values[new_node.name] = [lval]
-        elif m == 1:
-            terms = {"k": new_node.name, "l": new_node.name}
-            proc.topology_parameters[pkey] = terms
-            kval = 50.0
-            lval = 109*3.14/180
-            cm.topology_terms["k"].values[new_node.name] = [kval]
-            cm.topology_terms["l"].values[new_node.name] = [lval]
-        elif m == 2:
-            terms = {"n": new_node.name, "p": new_node.name, "k": new_node.name}
-            proc.topology_parameters[pkey] = terms
-            cm.topology_terms["n"].values[new_node.name] = [1,2,3]
-            cm.topology_terms["p"].values[new_node.name] = [0,0,0]
-            cm.topology_terms["k"].values[new_node.name] = [0,0,0]
+        if new_node.name not in lbls:
+            if m == 0:
+                terms = {"k": new_node.name, "l": new_node.name}
+                proc.topology_parameters[pkey] = terms
+                kval = 10.0
+                lval = 1.3
+                cm.topology_terms["k"].values[new_node.name] = [kval]
+                cm.topology_terms["l"].values[new_node.name] = [lval]
+            elif m == 1:
+                terms = {"k": new_node.name, "l": new_node.name}
+                proc.topology_parameters[pkey] = terms
+                kval = 50.0
+                lval = 109*3.14/180
+                cm.topology_terms["k"].values[new_node.name] = [kval]
+                cm.topology_terms["l"].values[new_node.name] = [lval]
+            elif m == 2:
+                terms = {"n": new_node.name, "p": new_node.name, "k": new_node.name}
+                proc.topology_parameters[pkey] = terms
+                cm.topology_terms["n"].values[new_node.name] = [1,2,3]
+                cm.topology_terms["p"].values[new_node.name] = [0,0,0]
+                cm.topology_terms["k"].values[new_node.name] = [0,0,0]
 
         sma = newhidx.smarts[old_index]
         refhidx.smarts[new_node.index] = sma
@@ -3922,7 +3439,14 @@ def chemical_system_cluster_angles(csys: mm.chemical_system, gdb, sep=0.01):
 def chemical_system_cluster_bonds(csys: mm.chemical_system, gdb, sep=0.001):
     return chemical_system_cluster_geom(csys, gdb, sep, topology.bond)
 
-def smiles_assignment_force_constants(gdb, alpha=-.25, guess_periodicity=True, max_n=3, min_dihedral_k=1e-3, max_dihedral_k=100):
+def smiles_assignment_force_constants(
+    gdb,
+    alpha=-.25,
+    guess_periodicity=True,
+    max_n=3,
+    min_dihedral_k=1e-3,
+    max_dihedral_k=100
+):
 
     sag_map = {
         "bond_k": [],
@@ -4045,8 +3569,12 @@ def smiles_assignment_force_constants(gdb, alpha=-.25, guess_periodicity=True, m
 
             if not csys_n:
                 print(f"Could not find any appropriate periodicities for ic={angle_ic} max_n={max_n} alpha={alpha}")
-                csys_n = [n for n in range(1, max_n+1)]
-                csys_p = [0 for n in range(1, max_n+1)]
+                if angles:
+                    csys_n = [n for n in range(1, max_n+1)]
+                    csys_p = [0 for n in range(1, max_n+1)]
+                else:
+                    csys_n = [n for n in csys_n0]
+                    csys_p = [n for n in csys_p0]
                 print("Angles:")
                 print(angles)
                 print("cosines:")
@@ -4127,7 +3655,7 @@ def smiles_assignment_force_constants(gdb, alpha=-.25, guess_periodicity=True, m
             sel_n[angle_ic] = new_n
             sel_p[angle_ic] = new_p
             sel_k[angle_ic] = new_k
-            print("Calculated final", new_n, new_k, new_p)
+            print(f"Calculated final", new_n, new_k, new_p)
 
         for ic in graphs.graph_torsions(pos.graph):
             if ic not in sel_k:
@@ -4251,7 +3779,9 @@ def reset_project_dihedrals(
     #             # data_file.write(line)
     #             # data_file.flush()
 
-    idiv_expected = sum(idiv)/len(idiv)
+    idiv_expected = (sum(idiv)/len(idiv))/4
+    # SCALE
+    # idiv_expected = 1.0
     line = f"idiv unique: {set(idiv)}"
     out.append(line)
 
@@ -4343,7 +3873,7 @@ def reset_project_dihedrals(
                 for n, p in zip(csys_n, csys_p):
                     i = -1
                     x = [sign[(i+2)%4] * n**(i+2)*deriv[(i+2) % 4](n*t - p) for t in angs]
-                    x = sum(x)  #/ idiv_expected
+                    x = sum(x) * idiv_expected
                     row.append(x)
 
                 out.append("Using gradients in fit; first derivative row is:")
@@ -4359,7 +3889,7 @@ def reset_project_dihedrals(
                     # angs = [scipy.stats.circmean(angles, high=np.pi, low=-np.pi)]
                     angs = angles
                     x = [sign[(i+2)%4] * n**(i+2)*deriv[(i+2) % 4](n*t - p) for t in angs]
-                    x = sum(x)  #/ idiv_expected
+                    x = sum(x) * idiv_expected
                     row.append(x)
                 A.append(row)
             out.append("A is:")
@@ -4370,7 +3900,7 @@ def reset_project_dihedrals(
 
             # new_k_lst = np.linalg.solve(A, b)
             new_k_lst, residual, rank, s = np.linalg.lstsq(A, b, rcond=None)
-            line = "Calculated " + " ".join(map("{:12.5f}".format, new_k_lst))
+            line = "Calculated " + " ".join(map(lambda x: "n={:d} k={:12.5f}".format(*x),zip(csys_n, new_k_lst)))
             out.append(line)
             line = f"Error {residual}"
             out.append(line)
@@ -4391,15 +3921,25 @@ def reset_project_dihedrals(
                     new_n.append(n)
                     new_p.append(p)
                     new_k.append(k)
-                    line = "Added n= {n:d} {p:.2f} {k:12.5f}"
-                    out.append(line)
+                    # line = f"Added n= {n:d} {p:.2f} {k:12.5f}"
+                    # out.append(line)
+                # else:
+                #     new_k = []
+                #     new_p = []
+                #     new_n = []
 
-            if not new_n:
-                line = "Warning, all fitted values were out of range"
+            if set(new_n).symmetric_difference(csys_n):
+                line = "Warning, some fitted values were out of range"
                 out.append(line)
+                new_k = []
+                new_p = []
+                new_n = []
+
                 s = arrays.argsort([abs(x) for x in new_k_lst])
                 if len(s) > 1:
-                    s = [s[0]]
+                    line = f"Removing n= {csys_n[s[-1]]:d}"
+                    out.append(line)
+                    s = s[:-1]
                 new_n.extend([csys_n[i] for i in s])
                 new_p.extend([csys_p[i] for i in s])
                 for i in s:
@@ -4411,10 +3951,10 @@ def reset_project_dihedrals(
                     new_k.append(k)
             if set(new_n).symmetric_difference(csys_n):
                 changed = True
-            # if changed:
-            csys_n = new_n
-            csys_p = new_p
-            new_k_lst = new_k
+                # if changed:
+                csys_n = new_n
+                csys_p = new_p
+                new_k_lst = new_k
         else:
             new_k = []
             for k in new_k_lst:
@@ -4482,7 +4022,7 @@ def reset(
     max_n = reset_config.get("dihedral_max_n", 3)
     alpha = reset_config.get("dihedral_alpha", -.25)
     max_k = reset_config.get("dihedral_max_k", 5.0)
-    min_k = reset_config.get("dihedral_max_k", 1e-3)
+    min_k = reset_config.get("dihedral_min_k", 1e-3)
 
     if psystems is None:
         psystems = gdb_to_physical_systems(gdb, csys)
@@ -4491,9 +4031,21 @@ def reset(
         reset_bond_l,
         reset_angle_k,
         reset_angle_l,
-        reset_torsion_k
+        reset_torsion_k,
+        reset_outofplane_k
     ]):
+        out.append("No reset terms enabled. Skipping.")
         return returns.success(psystems)
+
+    if reset_config.get("unique", False):
+        return returns.success({
+            eid: reset_unique(
+                reset_config,
+                gdb.entries[eid],
+                ps, verbose=verbose
+            )
+            for eid, ps in psystems.items()
+        })
 
     if ws:
         ws.reset()
@@ -4517,29 +4069,29 @@ def reset(
     if reset_bond_l:
         mod = mm.chemical_system_reset_bond_lengths(csys, psys_hess, skip=bond_l_skip)
         # if verbose:
-        #     print_chemical_system(csys, show_parameters=[x[2] for x in mod])
+        #     mm.chemical_system_print(csys, show_parameters=[x[2] for x in mod])
         reset.add(0)
     if reset_angle_l:
         mod = mm.chemical_system_reset_angles(csys, psys_hess, skip=angle_l_skip)
         if verbose:
-            print_chemical_system(csys, show_parameters=[x[2] for x in mod])
+            mm.chemical_system_print(csys, show_parameters=[x[2] for x in mod])
         reset.add(1)
     if reset_torsion_k:
         hierarchy = csys.models[2].procedures[0].smarts_hierarchies[0]
         names = [x.name for x in hierarchy.index.nodes.values()]
         if verbose:
-            print_chemical_system(csys, show_parameters=names)
+            mm.chemical_system_print(csys, show_parameters=names)
         reset.add(2)
     if reset_outofplane_k:
         hierarchy = csys.models[3].procedures[0].smarts_hierarchies[0]
         names = [x.name for x in hierarchy.index.nodes.values()]
         if verbose:
-            print_chemical_system(csys, show_parameters=names)
+            mm.chemical_system_print(csys, show_parameters=names)
         reset.add(3)
 
     bmat_config = dict(
-        torsions=reset_torsion_k,
-        outofplanes=reset_outofplane_k,
+        torsions=True,
+        outofplanes=True,
         pairs=False,
         remove1_3=True
     )
@@ -4567,11 +4119,22 @@ def reset(
                     B = list(B.keys()), list(B.values())
                     bmats[eid] = B
 
+                psys = psystems[eid]
+                # models = list(psys.models)
+                # psys.models = [None, None, None, None, psys.models[4], psys.models[5]]
+                # hess_mm = optimizers_openmm.physical_system_hessian_openmm(
+                #     psys,
+                #     csys,
+                #     h=1e-4
+                # )
+                # psys.models = models
+                hessian = gdb.entries[eid].tables[HESSIANS].values
+                # hessian = [arrays.array_difference(a, arrays.array_scale(b, 1/4.184)) for a, b in zip(hessian, hess_mm)]
                 iterable[(eid, "hess")] = [
                     [
                         csys,
                         psystems[eid],
-                        gdb.entries[eid].tables[HESSIANS].values
+                        hessian
                     ],
                     {"B": B}
                 ]
@@ -4626,7 +4189,16 @@ def reset(
             for i, eid in enumerate(eid_hess, 1):
                 pos = psystems[eid].models[0].positions[0]
                 psys = psystems[eid]
+                # models = list(psys.models)
+                # psys.models = [None, None, None, None, psys.models[4], psys.models[5]]
+                # hess_mm = optimizers_openmm.physical_system_hessian_openmm(
+                #     psys,
+                #     csys,
+                #     h=1e-4
+                # )
+                # psys.models = models
                 hessian = gdb.entries[eid].tables[HESSIANS].values
+                # hessian = [arrays.array_difference(a, arrays.array_scale(b, 1/4.184)) for a, b in zip(hessian, hess_mm)]
                 line = (
                     f"Projecting hessian for EID {eid} "
                     f"{i:8d}/{len(eid_hess)} "
@@ -4641,6 +4213,7 @@ def reset(
                 B = list(B.keys()), list(B.values())
 
                 hic = hessians.hessian_project_onto_ics(csys, psys, hessian, verbose=verbose, B=B)
+
                 psys_hic_all[eid] = hic
             for i, eid in enumerate(eid_grad, 1):
                 pos = psystems[eid].models[0].positions[0]
@@ -4682,6 +4255,7 @@ def reset(
         hvals[0] = mm.chemical_system_groupby_names(csys, 0, psyss, psys_hics)
         psyss.clear()
         psys_hics.clear()
+        reset.add(0)
 
     if reset_angle_k:
         psys_hics = []
@@ -4699,6 +4273,7 @@ def reset(
         hvals[1] = mm.chemical_system_groupby_names(csys, 1, psyss, psys_hics)
         psyss.clear()
         psys_hics.clear()
+        reset.add(1)
 
     if reset_torsion_k:
         psys_hics = []
@@ -4713,6 +4288,7 @@ def reset(
             })
             psyss.append(psys)
         hvals[2] = mm.chemical_system_groupby_names(csys, 2, psyss, psys_hics)
+        reset.add(2)
 
         psyss.clear()
         psys_hics.clear()
@@ -4761,6 +4337,7 @@ def reset(
             })
             psyss.append(psys)
         gvals[3] = mm.chemical_system_groupby_names(csys, 3, psyss, psys_hics)
+        reset.add(3)
 
     psys_hic_all.clear()
     psys_gic_all.clear()
@@ -4770,6 +4347,8 @@ def reset(
 
     for m, hic in hvals.items():
         for lbl, vals in hic.items():
+            line = f"Resetting {lbl} N= {len(vals):5d}"
+            out.append(line)
             if not vals:
                 continue
             if (
@@ -4800,8 +4379,12 @@ def reset(
                     ]
                     idiv.extend(nbr)
                 idiv_expected = sum(idiv)/len(idiv)
+                # idiv_expected = 1.0
+                # SCALE
+                # if reset_outofplane_k or reset_torsion_k:
+                #     new_k *= idiv_expected * 1.3 / 3
                 if reset_outofplane_k or reset_torsion_k:
-                    new_k *= idiv_expected * 1.3 / 3
+                    new_k *= idiv_expected/ 2
                 new_k_lst = [new_k for _ in csys_k]
                 line = (
                     f"Setting {lbl} N= {len(vals):5d} k "
@@ -4890,6 +4473,7 @@ def reset_unique_dihedral(
     max_n,
     min_k,
     max_k,
+    gradients=None,
     verbose=False
 ):
 
@@ -4900,8 +4484,9 @@ def reset_unique_dihedral(
             angles = assignments.smiles_assignment_geometry_torsions_nonlinear(psystem.models[m].positions[0], indices=[ic])
             nba = len([x for x in pos.graph.edges if ic[1] in x])
             nbb = len([x for x in pos.graph.edges if ic[2] in x])
-            idiv_expected = ((nba-1) * (nbb-1))
-            #idiv_expected = 1.0
+            # SCALE UNIQUE
+            idiv_expected = ((nba-1) * (nbb-1)) / 4
+            # idiv_expected = 100
             # print("IDIV IS", idiv_expected)
         elif m == 3:
             angles = assignments.smiles_assignment_geometry_outofplanes(psystem.models[m].positions[0], indices=[ic])
@@ -4922,7 +4507,6 @@ def reset_unique_dihedral(
                 if all(math.cos(i*t) < alpha for t in angles) or all(math.cos(i*t)  >  -alpha for t in angles):
                     csys_n.append(i)
                     csys_p.append(0)
-                    break
                     # print(f"Consider {i}")
         else:
             csys_n = [n for n in csys_n0]
@@ -4936,10 +4520,35 @@ def reset_unique_dihedral(
         sign = [1, -1, -1, 1]
         hq = hic.selections.get(ic, 0)
 
+        out = []
+        grad_gq = None
+        if gradients:
+            grad_gq = gradients.selections.get(ic)
+        gq = None
+        if grad_gq:
+            gq = sum(grad_gq) # /len(grad_gq)
+            line = f"Expected gq: {gq:.6g} kcal/mol/rad"
+            out.append(line)
+        if gq:
+            gq_err = arrays.array_translate(grad_gq, -gq)
+            gq_sse = arrays.array_inner_product(gq_err, gq_err)
+            gq_err = None
+            line = f"Expected gq var: {gq_sse/len(grad_gq):.6g} (kcal/mol/rad)^2"
+            out.append(line)
+            line = f"Expected gq minmax: {min(grad_gq):.6g}, {max(grad_gq):.6g}"
+            out.append(line)
+        if out:
+            print("\n".join(out))
+            out.clear()
 
         if not csys_n:
-            csys_n = [n for n in range(1, max_n+1)]
-            csys_p = [0 for n in range(1, max_n+1)]
+            if angles:
+                csys_n = [n for n in range(1, max_n+1)]
+                csys_p = [0 for n in range(1, max_n+1)]
+            else:
+                csys_n = [n for n in csys_n0]
+                csys_p = [n for n in csys_p0]
+
             if verbose:
                 print(f"Could not find any appropriate periodicities for ic={ic} max_n={max_n} alpha={alpha}")
                 print("Angles:")
@@ -4956,6 +4565,22 @@ def reset_unique_dihedral(
             changed = False
 
             if angles:
+                if gq:
+                    b.append(gq)
+                    row = []
+                    # angs = [scipy.stats.circmean(grad_angles, high=np.pi, low=-np.pi)]
+                    for n, p in zip(csys_n, csys_p):
+                        i = -1
+                        x = [sign[(i+2)%4] * n**(i+2)*deriv[(i+2) % 4](n*t - p) for t in angles]
+                        x = sum(x) * idiv_expected
+                        row.append(x)
+
+                    out.append("Using gradients in fit; first derivative row is:")
+                    out.append(" ".join(map("{:12.6f}".format, row)))
+                    if out:
+                        print("\n".join(out))
+                        out.clear()
+                    A.append(row)
                 for i in range(len(csys_n)):
                     row = []
                     if i == 0:
@@ -4964,12 +4589,22 @@ def reset_unique_dihedral(
                         b.append(0)
                     for n, p in zip(csys_n, csys_p):
                         x = [sign[(i+2)%4] * n**(i+2)*deriv[(i+2) % 4](n*t - p) for t in angles]
-                        x = sum(x) / len(x) / idiv_expected
+                        # x = sum(x) / len(x) / idiv_expected
+                        x = sum(x) * idiv_expected
+                        # x = sum(x) / len(x)
                         row.append(x)
                     A.append(row)
-                new_k_lst = np.linalg.solve(A, b)
+                new_k_lst, residual, rank, s = np.linalg.lstsq(A, b, rcond=None)
+                # new_k_lst = np.linalg.solve(A, b)
                 if verbose:
-                    print("Calculated", new_k_lst)
+                    print("A is:")
+                    for r in A:
+                        print(" ".join(map("{:12.5f}".format, r)))
+                    print("B is:")
+                    print(" ".join(map("{:12.5f}".format, b)))
+                    print("Calculated npk", csys_n, csys_p, new_k_lst)
+                    line = f"Error {residual}"
+                    print(line)
             else:
                 new_k_lst = [0 for _ in csys_n]
             # at this point we have our new_n and new_p; project onto npk0
@@ -4989,13 +4624,20 @@ def reset_unique_dihedral(
                         new_k.append(k)
                         if verbose:
                             print("Added n=", n, p, k)
+                    else:
+                        new_k = []
+                        new_p = []
+                        new_n = []
+                        break
 
                 if not new_n:
                     if verbose:
                         print("Warning, all fitted values were out of range")
                     i = arrays.argmin([abs(x) for x in new_k_lst])
-                    new_n.append(csys_n[i])
-                    new_p.append(csys_p[i])
+                    s = arrays.argsort([abs(x) for x in new_k_lst])
+                    s = [s[0]]
+                    new_n.extend([csys_n[i] for i in s])
+                    new_p.extend([csys_p[i] for i in s])
                     k = new_k_lst[i]
                     if k < -max_k:
                         k = -max_k
@@ -5030,22 +4672,24 @@ def reset_unique_dihedral(
     return psystem
 
 
+
 def reset_unique(reset_config, gde, psystem, verbose=False):
 
+    verbose=True
     assert type(reset_config) is dict
 
-    reset_bond_k = reset_config.get("bond_k", False)
-    reset_bond_l = reset_config.get("bond_l", False)
-    reset_angle_k = reset_config.get("angle_k", False)
-    reset_angle_l = reset_config.get("angle_l", False)
-    reset_torsion_k = reset_config.get("torsion_k", False)
-    reset_outofplane_k = reset_config.get("outofplane_k", False)
+    reset_bond_k = reset_config.get("bond_k", True)
+    reset_bond_l = reset_config.get("bond_l", True)
+    reset_angle_k = reset_config.get("angle_k", True)
+    reset_angle_l = reset_config.get("angle_l", True)
+    reset_torsion_k = reset_config.get("torsion_k", True)
+    reset_outofplane_k = reset_config.get("outofplane_k", True)
 
     guess_periodicity = reset_config.get("dihedral_p", False)
     max_n = reset_config.get("dihedral_max_n", 3)
     alpha = reset_config.get("dihedral_alpha", -.25)
-    max_k = reset_config.get("dihedral_max_k", 5.0)
-    min_k = reset_config.get("dihedral_max_k", 1e-3)
+    max_k = reset_config.get("dihedral_max_k", 10.0)
+    min_k = reset_config.get("dihedral_min_k", 1e-3)
 
     if not any([
         reset_bond_k,
@@ -5084,6 +4728,16 @@ def reset_unique(reset_config, gde, psystem, verbose=False):
 
         hessian = gde.tables[HESSIANS].values
         icb, B = assignments.bmatrix(pos, torsions=reset_torsion_k, outofplanes=reset_outofplane_k, pairs=False ,remove1_3=True)
+        gic = None
+        if GRADIENTS in gde.tables:
+            gx = arrays.array_scale(gde.tables[GRADIENTS].values, 1/4.184)
+            gq = hessians.project_gradient(B, gx)
+            sel = dict(zip(icb, [[x] for x in gq]))
+            gic = assignments.graph_assignment(
+                pos.smiles,
+                sel,
+                pos.graph
+            )
 
         labeled_ic = [x for model in psystem.models for x in model.labels[0]]
         B = {ic: x for ic, x in zip(icb, B) if ic in labeled_ic}
@@ -5106,18 +4760,22 @@ def reset_unique(reset_config, gde, psystem, verbose=False):
                 k0 = psystem.models[1].values[0][ic]["k"][0]
                 k1 = hic.selections[ic]
                 nba = len([x for x in pos.graph.edges if ic[1] in x])
-                psystem.models[1].values[0][ic]["k"][0] = k1 * 1.3 * nba / 3
+                # psystem.models[1].values[0][ic]["k"][0] = k1 * 1.3 * nba / 3
+                # psystem.models[1].values[0][ic]["k"][0] = k1 * nba * 2/3
+                # psystem.models[1].values[0][ic]["k"][0] = k1 * nba  / 2
+                # SCALE UNIQUE
+                psystem.models[1].values[0][ic]["k"][0] = k1 / 2
                 if verbose:
                     print(f"Set m=1 ic={ic} from k={k0} to k={k1}")
 
         if reset_torsion_k:
             psystem = reset_unique_dihedral(
-                psystem, hic, 2, guess_periodicity, alpha, max_n, min_k, max_k, verbose=verbose
+                psystem, hic, 2, guess_periodicity, alpha, max_n, min_k, max_k, gradients=gic, verbose=verbose
             )
 
         if reset_outofplane_k:
             psystem = reset_unique_dihedral(
-                psystem, hic, 3, guess_periodicity, alpha, max_n, min_k, max_k, verbose=verbose
+                psystem, hic, 3, guess_periodicity, alpha, max_n, min_k, max_k, gradients=gic, verbose=verbose
             )
 
     return psystem
@@ -5593,7 +5251,7 @@ def generate_candidates(
                     union_cache[(S.index, S.name, strategy.cursor)] = (Q, new_candidates)
                 else:
                     print(
-                        f"{datetime.datetime.now()} Candidates retreived from cache for node {S.index}:{S.name}"
+                        f"{datetime.datetime.now()} Candidates N={len(new_candidates)} retreived from cache for node {S.index}:{S.name}"
                     )
 
                 t = datetime.datetime.now()
@@ -5635,7 +5293,7 @@ def generate_candidates(
             for k, v in new_candidates.items():
                 k = (k[0], k[1], k[2]+p_j_max)
                 candidates[k] = v
-            new_candidates.clear()
+            new_candidates = None
 
             p_j_max = -1
             if candidates:
@@ -5643,7 +5301,7 @@ def generate_candidates(
             for k, v in new_candidates_direct.items():
                 k = (k[0], k[1], k[2]+p_j_max)
                 candidates[k] = v
-            new_candidates_direct.clear()
+            new_candidates_direct = None
 
         elif step.operation == strategy.MERGE:
 
@@ -5660,6 +5318,7 @@ def generate_candidates(
         elif step.operation == strategy.MODIFY:
 
             if S.type == "parameter" and S.category[0] in [2, 3]:
+                p_j = 0
                 cm = csys.models[S.category[0]]
                 s_per = cm.topology_terms['n'].values[S.name]
                 f_max = 6
@@ -5695,13 +5354,15 @@ def generate_candidates(
                                 print(f"Adding modification {p_j} {S.name}: {modify}")
     return candidates, iteration
 
+
 def process_tiers(
     tiers,
     candidates,
     gdb,
     csys,
     psystems,
-    G0,
+    chemical_objective,
+    P00,
     CX0,
     X0,
     C0,
@@ -5852,8 +5513,8 @@ def process_tiers(
             # cnd_i, key, unit = unit
             (S, Sj, step, _, _, _, _) = candidates[cnd_keys[cnd_i]]
 
-            cC = chemical_objective(csys, P0=len(G0), C0=CX0, c=c)
-            cX = cP + cC
+            cC = chemical_objective(csys, P0=math.log(len(psystems)+1), c=c)
+            cX = cP + (cC - C0)
             if keep:
                 heapq.heappush(tier_scores, (cX, cnd_i))
         accept = tier.accept
@@ -5886,7 +5547,7 @@ def process_tiers(
                 edits = str(edits)
             else:
                 edits = f"{Sj_sma[cnd_i-1]}"
-            cC = chemical_objective(csys, P0=len(G0), C0=CX0, c=c)
+            cC = chemical_objective(csys, P0=math.log(len(psystems)+1), c=c)
             dP = cP - P0
             dC = cC - C0
             cX = cP + cC
@@ -5926,11 +5587,12 @@ def process_accepted_candidates(
     csys,
     strategy,
     Sj_sma,
+    chemical_objective,
     C0,
     P0,
     X0,
     CX0,
-    G0,
+    cscale,
     visited,
     ignore,
     kept
@@ -5954,7 +5616,7 @@ def process_accepted_candidates(
 
         dP = cP - P0
         # cC = C0 + dcC
-        cC = chemical_objective(csys, P0=len(G0), C0=CX0, c=c)
+        cC = chemical_objective(csys, P0=math.log(cscale+1), c=c)
         cX = cP + cC
         dP = cP - P0
         dC = cC - C0
@@ -6085,6 +5747,7 @@ def select_best_accepted(
 
     return cnd_keep, micro_count
 
+
 def insert_candidates(
     candidates,
     Sj_sma,
@@ -6097,6 +5760,7 @@ def insert_candidates(
     assigned_nodes,
     reuse0,
     reset_config,
+    chemical_objective,
     initial_objective,
     tiers,
     C0,
@@ -6128,6 +5792,7 @@ def insert_candidates(
         os.cpu_count() if configs.processors is None else configs.processors
     )
     micro_added = 0
+    success = False
     # wq = compute.workqueue_local("", configs.workqueue_port)
     # print(f"{datetime.datetime.now()} workqueue started on {wq.mgr.address}")
     n_nano = 0
@@ -6269,97 +5934,6 @@ def insert_candidates(
 
         print(f"The unfiltered results of the candidate scan N={len(work)} total={len(iterable)} oper={step.operation}:")
 
-#             cout_line = (
-#                 f" Initial objectives: "
-#                 f" X= {C0+P0:10.5f}"
-#                 f" P= {P0:10.5f}"
-#                 f" C= {C0:10.5f}"
-#             )
-#             print(cout_line)
-#             cnd_kv = {}
-#             for j, cnd_i in enumerate(sorted(work), 1):
-#                 (keep, cP, c, match_len, kv, out) = work[cnd_i]
-#                 # cnd_i, key, unit = unit
-#                 (S, Sj, step, _, _, _, _) = candidates[cnd_keys[cnd_i]]
-# 
-#                 dP = cP - P0
-#                 # cC = C0 + dcC
-#                 cC = chemical_objective(csys, P0=len(G0), C0=CX0, c=c)
-#                 cX = cP + cC
-#                 dP = cP - P0
-#                 dC = cC - C0
-#                 dX = dP + dC
-#                 # dX = cX - X0
-#                 keep = keep and dX <= 0.0
-# 
-#                 if step.operation == strategy.SPLIT:
-#                     visited.add(S.name)
-#                 elif step.operation == strategy.MERGE:
-#                     visited.add(Sj.name)
-#                 elif step.operation == strategy.MODIFY:
-#                     visited.add(S.name)
-# 
-# 
-#                 reused_line = ""
-#                 if best_reuse is not None and cnd_i == best_reuse[0]:
-#                     reused_line="*"
-#                 K = "Y" if keep else "N"
-#                 edits = cnd_keys[cnd_i][0]
-#                 if edits:
-#                     edits = str(edits)
-#                 else:
-#                     edits = f"{Sj_sma[cnd_i-1]}"
-#                 cout_line = (
-#                     f"Cnd. {cnd_i:4d}/{len(work)}"
-#                     f" N= {match_len:6d} K= {K}"
-#                     f" dP= {dP:14.5f}"
-#                     f" dC= {dC:14.5f}"
-#                     f" d(P+C)= {dX:14.5f}"
-#                     f" d%= {100*(cX-X0)/(X0):10.3f}%"
-#                     f" {S.name:6s} {reused_line}" 
-#                     f" {edits}"
-#                 )
-#                 max_line = max(len(cout_line), max_line)
-#                 # print(datetime.datetime.now())
-#                 print(cout_line, end=" " * (max_line - len(cout_line)) + '\n')
-#                 sys.stdout.flush()
-# 
-#                 if match_len == 0:
-#                     if step.operation in [strategy.SPLIT, strategy.MODIFY]:
-#                         keep = False
-#                         ignore.add(cnd_i)
-#                         continue
-# 
-# 
-# 
-#                 # We prefer to add in this order
-#                 cout_key = None
-# 
-#                 # print sorted at the end but only for new
-#                 # this is to speed things up
-#                 cout_key = (-int(keep), cX, match_len, cnd_i, S.name)
-#                 cout[cout_key] = cout_line
-# 
-#                 # if this was valid but not accepted, we allow it to be
-#                 # reconsidered if we repeat the step
-#                 # if keep:
-#                 #     step_tracker[(S.category, S.name)] = max(0, strategy.cursor - 1)
-# 
-#                 # use these below to determine the best ones to keep
-#                 heapq.heappush(cout_sorted_keys, cout_key)
-#                 cnd_kv[cout_key] = kv
-# 
-#                 if not keep:
-#                     ignore.add(cnd_i)
-#                     continue
-# 
-# 
-#                 if cnd_i in kept:
-#                     ignore.add(cnd_i)
-#                     continue
-# 
-#             print("\r" + " " * max_line)
-
         cout, cout_sorted_keys, cnd_kv = process_accepted_candidates(
             candidates,
             cnd_keys,
@@ -6367,11 +5941,12 @@ def insert_candidates(
             csys,
             strategy,
             Sj_sma,
+            chemical_objective,
             C0,
             P0,
             X0,
             CX0,
-            G0,
+            len(psystems),
             visited,
             ignore,
             kept,
@@ -6397,54 +5972,6 @@ def insert_candidates(
         n_added += micro_added
         keys = {x[3]: cnd_keys[x[3]] for x in cnd_keep}
 
-#             ck_i = 1
-# 
-#             cnd_keep = []
-#             best_params = [x[0] for x in best.values()]
-#             macroamt = strategy.macro_accept_max_total
-#             macroampc = strategy.macro_accept_max_per_cluster
-#             microamt = strategy.micro_accept_max_total
-#             microampc = strategy.micro_accept_max_per_cluster
-#             micro_added = 0
-#             micro_count = collections.Counter()
-# 
-#             while len(cout_sorted_keys):
-#                 ck = heapq.heappop(cout_sorted_keys)
-# 
-#                 keeping = "  "
-# 
-#                 dX = ck[1] - X0
-#                 case0 = not (strategy.filter_above is not None and strategy.filter_above <= dX)
-# 
-# 
-# 
-#                 if case0:
-#                     ignore.add(ck[0])
-#                 
-#                 case1 = macroamt == 0 or n_added < macroamt
-#                 case2 = microamt == 0 or micro_added < microamt
-#                 if case0 and case1 and case2:
-#                     sname = ck[4]
-#                     case3 = macroampc == 0 or macro_count[sname] < macroampc
-#                     case4 = microampc == 0 or micro_count[sname] < microampc
-#                     case5 = ck[3] not in ignore
-#                     if case3 and case4 and case5:
-#                         cnd_keep.append(ck)
-#                         micro_count[sname] += 1
-#                         macro_count[sname] += 1
-#                         micro_added += 1
-#                         n_added += 1
-#                 # if ck[3] in best_params:
-#                         keeping = "->"
-#                         kept.add(ck[0])
-#                 print(f"{keeping} {ck_i:4d}", cout[ck])
-#                 ck_i += 1
-#             ck = None
-# 
-#             # keys = {x[0]: cnd_keys[x[0]] for x in best.values()}
-#             keys = {x[3]: cnd_keys[x[3]] for x in cnd_keep}
-
-        # group_number = max(cur_cst.hierarchy.index.nodes)+1
         print(f"Performing {len(keys)} operations")
 
         csys_ref = copy.deepcopy(csys)
@@ -6472,9 +5999,26 @@ def insert_candidates(
             csys = csys_ref
             continue
 
+        # print("Performing possibly requested reset")
+
+        # ws = compute.workqueue_new_workspace(wq)
+        # ret = reset(
+        #     reset_config,
+        #     csys,
+        #     gdb,
+        #     psystems,
+        #     verbose=True,
+        #     ws=ws
+        # )
+        # psystems = ret.value
+        # print("\n".join(ret.out))
+        # compute.workqueue_remove_workspace(wq, ws)
+        # ws.close()
+        # ws = None
+
 
         print("The resulting hierarchy is")
-        print_chemical_system(csys)
+        mm.chemical_system_print(csys)
 
         success = False
         added = False
@@ -6483,16 +6027,36 @@ def insert_candidates(
             (keep, cP, c, match_len, kv, out) = work[cnd_keep[0][3]]
             print(f"\n".join(out))
 
-            C = chemical_objective(csys, P0=len(G0), C0=CX0)
+            C = chemical_objective(csys, P0=math.log(len(psystems)+1), c=c)
             X = cnd_keep[0][1]
             P = X - C
             print(datetime.datetime.now(), f"Macro objective: P={P:13.6g} C={C:13.6g} DX={P+C-X0:13.6g}")
 
             kv = cnd_kv[cnd_keep[0]]
+            kvgroups = {}
             for k, v in kv.items():
-                v0 = mm.chemical_system_get_value(csys, k)
-                mm.chemical_system_set_value(csys, k, v)
-                print(f"{str(k):20s} | New: {v:12.6g} Ref {v0:12.6g} Diff {v-v0:12.6g}")
+                if len(k) == 4:
+                    if k[:3] not in kvgroups:
+                        kvgroups[k[:3]] = {}
+                    kvgroups[k[:3]][k[3]] = v
+
+            # for k, v in list(kvgroups.items()):
+            #     kvgroups[k] = [v[i] for i in sorted(v)]
+
+            for k, vlst in kvgroups.items():
+                vlst0 = mm.chemical_system_get_value_list(csys, k)
+                for i, v in vlst.items():
+                    v0 = 0
+                    if i < len(vlst0):
+                        v0 = vlst0[i]
+                    print(f"{str(k):20s} | New: {v:12.6g} Ref {v0:12.6g} Diff {v-v0:12.6g}")
+                mm.chemical_system_set_value_list(csys, k, [vlst[i] for i in sorted(vlst)])
+
+            for k, v in kv.items():
+                if len(k) == 3:
+                    v0 = mm.chemical_system_get_value(csys, k, missing=0)
+                    mm.chemical_system_set_value(csys, k, v)
+                    print(f"{str(k):20s} | New: {v:12.6g} Ref {v0:12.6g} Diff {v-v0:12.6g}")
 
             psysref = {
                 i: mm.chemical_system_to_physical_system(
@@ -6539,7 +6103,7 @@ def insert_candidates(
             kv0 = {k: mm.chemical_system_get_value(csys, k) for k in fitkeys}
             # for k, v in kv0.items():
             #     print(f"{str(k):20s} | v0 {v:12.6g}")
-            print_chemical_system(csys, show_parameters=assigned_nodes.union([x.name for x in nodes.values()]))
+            mm.chemical_system_print(csys, show_parameters=assigned_nodes.union([x.name for x in nodes.values()]))
             ret = objective_tier_run(
                 initial_objective,
                 gdb,
@@ -6552,7 +6116,7 @@ def insert_candidates(
             )
             kv, _, P, gp = ret.value
             print("\n".join(ret.out))
-            C = chemical_objective(csys, P0=len(G0), C0=CX0)
+            C = chemical_objective(csys, P0=math.log(len(psystems)+1))
             X = P + C
             dX = X - X0
             print(datetime.datetime.now(), f"Macro objective: {P:13.6g} C={C:13.6g} DX={P+C-X0:13.6g}")
@@ -6609,6 +6173,7 @@ def insert_candidates(
             for union_idx in [(S.index, S.name), (hent.index, hent.name)]:
                 for k in list(union_cache):
                     if union_idx == tuple(k[:2]):
+                        print(f"Popping {k}")
                         union_cache.pop(k)
 
             if step.operation == strategy.SPLIT:
@@ -6650,10 +6215,36 @@ def insert_candidates(
 
         print(datetime.datetime.now(), "Chemical system after nanostep:")
         # print the tree
-        print_chemical_system(csys, show_parameters=assigned_nodes)
+        mm.chemical_system_print(csys, show_parameters=assigned_nodes)
 
         X0 = X
         P0 = P
         C0 = C
         psystems = psysref
     return repeat, visited, success, n_added, csys, psystems, X0, P0, C0
+
+
+def finite_difference_forward_1(evals, h):
+
+    a, b = evals
+    dxdp = arrays.array_difference(b, a)
+    dxdp = arrays.array_round(dxdp, PRECISION)
+    dxdp = arrays.array_scale(dxdp, 1/h)
+    d2xdp2 = list([0.0]*len(dxdp))
+    return dxdp, d2xdp2
+
+
+def finite_difference_central_2(evals, h):
+
+    a, x, b = evals
+    dxdp = arrays.array_difference(b, a)
+    dxdp = arrays.array_round(dxdp, PRECISION)
+    dxdp = arrays.array_scale(dxdp, 1/(2*h))
+    d2xdp2 = arrays.array_add(
+        arrays.array_scale(x, -2),
+        arrays.array_add(b, a)
+    )
+    d2xdp2 = arrays.array_round(d2xdp2, PRECISION)
+    d2xdp2 = arrays.array_scale(d2xdp2, 1.0/(h*h))
+
+    return dxdp, d2xdp2
