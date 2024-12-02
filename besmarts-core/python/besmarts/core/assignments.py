@@ -1342,7 +1342,8 @@ def b2matrix(
     torsions=True,
     outofplanes=True,
     pairs=True,
-    remove1_3=False
+    remove1_3=False,
+    linear_torsions=145.0
 ):
 
     if bonds:
@@ -1353,6 +1354,14 @@ def b2matrix(
 
     if torsions:
         torsions = graph_assignment_jacobian2_torsions(pos)
+        if linear_torsions is not None:
+            t = smiles_assignment_geometry_torsions_nonlinear(
+                pos,
+                angle_degrees=linear_torsions
+            )
+            torsions.selections = {
+                k: torsions.selections[k] for k in t.selections
+            }
 
     if outofplanes:
         outofplanes = graph_assignment_jacobian2_outofplanes(pos)
