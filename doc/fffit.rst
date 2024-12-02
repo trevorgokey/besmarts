@@ -7,14 +7,16 @@ this means is that we want the code to fit the force field parameters, but also
 find the best parameters that give the best fit as well.
 
 This example tries to split the parameter b4 from OpenFF 2.1.0 using a single
-molecule. The SMILES is "C1=CC=C(C(=O)Cl)O1" although we need a fully
-hydrogenated, indexed SMILES in order for the code to work (to match the xyz
-coordinates produced by a DFT optimization). The physical objectives to fit to
-are the geometry and forces from a DFT calculation using B3LYP-D3BJ/DZVP in
-Psi4. This example will first fit the physical parameters before splitting, and
-then try to find new bond parameters that are able to further improve the fit
-(only targeting b4). The physical parameter fits will only adjust the bonds,
-and so angles, torsions, non-bonded, etc. are all unchanged throughout the run.
+molecule. The force field can be found `here
+<https://github.com/openforcefield/openff-forcefields/blob/main/openforcefields/offxml/openff-2.1.0.offxml>`.
+The SMILES is "C1=CC=C(C(=O)Cl)O1" although we need a fully hydrogenated,
+indexed SMILES in order for the code to work (to match the xyz coordinates
+produced by a DFT optimization). The physical objectives to fit to are the
+geometry and forces from a DFT calculation using B3LYP-D3BJ/DZVP in Psi4. This
+example will first fit the physical parameters before splitting, and then try
+to find new bond parameters that are able to further improve the fit (only
+targeting b4). The physical parameter fits will only adjust the bonds, and so
+angles, torsions, non-bonded, etc. are all unchanged throughout the run.
 Furthermore, only the equilibrium lengths of the bonds will be modified.
 
 .. code-block:: python
