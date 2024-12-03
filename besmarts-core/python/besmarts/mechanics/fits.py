@@ -69,8 +69,8 @@ class compute_config:
         self.enable_minimization = True
         self.fc_reset_config = None
         self.method_vib_modes = "min"
-        self.analytic = True
-        self.analytic_use_gradients = False
+        self.analytic = False
+        self.analytic_use_gradients = True
 
     def run(self) -> List[Dict[assignments.tid_t, assignments.graph_db_table]]:
 
@@ -627,6 +627,10 @@ class objective_config:
         self.grad_mode = "f1"
         self.verbose = 0
 
+        self.analytic = False
+        self.analytic_use_gradients = True
+
+
         self.fit_models = {}
         self.fit_symbols = {}
 
@@ -1004,6 +1008,9 @@ class objective_config_hessian(objective_config):
         cc.enable_minimization = self.enable_minimization
         cc.method_vib_modes = self.method_vib_modes
         cc.fc_reset_config = self.fc_reset_config
+
+        cc.analytic = self.analytic
+        cc.analytic_use_gradients = self.analytic_use_gradients
 
         return cc
 
