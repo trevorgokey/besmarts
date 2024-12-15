@@ -424,15 +424,14 @@ class compute_config_hessian(compute_config):
                     #     csys,
                     #     h=1e-4
                     # )
-                    # if self.analytic:
-                    # hess_mm = objectives.physical_system_hessian_analytic(psys, csys, use_gradients=self.analytic_use_gradients)
-                    # else:
-
-                    hess_mm = optimizers_openmm.physical_system_hessian_openmm(
-                        psys,
-                        csys,
-                        h=1e-4
-                    )
+                    if self.analytic:
+                        hess_mm = objectives.physical_system_hessian_analytic(psys, csys, use_gradients=self.analytic_use_gradients)
+                    else:
+                        hess_mm = optimizers_openmm.physical_system_hessian_openmm(
+                            psys,
+                            csys,
+                            h=1e-4
+                        )
                     # xyz = list([x[0] for x in pos.selections.values()])
 
                     # sym = graphs.graph_symbols(pos.graph)
@@ -627,8 +626,6 @@ class objective_config:
         self.grad_mode = "f1"
         self.verbose = 0
 
-        self.analytic = False
-        self.analytic_use_gradients = True
 
 
         self.fit_models = {}
@@ -986,6 +983,8 @@ class objective_config_hessian(objective_config):
             self.enable_minimization = True
 
         self.freq_range = (-5000, 5000)
+        self.analytic = False
+        self.analytic_use_gradients = True
 
     def get_task(
         self,

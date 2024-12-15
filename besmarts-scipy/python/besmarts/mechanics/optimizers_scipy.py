@@ -692,15 +692,24 @@ def objective_gradient_gdb(
         out.append(line)
 
     X = sum(X_t.values())
-    hess = functools.reduce(arrays.array_add, hessi_t.values())
-    grad = functools.reduce(arrays.array_add, grad_t.values())
+    if hessi_t:
+        hess = functools.reduce(arrays.array_add, hessi_t.values())
+        hnorm = arrays.array_inner_product(hess, hess)**.5
+    else:
+        hnorm = 0.0
 
-    gnorm = arrays.array_inner_product(grad, grad)**.5
-    hnorm = arrays.array_inner_product(hess, hess)**.5
+    if grad_t:
+        grad = functools.reduce(arrays.array_add, grad_t.values())
+        gnorm = arrays.array_inner_product(grad, grad)**.5
+    else:
+        gnorm = 0.0
 
     Y = sum(Y_t.values())
-    grady = functools.reduce(arrays.array_add, grady_t.values())
-    gnormy = arrays.array_inner_product(grady, grady)**.5
+    if grady_t:
+        grady = functools.reduce(arrays.array_add, grady_t.values())
+        gnormy = arrays.array_inner_product(grady, grady)**.5
+    else:
+        gnormy = 0.0
     dX = 0.0
     minstep = None
     if len(history):

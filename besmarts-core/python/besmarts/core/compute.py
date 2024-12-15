@@ -324,7 +324,7 @@ class Server(managers.Server):
                 name = type(obj).__name__ + "_"
 
                 try:
-                    dprint(f"T{name} RUNNING ON OBJ {function} {args} {kwds}")
+                    dprint(f"\nT{name} RUNNING ON OBJ {function} {args} {kwds}")
                     thread_name_set(name + methodname)
                     t0 = time.perf_counter()
                     # these are always readonly so we can fork and skip GIL
@@ -335,7 +335,7 @@ class Server(managers.Server):
                         #     f"T{name} RUNNING ON OBJ DONE t={t-t0:.6f} {function} {args} {kwds}", on=True
                         # )
                         dprint(
-                            f"T{name} RUNNING ON OBJ DONE t={t-t0:.6f} {function}", on=True
+                            f"\nT{name} RUNNING ON OBJ DONE t={t-t0:.6f} {function}", on=True
                         )
                 except Exception as e:
                     msg = ("#ERROR", e)
@@ -563,6 +563,7 @@ class Server(managers.Server):
             request = c.recv()
             ignore, funcname, args, kwds = request
             assert funcname in self.public, "%r unrecognized" % funcname
+            thread_name_set(f"request_{funcname}")
             func = getattr(self, funcname)
         except Exception:
             msg = ("#TRACEBACK", traceback.format_exc())
@@ -2480,6 +2481,7 @@ def workspace_local_remote_gather_thread(ws: workspace_local):
     remote_q = ws.mgr.get_oqueue()
     # print("GATHER THREAD HAVE Q")
 
+    block = False
     i = 0
     sleepiness = 0.0
     target_n = 1000
@@ -2493,16 +2495,17 @@ def workspace_local_remote_gather_thread(ws: workspace_local):
             obj = queue_get_nowait(
                 remote_q, block=False, timeout=TIMEOUT, n=target_n
             )
-            if time.perf_counter()-t0 < 3.0:
-                target_n = min(2, target_n * 2)
-            else:
-                target_n = max(2, target_n // 2)
+            # if time.perf_counter()-t0 < 3.0:
+            #     target_n = min(2, target_n * 2)
+            # else:
+            #     target_n = max(2, target_n // 2)
 
             if obj is not None and len(obj):
                 with ws.remote_oqueue_size_lock:
                     ws.remote_oqueue_size = manager_remote_queue_qsize(
                         remote_q
                     )
+                    block = bool(ws.remote_oqueue_size > 0)
                 ws.finished_remote += sum((len(x) for x in obj))
                 n = len(obj)
                 if n == 1:
@@ -2512,8 +2515,10 @@ def workspace_local_remote_gather_thread(ws: workspace_local):
 
             i += 1
         except queue.Empty:
-            sleepiness += 1.0
-            time.sleep(min(sleepiness, TIMEOUT))
+            pass
+            # time.sleep(min(sleepiness, TIMEOUT))
+            # sleepiness += 1.0
+            # time.sleep(min(sleepiness, TIMEOUT))
         t1 = time.perf_counter()
         dt = t1 - t0
         if dt < LATENCY:
@@ -2903,9 +2908,10 @@ def workspace_flush(
     ti = time.monotonic()
     t0 = time.monotonic()
     sleepiness = 0.0
+    roqsize = ws.remote_oqueue_size
 
     while (totalwait is not None and waited < totalwait) or (
-        ws.holding or ws.iqueue.qsize() or ws.oqueue.qsize()
+        ws.holding or ws.iqueue.qsize() or ws.oqueue.qsize() or ws.remote_oqueue_size > 0
     ):
         t00 = time.perf_counter()
         count = len(indices.intersection(results))
@@ -3254,7 +3260,7 @@ def workspace_remote_compute(wq: workqueue_remote, ws: workspace_remote):
                     if pool:
                         work.append((tuple(new_idx), pool.starmap_async(workspace_run, new_idx.values())))
                     else:
-                        ws.oqueue.put({idxi: res}, block=False)
+                        ws.oqueue.put({idx: res}, block=False)
                     # print("compute_remote: putting task result to oqueue")
                 if work:
                     drop = set()
