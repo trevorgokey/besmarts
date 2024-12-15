@@ -31,6 +31,11 @@ import socket
 
 # process management
 import multiprocessing
+try:
+    multiprocessing.set_start_method("fork")
+except Exception:
+    pass
+
 from multiprocessing import (
     util,
     managers,
