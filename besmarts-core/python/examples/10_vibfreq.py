@@ -121,22 +121,86 @@ def freq(hess, pos):
 t = time.perf_counter_ns()
 hess_bes = objectives.physical_system_hessian(psys, csys, h=1e-4)
 t = time.perf_counter_ns() - t
-print(f"Hessian in pure Python time: {t*1e-9:.4f} sec")
+print(f"Numerical Full Hessian in pure Python time: {t*1e-9:.4f} sec")
 fb = freq(hess_bes, minpos)
 
 # Hessian using OpenMM to evalulate energy
 t = time.perf_counter_ns()
 hess_omm = optimizers_openmm.physical_system_hessian_openmm(psys, csys, h=1e-4)
 t = time.perf_counter_ns() - t
-print(f"Hessian in OpenMM time:      {t*1e-9:.4f} sec")
+print(f"Numerical Full Hessian in OpenMM time:      {t*1e-9:.4f} sec")
 fo = freq(hess_omm, minpos)
 
+# Hessian using pure python to evaluate energy
+t = time.perf_counter_ns()
+hess_bes_diag = objectives.physical_system_hessian_analytic(psys, csys)
+t = time.perf_counter_ns() - t
+print(f"Analytic Diagonal Hessian in pure Python time: {t*1e-9:.4f} sec")
+fd = freq(hess_bes_diag, minpos)
+
+t = time.perf_counter_ns()
+hess_bes_analytic = objectives.physical_system_hessian_analytic(psys, csys, use_gradients=True)
+t = time.perf_counter_ns() - t
+print(f"Analytic Full Hessian in pure Python time: {t*1e-9:.4f} sec")
+ff = freq(hess_bes_analytic, minpos)
+
+
+print("\n")
+print("Compare BESMARTS and OpenMM Numerical Hessians")
 print("\n")
 print("       Frequencies (cm-1)       ")
 print("================================")
 print("Vib.  besmarts   openmm    delta")
 print("--------------------------------")
 for i, (a, b) in enumerate(zip(fb, fo), 1):
+    prefix = "V"
+    if i < 4:
+        prefix = "T"
+    elif i < 7:
+        prefix = "R"
+    else:
+        i -= 6
+
+    lhs = f"{prefix + str(i):>4s}  "
+
+    cols = [a, b, a-b]
+    rhs = map("{:8.2f}".format, cols)
+
+    print(lhs + " ".join(rhs))
+print("================================")
+
+print("\n")
+print("Compare BESMARTS Analytic Diagonal and Full Hessians")
+print("\n")
+print("       Frequencies (cm-1)       ")
+print("================================")
+print("Vib.      Diag     Full    delta")
+print("--------------------------------")
+for i, (a, b) in enumerate(zip(ff, fd), 1):
+    prefix = "V"
+    if i < 4:
+        prefix = "T"
+    elif i < 7:
+        prefix = "R"
+    else:
+        i -= 6
+
+    lhs = f"{prefix + str(i):>4s}  "
+
+    cols = [a, b, a-b]
+    rhs = map("{:8.2f}".format, cols)
+
+    print(lhs + " ".join(rhs))
+print("================================")
+
+print("\n")
+print("Compare BESMARTS Numerical and Analytic Hessians")
+print("\n")
+print("       Frequencies (cm-1)       ")
+print("================================")
+print("Vib.     Numer   Analytic  delta")
+print("--------------------------------")
+for i, (a, b) in enumerate(zip(fb, ff), 1):
     prefix = "V"
     if i < 4:
         prefix = "T"
