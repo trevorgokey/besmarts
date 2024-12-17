@@ -442,7 +442,7 @@ def objective_gradient_gdb(
                         ready.clear()
 
                         Xi, Yi, gradi, hessi, gradyi, retouti = process(
-                            [ret],
+                            obj_results,
                             Xi,
                             Yi,
                             gradi,
@@ -619,7 +619,7 @@ def objective_gradient_gdb(
                 for oit, obj_task in ready.items():
                     ret = run_objective(*obj_task[0], **obj_task[1])
                     Xi, Yi, gradi, hessi, gradyi, retouti = process(
-                        [ret],
+                        {oit: ret},
                         Xi,
                         Yi,
                         gradi,
@@ -636,7 +636,7 @@ def objective_gradient_gdb(
                         t = type(obj[xi][1])
                         Y_t[t] = Y_t.get(t, 0) + v
                         grady_t[t] = arrays.array_add(grady_t.get(t, [0.0]*len(keys)), gradyi[xi])
-                        retout.clear()
+                        ret = None
                 ready.clear()
 
             full_results.clear()

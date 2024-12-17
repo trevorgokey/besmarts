@@ -2256,12 +2256,10 @@ def workspace_remote_local_pusher_thread(ws: workspace_remote):
             t1 = time.perf_counter()
             failed = not ws.oqueue_put(tosend, n=n)
             rt = time.perf_counter() - t1
-            if rt > 3.0 or failed:
-
+            if (rt > 3.0 or failed) and target_n > 2:
                 target_n = max(2, target_n//2)
                 print(f"{datetime.now()} push N={n} took {rt} seconds (fail={failed}). Reducing target to {target_n}")
-            elif rt < 0.1:
-                target_n = min(100, target_n*2)
+            elif rt < 0.1 and target_n < 100:
                 print(f"{datetime.now()} push N={n} took {rt} seconds (fail={failed}). Raising target to {target_n}")
             if failed:
                 bad += 1

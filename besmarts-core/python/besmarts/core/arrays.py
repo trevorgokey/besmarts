@@ -408,10 +408,10 @@ def flatten_list(l, times=1):
         )
 
 def array_scale(a, s):
-    return type(a)((i*s for i in a))
+    return [i*s for i in a]
 
 def array_translate(a, s):
-    return type(a)((i+s for i in a))
+    return [i+s for i in a]
 
 def array_sum(a):
     return sum(a)
@@ -420,16 +420,16 @@ def array_mean(a):
     return sum(a)/len(N)
 
 def array_add(a, b):
-    return type(a)(((i+j for i,j in zip(a,b))))
+    return [i+j for i,j in zip(a,b)]
 
 def array_difference(a, b):
-    return type(a)(((i-j for i,j in zip(a,b))))
+    return [i-j for i,j in zip(a,b)]
 
 def array_multiply(a, b):
-    return type(a)(((i*j for i,j in zip(a,b))))
+    return [i*j for i,j in zip(a,b)]
 
 def array_divide(a, b):
-    return type(a)(((i/j for i,j in zip(a,b))))
+    return [i/j for i,j in zip(a,b)]
 
 def array_inner_product(a, b):
     return sum((i*j for i,j in zip(a,b)))

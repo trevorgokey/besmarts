@@ -360,6 +360,9 @@ def physical_system_hessian_analytic(psys: mm.physical_system, csys: mm.chemical
 
     # get the bmatrix and project hq into hx
     psys_hq = physical_system_force_gradient_internal(psys, csys)
+    hqmat = np.diag([-h[0] for mhq in psys_hq.values() for h in mhq.values()])
+
+    ics = None
     ics, B = assignments.bmatrix(
         pos,
         bonds=True,
@@ -372,7 +375,6 @@ def physical_system_hessian_analytic(psys: mm.physical_system, csys: mm.chemical
     )
     B = dict(zip(ics, B))
 
-    hqmat = np.diag([-h[0] for mhq in psys_hq.values() for h in mhq.values()])
     hqic = [ic for mhq in psys_hq.values() for ic in mhq]
     bmat = np.array([B[ic] for ic in hqic])
     hxmat = np.dot(bmat.T, np.dot(hqmat, bmat))

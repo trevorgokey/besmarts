@@ -424,14 +424,18 @@ class compute_config_hessian(compute_config):
                     #     csys,
                     #     h=1e-4
                     # )
-                    if self.analytic:
-                        hess_mm = objectives.physical_system_hessian_analytic(psys, csys, use_gradients=self.analytic_use_gradients)
-                    else:
-                        hess_mm = optimizers_openmm.physical_system_hessian_openmm(
-                            psys,
-                            csys,
-                            h=1e-4
-                        )
+                    hess_mm = None
+                    try:
+                        if self.analytic:
+                            hess_mm = objectives.physical_system_hessian_analytic(psys, csys, use_gradients=self.analytic_use_gradients)
+                        else:
+                            hess_mm = optimizers_openmm.physical_system_hessian_openmm(
+                                psys,
+                                csys,
+                                h=1e-4
+                            )
+                    except ArithmeticError as e:
+                        pass
                     # xyz = list([x[0] for x in pos.selections.values()])
 
                     # sym = graphs.graph_symbols(pos.graph)
@@ -457,6 +461,10 @@ class compute_config_hessian(compute_config):
                     # print(list(hessians.hessian_frequencies(
                     #     pos.graph, hess_mm, None, DL, None, None, None)
                     # ))
+                    s = 1/4.184
+                    if hess_mm is None:
+                        s = 0.0
+
                     hx = []
                     # print("MM Hessian")
                     for i, row in enumerate(hess_mm):
@@ -5884,7 +5892,8 @@ def insert_candidates(
             if configs.processors == 1 and not configs.remote_compute_enable:
                 work = {}
                 for k, v in iterable.items():
-                    r = calc_tier_distributed(*v[0], **v[1], verbose=True, shm=shm)
+                    v[1]['verbose'] = True
+                    r = calc_tier_distributed(*v[0], **v[1], shm=shm)
                     work[k] = r
             elif configs.remote_compute_enable:
                 # this means each candidate has relatively few targets to compute, so we can let each worker handle one candidate
