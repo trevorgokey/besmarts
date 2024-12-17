@@ -258,6 +258,7 @@ Now for the a few snippets from the output:
 
 
 -- Snip 1 --
+
 .. code-block::
 
     ### BESMARTS chemical perception on the following assignments ###
@@ -272,6 +273,7 @@ Now for the a few snippets from the output:
      1   0  b85  [#6X3:1]-[#1:2] k: [775.3853383846] l: [1.081823673944]
 
 -- Snip 2 --
+
 .. code-block::
 
     >>> Initial Objective 1.6989e+05
@@ -290,6 +292,7 @@ Now for the a few snippets from the output:
 
 
 -- Snip 3 --
+
 .. code-block::
 
     >>> Initial Objective      32494
@@ -298,6 +301,7 @@ Now for the a few snippets from the output:
     2024-12-17 12:35:21.879206 Macro objective: P=      31986.9 C=      1176.22 DX=     -506.089
 
 -- Snip 4 --
+
 .. code-block::
 
      0   0 Bonds  
@@ -306,6 +310,7 @@ Now for the a few snippets from the output:
 
 
 -- Snip 5 --
+
 .. code-block::
 
     Modified parameters:
