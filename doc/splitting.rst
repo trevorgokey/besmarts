@@ -106,7 +106,7 @@ The following is the code to perform the numerical search.
 >>> wq = compute.workqueue_local("127.0.0.1", 63210)
 >>> results: splits.split_return_type = splits.split_structures_distributed(splitter, S0, G, selections, wq, icd)
 >>> wq.close()
-Structures:
+Structures
 0 [#6H3:1]-[#6H2:2]
 1 [#6H2:2]-[#8H1:3]
 2 [#6H3:1]-[#1H0:4]
@@ -115,11 +115,11 @@ Structures:
 5 [#6H2:2]-[#1H0:7]
 6 [#6H2:2]-[#1H0:8]
 7 [#8H1:3]-[#1H0:9]
-2024-05-23 13:26:37.017948 Generating splits
-2024-05-23 13:26:37.018074 Union merging=8
-2024-05-23 13:26:37.053296 Union merging=1
-2024-05-23 13:26:37.054224 Generating single splits
-2024-05-23 13:26:37.054898 Generated 22 splits
+2024-12-17 10:49:51.913580 Generating splits
+2024-12-17 10:49:51.913701 Union merging=8
+2024-12-17 10:49:51.950692 Union merging=1
+2024-12-17 10:49:51.951626 Generating single splits
+2024-12-17 10:49:51.952325 Generated 22 splits
 BIT [#6_:1]_[__:2]
 BIT [!#6_:1]_[__:2]
 BIT [#8_:1]_[__:2]
@@ -134,22 +134,31 @@ BIT [__:1]_[#1_:2]
 BIT [__:1]_[!#1_:2]
 BIT [__:1]_[_H0:2]
 BIT [__:1]_[_!H0:2]
-2024-05-23 13:26:37.063593 Building tasks
-Started local workspace on ('127.0.0.1', 42357)
+2024-12-17 10:49:51.961886 Building tasks
 workspace listening on local host. Remote connections prohibited.
-Progress: 100.00%        28/28
+2024-12-17 10:49:51.962123 P:   0.00%    28/28 IQ:    1 OQ:    0 IP:    0 LF:    0 RF:    0 RIQ:    0 ROQ:    0 RIP:    0  ERC:    0.0 
+2024-12-17 10:49:52.120530 P: 100.00%     0/28 IQ:    0 OQ:    0 IP:    0 LF:    0 RF:    0 RIQ:    0 ROQ:    0 RIP:    0  ERC:    0.0 
+    1 CND SPLITS=Y  [!#6:1]~[*:2]
+    2 CND SPLITS=Y  [#6:1]~[*:2]
+    5 CND SPLITS=N  [!#8:1]~[*:2]
+    6 CND SPLITS=Y  [#8:1]~[*:2]
+    9 CND SPLITS=N  [!H1:1]~[*:2]
+   10 CND SPLITS=Y  [H1:1]~[*:2]
+   13 CND SPLITS=N  [!H2:1]~[*:2]
+   14 CND SPLITS=Y  [H2:1]~[*:2]
+   17 CND SPLITS=N  [!H3:1]~[*:2]
+   18 CND SPLITS=Y  [H3:1]~[*:2]
+   21 CND SPLITS=N  [*:1]~[!#1:2]
+   22 CND SPLITS=Y  [*:1]~[#1:2]
+   25 CND SPLITS=N  [*:1]~[!H0:2]
+   26 CND SPLITS=Y  [*:1]~[H0:2]
 Finished: 100.00%        28/28
-Removing workspace ('127.0.0.1', 42357)
 Closing workspace
-2024-05-23 13:26:38.048585 Calculating partitions for hits=8
-Started local workspace on ('127.0.0.1', 43381)
+2024-12-17 10:49:52.208558 Calculating partitions for hits=8
 workspace listening on local host. Remote connections prohibited.
 Submitting 8 packets of work
-Chunk: 100.00%         8/8
-Finished: 100.00%         8/8
-Removing workspace ('127.0.0.1', 43381)
 Closing workspace
-2024-05-23 13:26:38.631840 Searching atoms done; data=8 hits=8
+2024-12-17 10:49:52.352006 Searching atoms done; data=8 hits=8
 
 The primary result is the `result` object returned from
 `splits.split_structures_distributed`. Starting from the top, the example first
