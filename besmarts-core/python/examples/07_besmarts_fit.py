@@ -106,7 +106,7 @@ def run():
                 assignments.graph_db_address(
                     eid=[0],
                 ),
-                scale=1
+                scale=100
         ),
 
         # A gradient objective for EID 0 (ethane). The geometry is held fixed
@@ -116,7 +116,7 @@ def run():
                 assignments.graph_db_address(
                     eid=[0],
                 ),
-                scale=1e-9
+                scale=1e-5
         ),
     }
 
