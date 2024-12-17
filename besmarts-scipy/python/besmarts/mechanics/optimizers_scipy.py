@@ -584,15 +584,18 @@ def objective_gradient_gdb(
                     gradyi,
                     verbose=verbose
                 )
-                for xi, v in Xi.items():
-                    t = type(obj[xi][1])
-                    X_t[t] = X_t.get(t, 0) + v
-                    grad_t[t] = arrays.array_add(grad_t.get(t, [0.0]*len(keys)), gradi[xi])
-                    hessi_t[t] = arrays.array_add(hessi_t.get(t, [0.0]*len(keys)), hessi[xi])
-                for xi, v in Yi.items():
-                    t = type(obj[xi][1])
-                    Y_t[t] = Y_t.get(t, 0) + v
-                    grady_t[t] = arrays.array_add(grady_t.get(t, [0.0]*len(keys)), gradyi[xi])
+                for (i, x) in obj:
+                    if i in Xi:
+                        t = type(x)
+                        v = Xi[i]
+                        X_t[t] = X_t.get(t, 0) + v
+                        grad_t[t] = arrays.array_add(grad_t.get(t, [0.0]*len(keys)), gradi[i])
+                        hessi_t[t] = arrays.array_add(hessi_t.get(t, [0.0]*len(keys)), hessi[i])
+                    elif i in Yi:
+                        t = type(x)
+                        v = Yi[i]
+                        Y_t[t] = Y_t.get(t, 0) + v
+                        grady_t[t] = arrays.array_add(grady_t.get(t, [0.0]*len(keys)), gradyi[i])
                 obj_results.clear()
                 if verbose:
                     retout.clear()
@@ -627,16 +630,19 @@ def objective_gradient_gdb(
                         gradyi,
                         verbose=verbose
                     )
-                    for xi, v in Xi.items():
-                        t = type(obj[xi][1])
-                        X_t[t] = X_t.get(t, 0) + v
-                        grad_t[t] = arrays.array_add(grad_t.get(t, [0.0]*len(keys)), gradi[xi])
-                        hessi_t[t] = arrays.array_add(hessi_t.get(t, [0.0]*len(keys)), hessi[xi])
-                    for xi, v in Yi.items():
-                        t = type(obj[xi][1])
-                        Y_t[t] = Y_t.get(t, 0) + v
-                        grady_t[t] = arrays.array_add(grady_t.get(t, [0.0]*len(keys)), gradyi[xi])
-                        ret = None
+                    for (i, x) in obj:
+                        if i in Xi:
+                            t = type(x)
+                            v = Xi[i]
+                            X_t[t] = X_t.get(t, 0) + v
+                            grad_t[t] = arrays.array_add(grad_t.get(t, [0.0]*len(keys)), gradi[i])
+                            hessi_t[t] = arrays.array_add(hessi_t.get(t, [0.0]*len(keys)), hessi[i])
+                        elif i in Yi:
+                            t = type(x)
+                            v = Yi[i]
+                            Y_t[t] = Y_t.get(t, 0) + v
+                            grady_t[t] = arrays.array_add(grady_t.get(t, [0.0]*len(keys)), gradyi[i])
+                    ret = None
                 ready.clear()
 
             full_results.clear()
