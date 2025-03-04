@@ -10,6 +10,7 @@ import pickle
 import multiprocessing
 import collections
 import sys
+from typing import Protocol
 import math
 import itertools
 import numpy as np
@@ -754,10 +755,30 @@ class compute_config_penalty(compute_config):
 
 class objective_config:
     """
-    Configuration of an objective function for force field fitting. The
-    objective has two parts. The first part is how the properties are
-    calculated and is configured with a compute_config. The next is how the
+    Configuration of an objective function for force field fitting.
+
+    The objective has two parts. The first part is how the properties are
+    calculated and is configured with a :py:class:`compute_config` as returned
+    by the :py:meth:`get_task` method. The second is how the
     objective is computed from the properties and is configured here.
+
+    This is a base class and should generally not be instantiated directly;
+    instead, see the following classes for commonly used objectives:
+
+    :py:class:`objective_config_position`
+        Performs a geometry optimization and calculates the sum of squared
+        error (SSE). The root of the mean SSE is the RMSD.
+    :py:class:`objective_config_gradient`
+        The geometry is held fixed at the reference, and calculates the
+        objective as the SSE of the difference in QM/MM forces.
+
+    .. todo: More of the above, write a Parameters section
+
+    See Also
+    --------
+    objective_config_energy, objective_config_hessian, objective_config_penalty,
+    objective_config_position, objective_config_gradient
+
     """
 
     def __init__(self, addr, include=True, scale=1, coordinate_system="C"):
@@ -2215,12 +2236,36 @@ class objective_config_penalty(objective_config):
 
 class objective_tier:
     """
+    Description of a single tier in a multi-tier optimization.
+
     A configuration for how to compute a total objective over a list of
     objectives. A tier is meant to be calculated for 1 or more force fields,
     which is what happens during parameter searching. Tiers have a fitting
     aspect that is configured here. For example, an objective might only
     perform 1 or 2 fitting steps for each force field, and the top N force
-    fields would be accepted (and passed to the next tier.
+    fields would be accepted (and passed to the next tier).
+
+    Attributes
+    ----------
+    objectives: Dict[int, objective_config]
+        The objective functions that should be optimized in this tier. Note that
+        each molecule in the graph database requires its own entry in this dict.
+    fit_models: list[int] | None
+        Which models in the chemical system to fit with this tier. Fits all
+        models if ``None``. See the ``models`` attribute of
+        :py:class:`besmarts.mechanics.molecular_models.chemical_system`.
+    fit_symbols: list[str] | None
+        Which symbols of the fitted models to fit with this tier. Fits all
+        symbols if ``None``. See the ``symbol`` attribute of
+        :py:class:`besmarts.mechanics.molecular_models.chemical_model`.
+    step_limit: int | None
+        Stop after this many iterations of this tier.
+    accept: int
+        Pass the best this many candidates on to the next tier. Passes all
+        candidates on if 0.
+
+
+    .. TODO: Why is the objectives attribute a dict rather than a list?
     """
 
     def __init__(self):
@@ -2962,13 +3007,45 @@ def fit(csys, gdb, objective, psystems, nodes, wq=None, verbose=False):
     )
     return ret
 
+class ChemicalObjective(Protocol):
+    """A function to compute an objective function from a chemical system.
+
+    See :py:func:`chemical_objective` for an example implementation.
+
+    Parameters
+    ----------
+    csys: besmarts.mechanics.molecular_models.chemical_system
+        The chemical system for which to compute the objective.
+    P0: float = 1.0
+        The natural logarithm of the number of physical systems being optimized
+        plus one. This is usually provided by the caller.
+    c: None | float = None
+        SMARTS complexity of the chemical system. This is sometimes provided by
+        the caller when the value is needed by calling code. When not given or
+        ``None``, this should be computed by the callee if it is needed. See
+        :py:func:`chemical_system_smarts_complexity()
+        <besmarts.mechanics.molecular_models.chemical_system_smarts_complexity>`.
+
+    Returns
+    -------
+    CC: float
+        The computed chemical objective.
+    """
+
+    def __call__(
+        self,
+        csys: mm.chemical_system,
+        *,
+        P0: float = 1.0,
+        c: None | float = None,
+    ) -> float: ...
 
 def ff_optimize(
     csys0: mm.chemical_system,
     gdb: assignments.graph_db,
     psystems: Dict[eid_t, mm.physical_system],
     strategy: forcefield_optimization_strategy,
-    chemical_objective,
+    chemical_objective: ChemicalObjective,
     initial_objective: objective_tier,
     tiers: List[objective_tier],
     final_objective: objective_tier,
@@ -2976,17 +3053,46 @@ def ff_optimize(
     """
     The toplevel function to run a full BESMARTS force field fit.
 
+    Fitting takes an initial force field (called a chemical system) and
+    optimizes it to reproduce physical information in a graph database. It is
+    configured via a strategy and a chemical objective function, and proceeds
+    through user-configurable tiers of optimization. Each tier performs an
+    optimization and then passes its results on to the next.
+
     Parameters
     ----------
-    csys0: The initial chemical system to fit
-    gdb: The graph_db with all data
-    psystems: The initial parameterized systems
-    strategy: The fitting strategy
-    chemical_objective: The function that will compute the chemical objective
-    initial_objective: The objective_tier that will perform the initial fit
-    tiers: The tiers that will score each parameter candidate
-    final_objective: The objective_tier that will score the remaining
-    candidates passed by the tiers
+    csys0
+        The initial force field to optimize.
+    gdb
+        The graph database containing all data used to perform the fit.
+    psystems
+        The initial parameterized systems - this is usually ``csys0``
+        applied to ``gdb``. See :py:func:`gdb_to_physical_systems`.
+    strategy
+        The fitting strategy to employ. For a reasonable default, see
+        :py:class:`forcefield_optimization_strategy_default`
+    chemical_objective
+        The function that will compute the chemical objective of the force
+        field. This takes into account only the force field itself, not the
+        physical information in ``gdb``. See :py:func:`chemical_objective` for
+        a reasonable default, and see :py:class:`ChemicalObjective` for guidance
+        on how to write your own.
+    initial_objective
+        The objective_tier that will perform the initial fit
+    tiers
+        The tiers that will score each parameter candidate
+    final_objective:
+        The objective_tier that will score the remaining candidates passed by
+        the tiers
+
+
+    .. TODO: When would ``psystems`` not be ``fits.gdb_to_physical_systems(gdb, csys0)``?
+        Can this parameter be replaced with the above?
+        or can the above be made a default?
+        Can ``forcefield_optimization_strategy_default`` be made a default for ``strategy``?
+        Can ``chemical_objective`` be made a default for ``chemical_objective``?
+        Can ``initial_objective`` and ``final_objective`` be folded into ``tiers``?
+        How do ``initial_objective`` and ``final_objective`` differ from ``tiers``?
     """
 
     started = datetime.datetime.now()
@@ -3983,7 +4089,7 @@ def chemical_system_cluster_force_constants(csys, gdb, sep, topo):
     )
     cfg = configs.smarts_perception_config(splitter, extender)
     optimization = cluster_optimization.optimization_strategy_default(cfg)
-    
+
     cst = cluster_optimization.cluster_means(
         gcd, labeler, sag, objective, optimization=optimization, initial_conditions=None
     )
@@ -4003,7 +4109,7 @@ def chemical_system_cluster_force_constants(csys, gdb, sep, topo):
     assert len(roots) == 1
     root = roots[0]
     assert root.type == "hierarchy"
-    
+
 
     for idx in [n.index for n in refhidx.index.nodes.values() if n.index != root.index]:
         if idx in refhidx.smarts:
@@ -4100,9 +4206,9 @@ def chemical_system_cluster_geom(csys, gdb, sep, topo):
         sag.append(assignments.smiles_assignment_float(smiles, measurements))
     sag = assignments.smiles_assignment_group(sag, topo)
     objective = cluster_objective.clustering_objective_mean_separation(sep, sep)
-    
 
-    
+
+
     gcd = csys.perception.gcd
     labeler = csys.perception.labeler
 
@@ -4114,7 +4220,7 @@ def chemical_system_cluster_geom(csys, gdb, sep, topo):
     )
     cfg = configs.smarts_perception_config(splitter, extender)
     optimization = cluster_optimization.optimization_strategy_default(cfg)
-    
+
     cst = cluster_optimization.cluster_means(
         gcd, labeler, sag, objective, optimization=optimization, initial_conditions=None
     )
@@ -4135,7 +4241,7 @@ def chemical_system_cluster_geom(csys, gdb, sep, topo):
     assert len(roots) == 1
     root = roots[0]
     assert root.type == "hierarchy"
-    
+
 
     for idx in [n.index for n in refhidx.index.nodes.values() if n.index != root.index]:
         if idx in refhidx.smarts:
@@ -6386,7 +6492,7 @@ def process_tiers(
                 # f" X0= {X0:10.5f}"
                 f" d(P+C)= {dX:14.5f}"
                 f" d%= {100*(cX-X0)/(X0):10.3f}%"
-                f" {S.name:6s}  " 
+                f" {S.name:6s}  "
                 f" {edits}"
             )
             max_line = max(len(cout_line), max_line)
@@ -6472,7 +6578,7 @@ def process_accepted_candidates(
             f" dC= {dC:14.5f}"
             f" d(P+C)= {dX:14.5f}"
             f" d%= {100*(cX-X0)/(X0):10.3f}%"
-            f" {S.name:6s} {reused_line}" 
+            f" {S.name:6s} {reused_line}"
             f" {edits}"
         )
         max_line = max(len(cout_line), max_line)
@@ -6933,7 +7039,7 @@ def insert_candidates(
             fitting_models = set((k[0] for k in fitkeys))
             fitkeys = [k for k in fitkeys if (k[1] in "skeler" and k[2] in assigned_nodes) or k[0] in fitting_models]
             reuse=[k for k,_ in enumerate(csys.models) if k not in fitting_models]
-            
+
             kv0 = {k: mm.chemical_system_get_value(csys, k) for k in fitkeys}
             # for k, v in kv0.items():
             #     print(f"{str(k):20s} | v0 {v:12.6g}")
@@ -7002,7 +7108,7 @@ def insert_candidates(
             repeat.add(S.name)
             sma = Sj_sma[cnd_i-1]
             kept.add(cnd_i)
-            # cnd_i = best[S.name][0] 
+            # cnd_i = best[S.name][0]
             # hent = Sj
             visited.add((hent.name, key[3]))
             edits = step.overlap[0]

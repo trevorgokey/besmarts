@@ -19,8 +19,9 @@ import os
 import sys
 
 # add_module_names = False
-# autodoc_typehints = 'description'
 autodoc_typehints_format = 'short'
+autodoc_typehints = "both"
+autodoc_typehints_description_target = "documented"
 
 # -- Project information -----------------------------------------------------
 
@@ -47,7 +48,6 @@ extensions = [
 #   'IPython.sphinxext.ipython_directive',
 ]
 napoleon_google_docstring = False
-napoleon_use_param = False
 napoleon_use_ivar = True
 
 # Add any paths that contain templates here, relative to this directory.
