@@ -738,6 +738,34 @@ def chemical_model_to_xml_dict(csys):
 def smirnoff_load(
     fname, pcp: perception.perception_model
 ) -> mm.chemical_system:
+    """Load a SMIRNOFF ``.offxml`` file into a :py:class:`chemical_system`.
+
+    Parameters
+    ----------
+    fname
+        The file name of the ``.offxml`` file.
+    pcp
+        The perception model that will be used to apply the SMIRNOFF parameters.
+        This will be modified so that the aromaticity model matches that of the
+        force field. See examples for a reasonably performant default.
+
+    Examples
+    --------
+    Load a SMIRNOFF file with a perception model that can handle typical .OFFXML
+    files:
+
+    >>> from besmarts.mechanics.smirnoff_models import smirnoff_load
+    >>> from besmarts.assign.hierarchy_assign_rdkit import smarts_hierarchy_assignment_rdkit
+    >>> from besmarts.codecs.codec_rdkit import graph_codec_rdkit
+    >>> smirnoff_load(
+    ...     "openff-2.1.0.offxml",
+    ...     perception_model(
+    ...         graph_codec_rdkit(),
+    ...         smarts_hierarchy_assignment_rdkit(),
+    ...     )
+    ... )
+    <besmarts.mechanics.molecular_models.chemical_system at ...>
+    """
     d = smirnoff_xml.smirnoff_xml_read(fname)
 
     bonds = chemical_model_bond_harmonic_smirnoff(d["Bonds"], pcp)

@@ -83,7 +83,7 @@ class chemical_model_procedure:
         self.name = name
         self.topology = topo
         self.procedure_parameters: Dict[str, int] = {}
-    
+
     def assign(self, pm: physical_model) -> physical_model:
         assert False
 
@@ -130,8 +130,8 @@ class chemical_model:
 
         self.procedures: List[chemical_model_procedure] = []
 
-        self.energy_function = None 
-        self.force_function = None 
+        self.energy_function = None
+        self.force_function = None
         self.internal_function = None
         self.derivative_function = None
 
@@ -144,6 +144,19 @@ class physical_system:
 
 
 class chemical_system:
+    """Force field parameters for application via chemical perception.
+
+    A ``chemical_system`` is usually constructed from a SMIRNOFF force field via
+    the :py:func:`besmarts.mechanics.smirnoff_models.smirnoff_load` function.
+
+    Attributes
+    ----------
+    perception: perception.perception_model
+        The perception model used to apply the parameters. Initialized from the
+        ``pcp_model`` parameter.
+    models: list[chemical_model]
+        The force field parameters. Initialized from the ``models`` parameter.
+    """
     def __init__(
         self,
         pcp_model: perception.perception_model,
@@ -841,7 +854,7 @@ def chemical_system_print(csys, show_parameters=None):
                     sma = hidx.smarts.get(e.index, "")
                     if sma is None:
                         sma = ""
-                    
+
                     cm: chemical_model = chemical_system_get_node_model(csys, e)
                     params = []
                     for term_sym, term in cm.topology_terms.items():
