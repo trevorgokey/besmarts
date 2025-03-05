@@ -57,7 +57,19 @@ mass_table = {
     "B": 10.81,
     "I": 126.9,
     "Br": 79.04,
-    "Na": 22.90
+    "Na": 22.909,
+    "Mg": 24.305,
+    "Li": 6.9410,
+    "K": 39.098,
+    "Ca": 40.078,
+    "He": 4.0026,
+    "Ne": 20.180,
+    "Ar": 39.948,
+    "Si": 28.086,
+    "Zn": 65.380,
+    "Cd": 112.41,
+    "Ni": 58.693,
+    "Kr": 83.798,
 }
 for k, v in list(mass_table.items()):
     mass_table[k.upper()] = v
@@ -501,7 +513,15 @@ def hessian_modes( hess, syms, xyz, mass, mol_number, remove=0, stdtr=True, debu
         print("mol_modes.shape")
         print(mol_modes.shape)
 
-    freq_TR,Ltr = np.linalg.eigh(np.dot(np.dot(TR.T, hess), TR))
+    try:
+        freq_TR,Ltr = np.linalg.eigh(np.dot(np.dot(TR.T, hess), TR))
+    except np.linalg.LinAlgError as ex:
+        print(ex)
+        if return_DL:
+            return None, None, None
+        else:
+            return None, None
+
     #testmat = np.dot( Ltr, TR.T)
     testmat = np.dot( np.dot( Ltr.T, np.dot( np.dot( TR.T, hess), TR)), Ltr)
     if debug:
