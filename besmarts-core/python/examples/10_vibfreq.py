@@ -97,7 +97,7 @@ print(f"Energy: {energy:.8f} kJ/mol. Elapsed: {t*1e-9:.4f} sec")
 # Reuse everything so that all existing parameters are kept and not reprocessed
 psys = mm.chemical_system_to_physical_system(
     csys,
-    [minpos],
+    minpos,
     ref=psys,
     reuse=list(psys.models)
 )
@@ -106,9 +106,19 @@ psys = mm.chemical_system_to_physical_system(
 def freq(hess, pos):
 
     hess = np.array(hess) / 4.184
-    syms = graphs.graph_symbols(pos.graph)
-    xyzs = np.vstack([*pos.selections.values()])
-    mass = [3*[vibration.mass_table[syms[s]]] for s in syms]
+    # syms = graphs.graph_symbols(pos.graph)
+    # xyzs = np.vstack([*pos.selections.values()])
+    # mass = [3*[vibration.mass_table[syms[s]]] for s in syms]
+    # xyzs = np.vstack([*pos.selections.values()])
+
+    xyzs = []
+    for pi, posi in enumerate(pos):
+        for xyzi in posi.selections.values():
+            xyzs.extend(xyzi)
+    xyzs = np.array(xyzs)
+
+    syms = [s for posi in pos for s in graphs.graph_symbols(posi.graph).values()]
+    mass = np.array([[vibration.mass_table[s]]*3 for s in syms])
 
     # set to verbose=True to get all vibrational modes saved to xyz files
     # The zero is a number to make the files unique

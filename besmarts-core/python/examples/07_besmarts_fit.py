@@ -126,6 +126,8 @@ def run():
     # We optimize only on lengths (of model 0)
     final.fit_symbols = ["l"]
 
+    final.minstep = 1e-3
+
     tier = fits.objective_tier()
     tier.objectives = final.objectives
     # For the scoring tier, perform 2 FF optimization steps
@@ -133,6 +135,8 @@ def run():
     # Pass the 3 best candidates to be scored by the next tier. In this
     # example, the next tier is the "real" fitting objective final
     tier.accept = 3
+
+    tier.minstep = 1e-3
 
     tier.fit_models = fit_models
     tier.fit_symbols = final.fit_symbols

@@ -33,7 +33,7 @@ from besmarts.codecs import codec_rdkit
 from besmarts.assign import hierarchy_assign_rdkit
 
 configs.compute_task_chunksize = 1000
-configs.processors = 16
+configs.processors = 1
 configs.remote_compute_enable = False
 # To use additional workers, from a terminal run (on the separate work machine)
 # python -m besmarts.worker <IP> 55555 np
@@ -68,7 +68,7 @@ def mystrategy():
     # bits, and do not look at neighboring atoms.
 
     splitter = configs.smarts_splitter_config(
-        1, 1, 0, 0, 0, 0, True, True, 0, False, True, True, True
+        1, 1, 0, 0, 0, 0, True, True, 0, False, True, True, True, ["element"]
     )
 
     # Disable general patterns like [!#6][!#8]. In general these will lead
@@ -132,9 +132,11 @@ def configure_tiers(objs, penalties, fit_models, fit_symbols):
     initial.anneal = 0
     initial.step_limit = 200
     initial.method = 'L-BFGS-B'
+    # initial.method = 'trust-ncg'
+    initial.minstep = 1e-5
 
     # line search in LBFGS
-    initial.maxls = 20
+    initial.maxls = 100
     initial.fit_models = fit_models
     initial.fit_symbols = fit_symbols
 
@@ -171,23 +173,28 @@ def configure_tiers(objs, penalties, fit_models, fit_symbols):
 
     # There will be 10 (serial) iterations of full fits, each with a randomly
     # kicked set of parameters.
-    final.anneal = 10
-    final.maxls = 20
+    final.anneal = 0
+    final.maxls = 200
+    final.minstep = 1e-3
 
     final.bounds = initial.bounds
     final.priors = initial.priors
 
     final.method = "L-BFGS-B"
+    # final.method = 'trust-ncg'
 
     tier = fits.objective_tier()
     tier.objectives = final.objectives
 
     # Only perform two optimization steps before scoring
     tier.step_limit = 2
+    tier.minstep = 1e-2
 
     # Pass the best 5 candidates
     tier.accept = 5
-    tier.maxls = 10
+    tier.maxls = 20
+
+    tier.method = "L-BFGS-B"
     tier.priors = final.priors
     tier.bounds = initial.bounds
     tier.fit_models = fit_models
@@ -197,7 +204,8 @@ def configure_tiers(objs, penalties, fit_models, fit_symbols):
     tier.penalties.extend(penalties)
     final.penalties.extend(penalties)
 
-    tiers = [tier]
+    #tiers = [tier]
+    tiers = []
 
     return initial, tiers, final
 
@@ -210,14 +218,17 @@ def configure_chem_perception_strat(csys, split_models):
     strat.enable_split = 1
     strat.enable_merge = 1
 
+    for m in split_models:
+        strat.bounds[m].splitter.primitives = ['element']
+
     # Don't scan periodicity modifications since we estimate them each fit
     strat.enable_modify = 0
 
     # When scoring, reset the torsions
-    strat.enable_dihedral_periodicity_reset = 1
+    strat.enable_dihedral_periodicity_reset = 0
     strat.dihedral_periodicity_reset_alpha = -.5
     strat.dihedral_periodicity_reset_max_n = 3
-    strat.dihedral_periodicity_reset_max_k = 5
+    strat.dihedral_periodicity_reset_max_k = 10
     strat.dihedral_periodicity_reset_min_k = 1e-3
 
     # For each iteration, accept only 1 split
@@ -258,10 +269,13 @@ def configure_objectives(opt_mols):
                 scale=1e-3,
                 include=True
         )
-        o.batch_size = 1
+        o.batch_size = None
         # o.freq_range = (500, 600)
         o.method_vib_modes = "qm"
-        o.verbose = 2
+        o.enable_minimization = False
+        o.analytic = True
+        o.analytic_use_gradients = False
+        o.verbose = 3
         objs[len(objs)] = o
 
     for eid in opt_mols:
@@ -271,12 +285,12 @@ def configure_objectives(opt_mols):
                 ),
                 scale=1,
         )
-        o.step_limit = 100
-        o.batch_size = 1
+        o.step_limit = 50
+        o.batch_size = None
         o.tol = 1e-3
-        o.verbose = 2
-        o.include = False
-        o.grad_mode = "c2"
+        o.verbose = 3
+        o.include = True
+        o.grad_mode = "f1"
         objs[len(objs)] = o
 
     for eid in opt_mols:
@@ -285,11 +299,11 @@ def configure_objectives(opt_mols):
                 eid=[eid],
             ),
             scale=1e-6,
-            include=False
+            include=True
         )
-        o.verbose = 2
-        o.grad_mode = "c2"
-        objs[len(objs)] = o
+        o.verbose = 3
+        o.grad_mode = "f1"
+        # objs[len(objs)] = o
 
     return objs
 
@@ -381,17 +395,17 @@ def main():
     objs = configure_objectives(opt_mols)
 
     # Search for parameters on bonds (0), angles (1), and torsions (2)
-    split_models = [0, 1]
+    split_models = [0]
 
     # Score the candidates on fit_models 0, 1, 2, i.e. these models are part
     # of the optimizations
-    fit_models = [0, 1, 2]
+    fit_models = [0]
 
     # These terms are fit (length and k). The term l is similar for bonds and
     # angles and represents to equilibrium value, and k is similar for all
     # bonds, angles, and torsions. The result is we fit to all bonds and
     # angles and all k values of torsions
-    fit_symbols = {0: "l", 1: "l", 2: "k"}
+    #fit_symbols = {0: "k", 1: "k"}#  2: "k"}
     fit_symbols = ['l']
 
     # The penalties control the amount of objective increase as the parameters
@@ -424,20 +438,20 @@ def main():
     # increases as more parameters are added
     co = fits.chemical_objective
 
-    # Estimate the force constants for all bonds, angles, and torsions.
-    # Furthermore, predict the periodicities up to n=6 and cap any k val to 
-    # 100. Periodicities are preferred where all cos(q) < alpha or
-    # cos(q) > -alpha, indicating all angles are in troughs of the
-    # periodicitiy. We choose 100 to highlight distinct chemistries, but in 
-    # the actual predicted values we cap to 5 kcal.
-    sag_map = fits.smiles_assignment_force_constants(
-        gdb,
-        alpha=-.5,
-        max_n=6,
-        max_dihedral_k=100
-    )
 
     if 0:
+        # Estimate the force constants for all bonds, angles, and torsions.
+        # Furthermore, predict the periodicities up to n=6 and cap any k val to 
+        # 100. Periodicities are preferred where all cos(q) < alpha or
+        # cos(q) > -alpha, indicating all angles are in troughs of the
+        # periodicitiy. We choose 100 to highlight distinct chemistries, but in 
+        # the actual predicted values we cap to 5 kcal.
+        sag_map = fits.smiles_assignment_force_constants(
+            gdb,
+            alpha=-.5,
+            max_n=6,
+            max_dihedral_k=100
+        )
         # Cluster bond lengths where a split is accepted if the mean difference
         # is greater than 0.025 A.
         if os.path.exists(prefix + "csys.bond_l.p"):
@@ -627,22 +641,23 @@ def main():
     # Initial chemical perception is done. Perform a full reset of values
     # on each parameter. In this example, we split torsions using 6 cosine
     # terms, but for the actual force field we limit cosine periodicity to 3.
-    reset_config = {
-        "bond_l": True,
-        "bond_k": True,
-        "angle_l": True,
-        "angle_k": True,
-        "torsion_k": True,
-        "outofplane_k": False,
-        "dihedral_p": True,
-        "dihedral_max_n": 3,
-        "dihedral_alpha": -0.5,
-        "dihedral_min_k": 1e-3,
-        "dihedral_max_k": 5,
-    }
-    ret = fits.reset(reset_config, csys, gdb, psystems=psys, verbose=True)
-    psys = ret.value
-    print("\n".join(ret.out))
+    if 0:
+        reset_config = {
+            "bond_l": True,
+            "bond_k": True,
+            "angle_l": True,
+            "angle_k": True,
+            "torsion_k": True,
+            "outofplane_k": False,
+            "dihedral_p": False,
+            "dihedral_max_n": 3,
+            "dihedral_alpha": -0.5,
+            "dihedral_min_k": 1e-3,
+            "dihedral_max_k": 10,
+        }
+        ret = fits.reset(reset_config, csys, gdb, psystems=psys, verbose=True)
+        psys = ret.value
+        print("\n".join(ret.out))
 
     print("After resetting and initializing, the parameters are:")
     mm.chemical_system_print(csys)
@@ -764,7 +779,7 @@ ai_offxml = """<?xml version="1.0" encoding="utf-8"?>
         <Proper
             id="t1"
             smirks="[*:1]~[X4:2]~[X4:3]~[*:4]"
-            periodicity1="1"
+            periodicity1="3"
             phase1="0.0 * degree"
             k1="0.0 * mole**-1 * kilocalorie"
             idivf1="1.0"
@@ -772,7 +787,7 @@ ai_offxml = """<?xml version="1.0" encoding="utf-8"?>
         <Proper
             id="t2"
             smirks="[*:1]~[X4:2]~[X3:3]~[*:4]"
-            periodicity1="1"
+            periodicity1="3"
             phase1="0.0 * degree"
             k1="0.0 * mole**-1 * kilocalorie"
             idivf1="1.0"
@@ -780,7 +795,7 @@ ai_offxml = """<?xml version="1.0" encoding="utf-8"?>
         <Proper
             id="t3"
             smirks="[*:1]~[X4:2]~[X2:3]~[*:4]"
-            periodicity1="1"
+            periodicity1="3"
             phase1="0.0 * degree"
             k1="0.0 * mole**-1 * kilocalorie"
             idivf1="1.0"
@@ -788,7 +803,7 @@ ai_offxml = """<?xml version="1.0" encoding="utf-8"?>
         <Proper
             id="t4"
             smirks="[*:1]~[X3:2]~[X3:3]~[*:4]"
-            periodicity1="1"
+            periodicity1="2"
             phase1="0.0 * degree"
             k1="0.0 * mole**-1 * kilocalorie"
             idivf1="1.0"
@@ -796,7 +811,7 @@ ai_offxml = """<?xml version="1.0" encoding="utf-8"?>
         <Proper
             id="t5"
             smirks="[*:1]~[X3:2]~[X2:3]~[*:4]"
-            periodicity1="1"
+            periodicity1="2"
             phase1="0.0 * degree"
             k1="0.0 * mole**-1 * kilocalorie"
             idivf1="1.0"
