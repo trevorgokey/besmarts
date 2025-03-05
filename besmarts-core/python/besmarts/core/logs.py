@@ -16,6 +16,11 @@ def file_logger(name):
 def timestamp():
     return datetime.datetime.now()
 
+def append(line, out, verbose=False):
+    out.append(line)
+    if verbose:
+        print(line)
+
 def dprint(*args, **kwargs):
     on = kwargs.get("on", False)
     if "on" in kwargs:
