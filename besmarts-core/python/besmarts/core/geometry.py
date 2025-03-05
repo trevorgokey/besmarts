@@ -7,6 +7,8 @@ Functions to process the geometry of a molecular graph.
 import math
 from besmarts.core import topology
 
+INF = math.inf
+
 def is_outofplane(combo, edges) -> bool:
     return (
         tuple(sorted((combo[0], combo[1]))) in edges
@@ -60,7 +62,11 @@ def array_basis(a, b):
     unit vector from a to b and its projection (magnitude)
     """
     r = array_distance(a, b)
-    return array_scale(array_difference(b, a), 1/r), r
+    rinv = INF
+    if r > 0.0:
+        rinv = 1/r
+    u = array_scale(array_difference(b, a), rinv)
+    return array_scale(array_difference(b, a), rinv), r
 
 def array_magnitude(a) -> float:
     return sum([x*x for x in a])**.5
@@ -88,7 +94,10 @@ def jacobian_distance(xyz1, xyz2):
         d = array_difference(b, a)
         
         # this will be an IC x XYZ matrix with each IC a key in the dict
-        result.append([array_scale(d, -1/r), array_scale(d, 1/r)])
+        rinv = INF
+        if r > 0.0:
+            rinv = 1/r
+        result.append([array_scale(d, -rinv), array_scale(d, rinv)])
 
     return result
 
@@ -197,7 +206,7 @@ def jacobian2_angle(xyz1, xyz2, xyz3):
         uv = array_outer_product(u, v)
         vv = array_outer_product(v, v)
         cosq = array_inner_product(u, v)
-        sinq = math.sqrt(1 - cosq**2)
+        sinq = math.sqrt(1 - min(1.0, cosq**2))
 
         if abs(sinq) < 1e-7:
             cs = 0.0
@@ -284,16 +293,35 @@ def jacobian_outofplane_v2(xyz1, xyz2, xyz3, xyz4):
         tan = math.tan(t)
         s1a = array_scale(array_cross(eba, ebc), 1/(cos*sin1)) 
         s1b = array_scale(ebd, tan)
-        s1 = array_scale(array_difference(s1a, s1b), 1/rbd)
 
-        s2a = array_scale(array_cross(ebc, eba), 1/(cos*sin1)) 
-        s2b = array_scale(array_difference(ebc, array_scale(ebd, cos1)), tan/sin1**2)
-        s2 = array_scale(array_difference(s2a, s2b), 1/rbc)
+        rbdinv = float("inf")
+        if rbdinv != 0.0:
+            rbdinv = 1/rbd
+        s1 = array_scale(array_difference(s1a, s1b), rbdinv)
 
-        s3a = array_scale(array_cross(eba, ebc), 1/(cos*sin1)) 
-        s3b = array_scale(array_difference(ebd, array_scale(ebc, cos1)), tan/sin1**2)
-        s3 = array_scale(array_difference(s1a, s1b), 1/rbd)
-        
+        cossininv = float("inf")
+        if (cos*sin1) != 0.0:
+            cossininv = 1/(cos*sin1)
+        s2a = array_scale(array_cross(ebc, eba), cossininv) 
+
+        tansin = 0.0
+        if tan == 0.0:
+            tansin = 0.0
+        elif sin1 == 0.0:
+            tansin = INF
+        else:
+            tansin = tan/sin1**2
+        s2b = array_scale(array_difference(ebc, array_scale(ebd, cos1)), tansin)
+
+        rbcinv = INF
+        if rbcinv != 0.0:
+            rbcinv = 1/rbc
+        s2 = array_scale(array_difference(s2a, s2b), rbcinv)
+
+        s3a = array_scale(array_cross(eba, ebc), cossininv) 
+        s3b = array_scale(array_difference(ebd, array_scale(ebc, cos1)), tansin)
+
+        s3 = array_scale(array_difference(s1a, s1b), rbdinv)
         s4 = array_difference(array_difference(array_scale(s1, -1.0), s2), s3)
 
         result.append([s1,s2,s3,s4])
@@ -421,11 +449,11 @@ def jacobian2_torsion_terms(u, v, w, lu, lv, lw, cosu, cosv):
     it's hard to tell what is what. 
     """
 
-    sinu = math.sqrt(1 - cosu**2)
-    sinv = math.sqrt(1 - cosv**2)
+    sinu = math.sqrt(1 - min(1.0, cosu**2))
+    sinv = math.sqrt(1 - min(1.0, cosv**2))
 
     if abs(sinu) < 1e-12 or abs(sinv) < 1e-12:
-        return [*[0]*9]
+        return [*[[*[0]*9]]*8]
 
     uxw = array_cross(u, w)
     vxw = array_cross(v, w)
