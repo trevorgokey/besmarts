@@ -7,6 +7,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name='besmarts-rdkit',
+    version='0.1.0',
     description="BESMARTS RDKit plugin",
     license="MIT",
     author="Trevor Gokey",

@@ -8,6 +8,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name='besmarts-scipy',
+    version='0.1.0',
     description="BESMARTS SciPy plugin",
     license="MIT",
     author="Trevor Gokey",

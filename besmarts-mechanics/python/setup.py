@@ -1,15 +1,15 @@
 import setuptools
 import warnings
 
-requirements = ["besmarts", 'numpy<2']
+requirements = ["besmarts", 'numpy']
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
     name='besmarts-mechanics',
-    version='0.1.0',
-    description="BESMARTS Mechanics and FF fitting",
+    version='0.1.1',
+    description="BESMARTS molecular mechanics force field fitting",
     license="MIT",
     author="Trevor Gokey",
     author_email='tgokey@uci.edu',

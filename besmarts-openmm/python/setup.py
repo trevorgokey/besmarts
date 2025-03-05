@@ -1,6 +1,6 @@
 import setuptools
 
-requirements = ["besmarts", "besmarts-mechanics", "openmm", 'numpy<2']
+requirements = ["besmarts", "besmarts-mechanics", "openmm", 'numpy']
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
