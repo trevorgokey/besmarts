@@ -359,6 +359,7 @@ def optimization_strategy_build_macro_iterations(strat: optimization_strategy):
                             strat.bounds.splitter.split_specific,
                             strat.bounds.splitter.unique_complements,
                             strat.bounds.splitter.unique_complements_prefer_min,
+                            strat.bounds.splitter.primitives,
                         )
                         extender = configs.smarts_extender_config(
                             branches, branches, strat.bounds.extender.include_hydrogen
@@ -395,6 +396,7 @@ def optimization_strategy_build_macro_iterations(strat: optimization_strategy):
                             strat.bounds.splitter.split_specific,
                             strat.bounds.splitter.unique_complements,
                             strat.bounds.splitter.unique_complements_prefer_min,
+                            strat.bounds.splitter.primitives,
                         )
                         extender = configs.smarts_extender_config(0, 0, True)
                         config = configs.smarts_perception_config(

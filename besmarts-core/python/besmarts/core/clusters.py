@@ -249,12 +249,12 @@ def perform_operations(
     nodes = {}
     for cnd_i, key in keys.items():
         (S, Sj, step, _, _, _, _) = candidates[key]
-        (edits, _, p_j) = key
+        (edits, _, p_j, oper) = key
         param_name = "p."
         sma = ""
         added = False
 
-        if step.operation == strategy.SPLIT:
+        if oper == strategy.SPLIT:
             # param_name = prefix + str(group_number)
             i = max(hidx.index.nodes) + 1
             name = f"{prefix}{i}"
@@ -287,7 +287,7 @@ def perform_operations(
             # print(datetime.datetime.now(), '*** 4')
 
             #####
-        elif step.operation == strategy.MERGE:
+        elif oper == strategy.MERGE:
             # if (S.name not in groups) or (Sj.name not in groups):
             #     continue
 
@@ -791,6 +791,7 @@ def smarts_clustering_optimize(
                         return_matches = config.splitter.return_matches
                         config.splitter.return_matches = True
 
+                        print("PRIMITIVES IS", config.splitter.primitives)
                         ret = splits.split_structures_distributed(
                             config.splitter,
                             S0,
@@ -808,7 +809,7 @@ def smarts_clustering_optimize(
                         )
 
                         new_candidates = clustering_collect_split_candidates_serial(
-                            S, ret, step
+                            S, ret, step, strategy.SPLIT
                         )
                         union_cache[(S.index, S.name, strategy.cursor)] = (Q, new_candidates)
 
@@ -817,7 +818,7 @@ def smarts_clustering_optimize(
                 if candidates:
                     p_j_max = max(x[2] for x in candidates) + 1
                 for k, v in new_candidates.items():
-                    k = (k[0], k[1], k[2]+p_j_max)
+                    k = (k[0], k[1], k[2]+p_j_max, step.operation)
                     candidates[k] = v
                 new_candidates = None
 
@@ -825,7 +826,7 @@ def smarts_clustering_optimize(
                 if candidates:
                     p_j_max = max(x[2] for x in candidates) + 1
                 for k, v in new_candidates_direct.items():
-                    k = (k[0], k[1], k[2]+p_j_max)
+                    k = (k[0], k[1], k[2]+p_j_max, step.operation)
                     candidates[k] = v
                 new_candidates_direct = None
 
@@ -835,7 +836,7 @@ def smarts_clustering_optimize(
                     J = cst.hierarchy.index.nodes[jidx]
 
                     for overlap in step.overlap:
-                        key = (overlap, macro.cursor, p_j)
+                        key = (overlap, macro.cursor, p_j, strategy.MERGE)
                         cnd = (S, J, step, None, None, None, None)
                         candidates[key] = cnd
 
@@ -852,14 +853,14 @@ def smarts_clustering_optimize(
         Sj_sma = []
 
         with multiprocessing.pool.Pool(configs.processors) as pool:
-            if step.operation == strategy.SPLIT:
-                # Sj_lst = [candidates[x[1]][1] for x in pq]
-                Sj_lst = [graphs.subgraph_as_structure(x[1], topo) for x in candidates.values()]
-            elif step.operation == strategy.MERGE:
-                Sj_lst = [
-                    graphs.subgraph_as_structure(cst.hierarchy.subgraphs[x[1].index], topo)
-                    for x in candidates.values()
-                ]
+            Sj_lst = []
+            for (_,_,_, oper), x in candidates.items():
+                if oper == strategy.SPLIT:
+                    Sj_lst.append(graphs.subgraph_as_structure(x[1], topo))
+                elif oper == strategy.MERGE:
+                    Sj_lst.append(graphs.subgraph_as_structure(cst.hierarchy.subgraphs[x[1].index], topo))
+                elif oper == strategy.MODIFY:
+                    Sj_lst.append(x[0])
             Sj_sma = pool.map_async(gcd.smarts_encode, Sj_lst).get()
             del Sj_lst
 
@@ -952,9 +953,9 @@ def smarts_clustering_optimize(
             })
 
             iterable = {
-                i: ((S, Sj, step.operation, edits), {})
+                i: ((S, Sj, oper, edits), {})
                 for i, (
-                    (edits, _, p_j),
+                    (edits, _, p_j, oper),
                     (S, Sj, step, _, _, _, _),
                 ) in enumerate(candidates.items(), 1)
             }
@@ -1041,12 +1042,15 @@ def smarts_clustering_optimize(
             for j, cnd_i in enumerate(sorted(work), 1):
                 (keep, X, obj, match_len) = work[cnd_i]
                 # cnd_i, key, unit = unit
+                oper = cnd_keys[cnd_i][3]
                 (S, Sj, step, _, _, _, _) = candidates[cnd_keys[cnd_i]]
 
-                if step.operation == strategy.SPLIT:
-                    visited.add(S.name)
-                elif step.operation == strategy.MERGE:
-                    visited.add(Sj.name)
+                if oper == strategy.SPLIT:
+                    visited.add((S.name, oper))
+                elif oper == strategy.MERGE:
+                    visited.add((Sj.name, oper))
+                elif oper == strategy.MODIFY:
+                    visited.add((S.name, oper))
 
                 dX = X - X0
                 reused_line = ""
@@ -1055,7 +1059,8 @@ def smarts_clustering_optimize(
                 C = "Y" if keep else "N"
                 cout_line = (
                     f"Cnd. {cnd_i:4d}/{len(work)}"
-                    f" {S.name:6s} {reused_line}" 
+                    f" OP={oper}"
+                    f" {S.name:6s} {reused_line}"
                     f" X= {X:10.5f}"
                     f" dX= {dX:10.5f} N= {match_len:6d} C= {C} {Sj_sma[cnd_i-1]}"
                 )
@@ -1065,7 +1070,7 @@ def smarts_clustering_optimize(
                 sys.stdout.flush()
 
                 if match_len == 0:
-                    if step.operation == strategy.SPLIT:
+                    if oper == strategy.SPLIT:
                         keep = False
                         ignore.add(cnd_i)
                         continue
@@ -1106,7 +1111,7 @@ def smarts_clustering_optimize(
             ck_i = 1
 
             cnd_keep = []
-            best_params = [x[0] for x in best.values()]
+            # best_params = [x[0] for x in best.values()]
             macroamt = strategy.macro_accept_max_total
             macroampc = strategy.macro_accept_max_per_cluster
             microamt = strategy.micro_accept_max_total
@@ -1261,13 +1266,14 @@ def smarts_clustering_optimize(
             for cnd_i, hent in nodes.items():
                 key = keys[cnd_i]
 
+                oper = key[3]
                 (S, Sj, step, _, _, _, _) = candidates[key]
                 repeat.add(S.name)
                 sma = Sj_sma[cnd_i-1]
                 kept.add(cnd_i)
                 # cnd_i = best[S.name][0] 
                 # hent = Sj
-                visited.add(hent.name)
+                visited.add((hent.name, oper))
                 edits = step.overlap[0]
                 for union_idx in [(S.index, S.name), (hent.index, hent.name)]:
                     for k in list(union_cache):
@@ -1275,7 +1281,7 @@ def smarts_clustering_optimize(
                             union_cache.pop(k)
 
 
-                if step.operation == strategy.SPLIT:
+                if oper == strategy.SPLIT:
 
                     obj = edits
                     if groups[S.name] and groups[hent.name]:
@@ -1329,16 +1335,15 @@ def smarts_clustering_optimize(
                         repeat.add(hent.name)
                         step_tracker[hent.name] = 0
 
-
-                elif step.operation == strategy.MERGE:
+                elif oper == strategy.MERGE:
 
                     if hent.name in step_tracker:
                         step_tracker.pop(hent.name)
                     else:
                         print("WARNING", hent.name, "missing from the tracker")
 
-                    visited.add(S.name)
-                    visited.remove(hent.name)
+                    visited.add((S.name, oper))
+                    visited.remove(hent.name, oper)
 
                     above = cst.hierarchy.index.above.get(S.index)
                     if above is not None:
@@ -1700,64 +1705,7 @@ def clustering_collect_split_candidates_single(j):
     return j, unmatch, matched, matched_assn, unmatch_assn
 
 
-def clustering_collect_split_candidates_parallel(
-    S, a, ret, backmap, assn, step
-):
-    candidates = {}
-
-    work = []
-    clustering_collect_split_candidates_ctx.ret = ret
-    clustering_collect_split_candidates_ctx.assn = assn
-    clustering_collect_split_candidates_ctx.backmap = backmap
-
-    with multiprocessing.Pool(configs.processors) as pool:
-        for i in range(len(ret.splits)):
-            fut = pool.apply_async(
-                clustering_collect_split_candidates_single, (i,)
-            )
-            work.append(fut)
-
-        done = []
-        i = 0
-        print(
-            f"\r{datetime.datetime.now()} Finished {i: 8d}/{len(work)}", end=""
-        )
-        for i, unit in enumerate(work, 1):
-            unit = unit.get()
-            if unit is not None:
-                done.append(unit)
-            print(
-                f"\r{datetime.datetime.now()} Finished {i: 8d}/{len(work)}",
-                end="",
-            )
-        print()
-        # work = [unit.get() for unit in work]
-        # work = [unit for unit in work if unit is not None]
-
-        for i, unmatch, matched, matched_assn, unmatch_assn in sorted(
-            done, key=lambda x: len(x[3])
-        ):
-            Sj = ret.splits[i]
-
-            overlaps = step.overlap
-
-            if overlaps is None:
-                overlaps = [0]
-
-            for edits in step.overlap:
-                if edits not in candidates:
-                    candidates[edits] = []
-                candidates[edits].append(
-                    (S, Sj, step, matched, unmatch, matched_assn, unmatch_assn)
-                )
-    clustering_collect_split_candidates_ctx.ret = None
-    clustering_collect_split_candidates_ctx.assn = None
-    clustering_collect_split_candidates_ctx.backmap = None
-
-    return candidates
-
-
-def clustering_collect_split_candidates_serial(S, ret, step):
+def clustering_collect_split_candidates_serial(S, ret, step, operation):
     candidates = {}
 
     for p_j, Sj in enumerate(ret.splits):
@@ -1769,7 +1717,7 @@ def clustering_collect_split_candidates_serial(S, ret, step):
         for edits in step.overlap:
             # if edits not in candidates:
             # candidates[edits] = []
-            key = (edits, None, p_j)
+            key = (edits, None, p_j, operation)
             candidates[key] = (S, Sj, step, None, None, None, None)
 
     return candidates
@@ -1875,49 +1823,6 @@ def get_assns(assignments, topo):
             idx = tuple((idx[j] for j in topo.primary))
             assn[(i, idx)] = lbl
     return assn
-
-
-def clustering_insert_split_candidates(
-    new_candidates, assn, objective, S, micro_i
-):
-    # from besmarts.codecs.codec_rdkit import graph_codec_rdkit
-    # gcd = graph_codec_rdkit()
-    pq = []
-    candidates = {}
-    for overlap, cnd in new_candidates.items():
-        for p_j, (
-            S,
-            Sj,
-            step,
-            matched,
-            unmatch,
-            matched_assn,
-            unmatch_assn,
-        ) in enumerate(cnd):
-            # group = tuple((assn[i] for i in matched))
-            # un_group = tuple((assn[i] for i in unmatch))
-
-            # print(f"Objective1 for Sj:", gcd.smarts_encode(Sj))
-            # print("Matched")
-            # print(matched)
-            # print("UnMatched")
-            # print(unmatch)
-            x = objective.split(matched_assn, unmatch_assn, overlap=overlap)
-            key = (overlap, micro_i, p_j)
-            dx = x  # - objective.merge(un_group, group)
-
-            pq.append((dx, key))
-            candidates[key] = (
-                S,
-                Sj,
-                step,
-                matched,
-                unmatch,
-                matched_assn,
-                unmatch_assn,
-            )
-
-    return pq, candidates
 
 
 def smarts_filter_data(
