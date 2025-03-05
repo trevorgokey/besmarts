@@ -7,6 +7,7 @@ BESMARTS graph encoding using the RDKit perception model
 from typing import Dict, Sequence, Tuple
 
 from rdkit import Chem
+from rdkit.Chem import rdDetermineBonds
 
 from besmarts.core import configs
 from besmarts.core.arrays import bitvec as array
@@ -112,6 +113,23 @@ class graph_codec_rdkit(graph_codec):
         smiles = sa.smiles
         # smiles = self.smiles_encode(g)
         return assignments.graph_assignment(smiles, sa.selections, g), extras
+
+    def xyz_decode(self, smi, xyz) -> assignments.graph_assignment:
+        """
+        """
+        sa = rdkit_xyz_to_smiles_assignment(smi, xyz)
+        g = rdkit_smiles_decode(
+            self.smiles_config,
+            self.primitive_codecs,
+            self.array,
+            self.atom_primitives,
+            self.bond_primitives,
+            sa.smiles,
+        )
+        g = graphs.subgraph_as_graph(g)
+        smiles = sa.smiles
+        # smiles = self.smiles_encode(g)
+        return assignments.graph_assignment(smiles, sa.selections, g)
 
     def rdmol_decode(self, mol: Chem.Mol) -> graphs.graph:
         """
@@ -232,6 +250,35 @@ def rdkit_smarts_decode(
         return graphs.subgraph(nodes, edges, select)
     else:
         return graphs.graph(nodes, edges)
+
+def rdkit_xyz_to_smiles_assignment(smiles, xyz) -> Tuple[assignments.smiles_assignment, Dict]:
+
+    molsmi = Chem.MolFromSmiles(smiles)
+    charge = Chem.GetFormalCharge(molsmi)
+
+    mol = Chem.Mol(Chem.MolFromXYZBlock(xyz))
+    rdDetermineBonds.DetermineBonds(mol, charge=charge, useAtomMap=True)
+    
+    indices = get_indices(mol)
+
+    for atom in mol.GetAtoms():
+        atom.SetAtomMapNum(indices[atom.GetIdx()])
+
+    smi = Chem.MolToSmiles(mol)
+
+    sel = {}
+    for atom in mol.GetAtoms():
+        idx = atom.GetIdx()
+        i = indices[idx],
+        if i not in sel:
+            sel[i] = []
+        for conf in mol.GetConformers():
+            xyz = conf.GetAtomPosition(idx)
+            sel[i].append(list(xyz))
+
+    # extras = mol.GetPropsAsDict()
+
+    return assignments.smiles_assignment_float(smi, sel)
 
 def rdkit_sdf_to_smiles_assignment(sdf) -> Tuple[assignments.smiles_assignment, Dict]:
 

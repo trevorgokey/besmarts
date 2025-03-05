@@ -70,24 +70,44 @@ def smarts_hierarchy_assign_smiles(smiles):
     }[topo]
 
 
-    g = gcd.smiles_decode(smiles)
-    selections = [s.select for s in graphs.graph_to_structure_topology(g, topo)]
-    mol = make_rdmol(gcd.smiles_config, smiles)
-
-    indices = selections
-
+    g = None
+    n = 0
     match = {}
-    roots = [shier.index.nodes[i] for i, x in shier.index.above.items() if x is None]
-    for root in roots:
-        new_matches = assign(
-            shier, root, mol, indices, lambda x: tuple(sorter(x))
-        )
-        if not match:
-            match = new_matches
-        else:
-            for x,y in new_matches.items():
-                if y is not None:
-                    match[x] = y
+    for comp in smiles.split('.'):
+        g = gcd.smiles_decode(comp)
+        # if g is None:
+        #     g = g1
+        # else:
+        #     g1 = graphs.graph_relabel_nodes(
+        #         g1,
+        #         {x:x+max(g.nodes) for x in g1.nodes}
+        #     )
+        #     g.nodes.update(g1.nodes)
+        #     g.edges.update(g1.edges)
+        # g = graphs.graph_relabel_nodes(
+        #     g,
+        #     {x:x+n for x in g.nodes}
+        # )
+
+        selections = [s.select for s in graphs.graph_to_structure_topology(g, topo)]
+        mol = make_rdmol(gcd.smiles_config, comp)
+
+        indices = selections
+
+        roots = [shier.index.nodes[i] for i, x in shier.index.above.items() if x is None]
+        for root in roots:
+            new_matches = assign(
+                shier, root, mol, indices, lambda x: tuple(sorter(x))
+            )
+            new_matches = {tuple((ki+n for ki in k)): v for k, v in new_matches.items()}
+            if not match:
+                match = new_matches
+            else:
+                for x,y in new_matches.items():
+                    if y is not None:
+                        match[x] = y
+        # n += max(g.nodes)
+
         
     return cluster_assignment.smiles_assignment_str(smiles, match)
 
