@@ -10,54 +10,139 @@ import shutil
 
 from besmarts.core import topology
 from besmarts.core import assignments
-from besmarts.core import trees
+# from besmarts.core import trees
 from besmarts.core import codecs
-from besmarts.core import hierarchies
+# from besmarts.core import hierarchies
 from besmarts.core import primitives
-from besmarts.core import graphs
-from besmarts.core import perception
+# from besmarts.core import graphs
+# from besmarts.core import perception
 
 from besmarts.mechanics import molecular_models as mm
 
-
+# import math
+INF = math.inf
 
 # electrostatics
 def energy_function_coulomb_mix(*, eps, c, s, qq, x) -> float:
-    return [[s[0]*eps[0]*q/xi if xi < c[0] else 0.0 for q in qq] for xi in x[0]]
+    return [[
+        INF if xi == 0.0 else
+        s[0]*eps[0]*q/xi if xi < c[0] else
+        0.0 for q in qq
+    ] for x0 in x for xi in x0]
 
 def force_function_coulomb_mix(*, eps, c, s, qq, x) -> float:
-    return [[s[0]*eps[0]*q/(xi*xi) if xi < c[0] else 0.0 for q in qq] for xi in x[0]]
+    return [[
+        INF if xi == 0.0 else
+        s[0]*eps[0]*q/(xi*xi) if xi < c[0] else
+        0.0 for q in qq
+    ] for x0 in x for xi in x0]
 
 def force_gradient_function_coulomb_mix(*, eps, c, s, qq, x) -> float:
-    return [[(q*-s[0]*eps[0]*2/(xi*xi*xi)) if xi < c[0] else 0.0 for q in qq] for xi in x[0]]
+    return [[
+        INF if xi == 0.0 else
+        (q*-s[0]*eps[0]*2/(xi*xi*xi)) if xi < c[0] else
+        0.0 for q in qq
+    ] for x0 in x for xi in x0]
 
 def force_system_coulomb_mix(*, eps, c, s, qq, x) -> float:
-    return [[(q, s[0]*eps[0]/(xi*xi)) if xi < c[0] else 0.0 for q in qq] for xi in x[0]]
+    return [[
+        (q, INF) if xi == 0.0 else
+        (q, s[0]*eps[0]/(xi*xi)) if xi < c[0] else
+        0.0 for q in qq
+    ] for x0 in x for xi in x0]
 
 def force_gradient_system_coulomb_mix(*, eps, c, s, qq, x) -> float:
-    return [[(q, -s[0]*eps[0]*2/(xi*xi*xi)) if xi < c[0] else 0.0 for q in qq] for xi in x[0]]
-
+    return [
+        [
+            (q, INF) if xi == 0.0 else
+            (q, -s[0]*eps[0]*2/(xi*xi*xi)) if xi < c[0] else
+            0.0 for q in qq
+        ]
+        for xi in x[0]
+    ]
 
 # vdW
 def energy_function_lennard_jones_combined(*, s, c, ee, rr, x) -> float:
-    xx = [[math.pow(ri/xi, 6) if xi < c[0] else 0.0 for ri in rr] for xi in x[0]]
-    return [[4.0*s[0]*ei*(xi*xi - xi) for ei, xi in zip(ee, xxi)] for xxi in xx]
+    xx = [
+        [
+            INF if xi == 0.0 else
+            math.pow(ri/xi, 6) if xi < c[0] else
+            0.0 for ri in rr
+        ] for x0 in x for xi in x0
+    ]
+    return [
+        [4.0*s[0]*ei*(xi*xi - xi) for ei, xi in zip(ee, xxi)]
+        for xxi in xx
+    ]
 
 def force_function_lennard_jones_combined(*, s, c, ee, rr, x) -> float:
-    xx = [[math.pow(ri/xi, 6) if xi < c[0] else 0.0 for ri in rr] for xi in x[0]]
-    return [[24.0*s[0]*ei*(2.0*xi*xi - xi)/ri for ei, xi, ri, x0 in zip(ee, xxi, rr, x[0])] for xxi in xx]
+    xx = [
+        [
+            INF if (ri > 0.0 and xi == 0.0) else
+            math.pow(ri/xi, 6) if xi < c[0]
+            else 0.0 for ri in rr
+        ] for x0 in x for xi in x0
+    ]
+    return [
+        [
+            0.0 if ri == 0.0 else
+            24.0*s[0]*ei*(2.0*xi*xi - xi)/x0
+            for ei, xi, ri, x0 in zip(ee, xxi, rr, x[0])
+        ]
+        for xxi in xx
+    ]
 
 def force_gradient_function_lennard_jones_combined(*, s, c, ee, rr, x) -> float:
-    xx = [[math.pow(ri/xi, 6) if xi < c[0] else 0.0 for ri in rr] for xi in x[0]]
-    return [[(ei* -24.0*s[0]*(26.0*xi*xi - 7.0*xi)/(ri*ri)) for ei, xi, ri, x0 in zip(ee, xxi, rr, x[0])] for xxi in xx]
+    xx = [
+        [
+            INF if (ri > 0.0 and xi == 0.0) else
+            math.pow(ri/xi, 6) if xi < c[0] else
+            0.0 for ri in rr
+        ] for x0 in x for xi in x0
+    ]
+    return [
+        [
+            0.0 if ri == 0.0 else
+            (-24.0*ei*s[0]*(26.0*xi*xi - 7.0*xi)/(x0*x0))
+            for ei, xi, ri, x0 in zip(ee, xxi, rr, x[0])
+        ]
+        for xxi in xx
+    ]
 
 def force_system_lennard_jones_combined(*, s, c, ee, rr, x) -> float:
-    xx = [[math.pow(ri/xi, 6) if xi < c[0] else 0.0 for ri in rr] for xi in x[0]]
-    return [[(ei, 24.0*s[0]*(2.0*xi*xi - xi)/ri) for ei, xi, ri, x0 in zip(ee, xxi, rr, x[0])] for xxi in xx]
+    xx = [
+        [
+            INF if (ri > 0.0 and xi == 0.0) else
+            math.pow(ri/xi, 6) if xi < c[0] else
+            0.0 for ri in rr
+        ] for x0 in x for xi in x0
+    ]
+    return [
+        [
+            (ei, 0.0) if ri == 0.0 else
+            (ei, 24.0*s[0]*(2.0*xi*xi - xi)/x0)
+            for ei, xi, ri, x0 in zip(ee, xxi, rr, x[0])
+        ]
+        for xxi in xx
+    ]
 
 def force_gradient_system_lennard_jones_combined(*, s, c, ee, rr, x) -> float:
-    xx = [[math.pow(ri/xi, 6) if xi < c[0] else 0.0 for ri in rr] for xi in x[0]]
-    return [[(ei, -24.0*s[0]*(26.0*xi*xi - 7.0*xi)/(ri*ri)) for ei, xi, ri, x0 in zip(ee, xxi, rr, x[0])] for xxi in xx]
+    xx = [
+        [
+            INF if (ri > 0.0 and xi == 0.0) else
+            math.pow(ri/xi, 6) if xi < c[0] else
+            0.0 for ri in rr
+        ] for x0 in x for xi in x0
+    ]
+    return [
+        [
+            (ei, 0.0) if ri == 0.0 else
+            (ei, -24.0*s[0]*(26.0*xi*xi - 7.0*xi)/(x0*x0))
+            for ei, xi, ri, x0 in zip(ee, xxi, rr, x[0])
+        ]
+        for xxi in xx
+    ]
+
 
 class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
     """
@@ -67,6 +152,7 @@ class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
         self.name = ""
         self.topology_terms = topology_terms
         self.procedure_parameters = {}
+        self.minimize = False
 
     def assign(self, cm: mm.chemical_model, pm: mm.physical_model, overrides=None) -> mm.physical_model:
         """
@@ -75,79 +161,121 @@ class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
         pm.values = []
         cdc = codecs.primitive_codec_formal_charge()
         tmpfolder = tempfile.mkdtemp()
-        for pos in pm.positions:
+        for pi, pos in enumerate(pm.positions):
             
             charges = {}
             labels = {}
 
             q = int(cdc.count_charge_smiles(pos.graph.nodes))
             nconfs = min((len(x) for x in pos.selections.values()))
-            for i in range(nconfs):
+            # average over the confs
+            # if nconfs > 0:
+                # print(f"NConfs for charging: {nconfs}. Using first in gas phase")
+            for ci in range(1, nconfs+1):
                 
-                with open(os.path.join(tmpfolder, "mdin"), "w") as f:
-                    f.write(f"\n&qmmm\n")
-                    f.write(f"qm_theory='AM1', maxcyc=0, grms_tol=0.0005, scfconv=1.d-10, ndiis_attempts=700, qmcharge={q:d},\n")
+                conf_charges = {}
+                if ci > 1:
+                    break
+                if len(pos.graph.nodes) == 1:
+                    conf_charges = {next(iter(pos.graph.nodes)): q}
+                else:
+                    with open(os.path.join(tmpfolder, "mdin"), "w") as f:
+                        steps = "10000" if self.minimize else "0"
+                        f.write(f"\n&qmmm\n")
+                        f.write(f"qm_theory='AM1', maxcyc={steps}, grms_tol=0.0005, scfconv=1.d-10, ndiis_attempts=700, qmcharge={q:d},\n")
 
-                    if "sqm" in self.procedure_parameters:
-                        sqm_opts = procedure_parameters['sqm']
-                        f.write(f"{sqm_opts}\n")
+                        if "sqm" in self.procedure_parameters:
+                            sqm_opts = self.procedure_parameters['sqm']
+                            f.write(f"{sqm_opts}\n")
 
-                    f.write(" /\n")
+                        f.write(" /\n")
 
-                    for j, (n, xyz) in enumerate(pos.selections.items(), 1): 
-                        x,y,z = xyz[i]
-                        elem = pos.graph.nodes[n[0]].primitives["element"].on()[0]
-                        name = primitives.element_tr[str(elem)] + str(j)
-                        f.write(f"{elem} {name} {x:12.9f} {y:12.9f} {z:12.9f}\n")
-                    f.write("\n")
+                        for j, (n, xyz) in enumerate(pos.selections.items(), 1): 
+                            x,y,z = xyz[ci-1]
+                            elem = pos.graph.nodes[n[0]].primitives["element"].on()[0]
+                            name = primitives.element_tr[str(elem)] + str(j)
+                            # print(f"{elem} {name} {x:12.9f} {y:12.9f} {z:12.9f}")
+                            f.write(f"{elem} {name} {x:12.9f} {y:12.9f} {z:12.9f}\n")
+                        f.write("\n")
 
-                # print("RUNNING ANTECHAMBER FOR CHARGES")
-                subprocess.run([
-                    "sqm", "-O",
-                    "-i", "mdin",
-                    "-o", "mdout"
-                    ], 
-                    cwd=tmpfolder,
-                )
+                    # print("RUNNING ANTECHAMBER FOR CHARGES")
+                    subprocess.run([
+                        "sqm", "-O",
+                        "-i", "mdin",
+                        "-o", "mdout"
+                        ], 
+                        cwd=tmpfolder,
+                    )
 
-                subprocess.run([
-                    "antechamber",
-                    "-c", "bcc", 
-                    "-nc", f"{q}",
-                    "-pf", "y",
-                    "-dr", "n",
-                    "-fi", "sqmout",
-                    "-i", "mdout",
-                    "-fo", "mol2",
-                    "-o", "out.mol2"
-                    ],
-                    cwd=tmpfolder,
-                    capture_output=True
-                )
-                subprocess.run([
-                    "antechamber",
-                    "-c", "wc", 
-                    "-cf", "q.dat", 
-                    "-nc", f"{q}",
-                    "-pf", "y",
-                    "-dr", "n",
-                    "-fi", "mol2",
-                    "-i", "out.mol2",
-                    "-fo", "mol2",
-                    "-o", "out.mol2"
-                    ],
-                    cwd=tmpfolder,
-                    capture_output=True
-                )
-                with open(os.path.join(tmpfolder, "q.dat")) as f:
-                    qdat = f.read().split()
-                    conf_charges = {
-                        i: float(x) for i, x in zip(pos.graph.nodes, qdat)
-                    }
+                    subprocess.run([
+                        "antechamber",
+                        "-c", "bcc", 
+                        "-nc", f"{q}",
+                        "-pf", "y",
+                        "-dr", "n",
+                        "-fi", "sqmout",
+                        "-i", "mdout",
+                        "-fo", "mol2",
+                        "-o", "out.mol2"
+                        ],
+                        cwd=tmpfolder,
+                        capture_output=True
+                    )
+                    subprocess.run([
+                        "antechamber",
+                        "-c", "wc", 
+                        "-cf", "q.dat", 
+                        "-nc", f"{q}",
+                        "-pf", "y",
+                        "-dr", "n",
+                        "-fi", "mol2",
+                        "-i", "out.mol2",
+                        "-fo", "mol2",
+                        "-o", "out.mol2"
+                        ],
+                        cwd=tmpfolder,
+                        capture_output=True
+                    )
+                    try:
+                        with open(os.path.join(tmpfolder, "q.dat")) as f:
+                            qdat = f.read().split()
+                            qm_q =  [*map(float, qdat)]
+                            # call this am1 error
+                            print(pos.smiles)
+                            print("Charges:", pos.smiles, qm_q)
+                            delta = abs(sum(qm_q) - q)
+                            if delta < .5 and delta > 0.0:
+                                if sum(qm_q) > 0.0:
+                                    p = [x for x in qm_q if x > 0]
+                                else:
+                                    p = [x for x in qm_q if x < 0]
+                                s = (sum(p) - sum(qm_q))/sum(p)
+                                qm_q = [s*x if x > 0 else x for x in qm_q]
+                            else:
+                                assert q == sum(qm_q)
+                            conf_charges = {
+                                i: x for i, x in zip(pos.graph.nodes, qm_q)
+                            }
 
+                    except Exception as e:
+                        print("Error:", e)
+                        print("Could not generate charges, input of error is below:")
+                        mdin = os.path.join(tmpfolder, "mdin")
+                        if os.path.exists(mdin):
+                            with open(mdin) as f:
+                                for line in f:
+                                    print(line, end='')
+                        print("Could not generate charges, output of error is below:")
+                        mdout = os.path.join(tmpfolder, "mdout")
+                        if os.path.exists(mdout):
+                            with open(mdout) as f:
+                                for line in f:
+                                    print(line, end='')
+                        raise e
                 for i, qi in conf_charges.items():
-                    if (i,) not in charges:
-                        charges[i,] = {"q": []}
+                    key = (pi, i)
+                    if i not in charges:
+                        charges[key] = {"q": [0.0]}
                         # don't add labels because we want to hide these from
                         # functions that flatten the parameter list for fitting.
                         # Clearly we cannot optimize a black-box method such as
@@ -155,7 +283,7 @@ class chemical_model_procedure_antechamber(mm.chemical_model_procedure):
                         # If we do want this, make sure to add the values to
                         # cm.topology_terms['q'].values
                         # labels[i,] = {"q": "am1bcc"}
-                    charges[i,]["q"].append(qi)
+                    charges[key]["q"][0] = ((ci-1)*charges[key]["q"][0] + qi)/ci
             pm.values.append(charges)
             pm.labels.append(labels)
         shutil.rmtree(tmpfolder)
@@ -171,32 +299,75 @@ class chemical_model_procedure_combine_coulomb(mm.chemical_model_procedure):
 
     def assign(self, cm, pm, overrides=None):
         params = pm.values
+
         pos = pm.positions
 
-        pairs = assignments.smiles_assignment_geometry_distances(
-            pos[0],
-            graphs.graph_pairs(pos[0].graph)
-        ).selections
+        indices = assignments.graph_assignment_matrix_pair_indices(pos)
+        indices.extend(assignments.graph_assignment_matrix_bond_indices(pos))
 
-        bonds = assignments.smiles_assignment_geometry_distances(
-            pos[0],
-            graphs.graph_bonds(pos[0].graph)
-        ).selections
+        for ki, kj in indices:
+        # for pi, posi in enumerate(pm.positions):
 
-        pairs.update(bonds)
+            # mixed = {}
+            # pairs = assignments.smiles_assignment_geometry_distances(
+            #     posi,
+            #     graphs.graph_pairs(posi.graph)
+            # ).selections
 
-        for param in params:
-            mixed = {}
-            for i,j in pairs:
-                if (i,) not in param or (j,) not in param:
-                    continue
-                if (i,j) not in mixed:
-                    mixed[i,j] = {}
-                ei = param[i,].get("q")
-                ej = param[j,].get("q")
-                mixed[i,j]["qq"] = [(e1*e2) for e1,e2 in zip(ei, ej)]
+            # bonds = assignments.smiles_assignment_geometry_distances(
+            #     posi,
+            #     graphs.graph_bonds(posi.graph)
+            # ).selections
 
-            param.update(mixed)
+            # pairs.update(bonds)
+
+            if len(ki) == 2:
+                pi, i = ki
+            elif len(ki) == 3:
+                pi, i, ci = ki
+            else:
+                assert False
+            # i = i,
+            parami = params[pi]
+
+            if len(kj) == 2:
+                pj, j = kj
+            elif len(kj) == 3:
+                pj, j, cj = kj
+            else:
+                assert False
+            # j = j,
+            paramj = params[pj]
+
+            if (pi, i) not in parami or (pj, j) not in paramj:
+                continue
+
+            key = ki, kj
+            if key not in parami:
+                parami[key] = {}
+
+            ei = parami[(pi, i)].get("q")
+            ej = paramj[(pj, j)].get("q")
+
+            parami[key]["qq"] = [(e1*e2) for e1,e2 in zip(ei, ej)]
+
+            # parami.update(mixed)
+
+            # for pj, posj in enumerate(pm.positions):
+            #     if pj < pi:
+            #         continue
+            #     paramj = params[pj]
+            #     pairs = [((pi, i), (pj, j)) for i in posi.graph.nodes for j in posj.graph.nodes]
+            #     for (pi, i),(pj, j) in pairs:
+            #         if (pi, i) not in parami or (pj, j) not in paramj:
+            #             continue
+            #         key = (pi, i),(pj, j)
+            #         if key not in mixed:
+            #             mixed[key] = {}
+            #         ei = parami[(pi, i)].get("q")
+            #         ej = paramj[(pj, j)].get("q")
+            #         mixed[key]["qq"] = [(e1*e2) for e1,e2 in zip(ei, ej)]
+            #     parami.update(mixed)
 
         return pm
 
@@ -212,39 +383,106 @@ class chemical_model_procedure_combine_lj_lorentz_berthelot(mm.chemical_model_pr
         params = pm.values
         pos = pm.positions
 
-        pairs = assignments.smiles_assignment_geometry_distances(
-            pos[0],
-            graphs.graph_pairs(pos[0].graph)
-        ).selections
+        indices = assignments.graph_assignment_matrix_pair_indices(pos)
+        indices.extend(assignments.graph_assignment_matrix_bond_indices(pos))
 
-        bonds = assignments.smiles_assignment_geometry_distances(
-            pos[0],
-            graphs.graph_bonds(pos[0].graph)
-        ).selections
+        for ki, kj in indices:
 
-        pairs.update(bonds)
+            # pi, i = ki[:2]
+            # # i = i,
+            # parami = params[pi]
 
-        for param in params:
-            mixed = {}
-            for i,j in pairs:
-                if (i,) not in param or (j,) not in param:
-                    continue
-                ei = param[i,].get("e")
-                ej = param[j,].get("e")
-                if ei is None or ej is None:
-                    continue
+            # pj, j = kj[:2]
+            # # j = j,
+            # paramj = params[pj]
 
-                if (i,j) not in mixed:
-                    mixed[i,j] = {}
-                mixed[i,j]["ee"] = [(e1*e2)**.5 for e1,e2 in zip(ei, ej)]
+            # if (pi, i) not in parami or (pj, j) not in paramj:
+            #     continue
 
-                ri = param[i,].get("r")
-                rj = param[j,].get("r")
-                if ri is None or rj is None:
-                    continue
-                mixed[i,j]["rr"] = [(r1+r2)/2.0 for r1,r2 in zip(ri, rj)]
+            # # key = ki, kj
+            # key = (pi, i), (pj, j)
+            if len(ki) == 2:
+                pi, i = ki
+            elif len(ki) == 3:
+                pi, i, ci = ki
+            else:
+                assert False
+            # i = i,
+            parami = params[pi]
 
-            param.update(mixed)
+            if len(kj) == 2:
+                pj, j = kj
+            elif len(kj) == 3:
+                pj, j, cj = kj
+            else:
+                assert False
+            # j = j,
+            paramj = params[pj]
+
+            if (pi, i) not in parami or (pj, j) not in paramj:
+                continue
+
+            key = ki, kj
+            if key not in parami:
+                parami[key] = {}
+
+            ei = parami[(pi, i)].get("e")
+            ej = paramj[(pj, j)].get("e")
+
+            parami[key]["ee"] = [(e1*e2)**.5 for e1,e2 in zip(ei, ej)]
+
+            ri = parami[(pi, i)].get("r")
+            rj = paramj[(pj, j)].get("r")
+
+            parami[key]["rr"] = [(r1+r2)/2.0 for r1,r2 in zip(ri, rj)]
+
+            # parami = params[pi]
+            # for i,j in pairs:
+            #     if (pi, i) not in parami or (pi, j) not in parami:
+            #         continue
+            #     key = (pi, i),(pi, j)
+            #     if key not in mixed:
+            #         mixed[key] = {}
+            #     ei = parami[i,].get("e")
+            #     ej = parami[j,].get("e")
+            #     if ei is None or ej is None:
+            #         continue
+            #     # mixed[key]["ee"] = [(e1*e2) for e1,e2 in zip(ei, ej)]
+            #     mixed[key]["ee"] = [(e1*e2)**.5 for e1,e2 in zip(ei, ej)]
+            #     ri = parami[i,].get("r")
+            #     rj = parami[j,].get("r")
+            #     if ri is None or rj is None:
+            #         continue
+            #     mixed[key]["rr"] = [(r1+r2)/2.0 for r1,r2 in zip(ri, rj)]
+
+            # parami.update(mixed)
+
+            # for pj, posj in enumerate(pm.positions):
+            #     if pj < pi:
+            #         continue
+            #     paramj = params[pj]
+            #     pairs = [(i, j) for i in posi.graph.nodes for j in posj.graph.nodes]
+            #     for i,j in pairs:
+            #         if (pi, i) not in parami or (pj, j) not in paramj:
+            #             continue
+
+            #         key = (pi, i),(pi, j)
+            #         if key not in mixed:
+            #             mixed[key] = {}
+            #         ei = parami[i,].get("e")
+            #         ej = parami[j,].get("e")
+            #         if ei is None or ej is None:
+            #             continue
+            #         # mixed[key]["ee"] = [(e1*e2) for e1,e2 in zip(ei, ej)]
+            #         mixed[key]["ee"] = [(e1*e2)**.5 for e1,e2 in zip(ei, ej)]
+            #         ri = parami[i,].get("r")
+            #         rj = parami[j,].get("r")
+            #         if ri is None or rj is None:
+            #             continue
+            #         mixed[key]["rr"] = [(r1+r2)/2.0 for r1,r2 in zip(ri, rj)]
+
+            #     parami.update(mixed)
+
         return pm
 
 def chemical_model_coulomb(perception):
@@ -258,8 +496,9 @@ def chemical_model_coulomb(perception):
     cm.force_system = force_system_coulomb_mix
     cm.force_gradient_system = force_gradient_system_coulomb_mix
 
-    cm.internal_function = assignments.graph_assignment_geometry_pairs
-    cm.derivative_function = assignments.graph_assignment_jacobian_pairs
+    cm.internal_function = assignments.graph_assignment_geometry_pair_matrix
+    cm.derivative_function = assignments.graph_assignment_jacobian_pair_matrix
+
     cm.system_terms = {
         "c": mm.system_term("cutoff", "c", "float", "A", [10.0], ""),
         "eps": mm.system_term("dielectric", "eps", "float", "kcal/mol*A/e/e", [332.06371329919216], ""),
@@ -289,8 +528,8 @@ def chemical_model_lennard_jones(perception) -> mm.chemical_model:
     cm.force_system = force_function_lennard_jones_combined
     cm.force_gradient_system = force_gradient_system_lennard_jones_combined
 
-    cm.internal_function = assignments.graph_assignment_geometry_pairs
-    cm.derivative_function = assignments.graph_assignment_jacobian_pairs
+    cm.internal_function = assignments.graph_assignment_geometry_pair_matrix
+    cm.derivative_function = assignments.graph_assignment_jacobian_pair_matrix
 
     cm.topology_terms = {
         "e": mm.topology_term("e", "depth", "float", "kcal/mol", {}, "", {}),

@@ -15,10 +15,11 @@ def force_function_spring(
     *, k: List[float], l: List[float], x: List[float]
 ) -> List[float]:
     result = []
-    for xi in x[0]:
+    for xconf in x:
         xres = []
-        for kj, lj in zip(k, l):
-            xres.append(kj * (lj - xi))
+        for xi in xconf:
+            for kj, lj in zip(k, l):
+                xres.append(kj * (lj - xi))
         result.append(xres)
     return result
 
@@ -27,11 +28,12 @@ def energy_function_spring(
     *, k: List[float], l: List[float], x: List[float]
 ) -> List[float]:
     result = []
-    for xi in x[0]:
+    for xconf in x:
         xres = []
-        for kj, lj in zip(k, l):
-            r = xi - lj
-            xres.append(0.5 * kj * r * r)
+        for xi in xconf:
+            for kj, lj in zip(k, l):
+                r = xi - lj
+                xres.append(0.5 * kj * r * r)
         result.append(xres)
 
     return result
@@ -39,11 +41,13 @@ def energy_function_spring(
 def force_gradient_function_spring(
     *, k: List[float], l: List[float], x: List[float]
 ) -> List[float]:
+
     result = []
-    for xi in x[0]:
+    for xconf in x:
         xres = []
-        for kj, lj in zip(k, l):
-            xres.append(-kj)
+        for xi in xconf:
+            for kj, lj in zip(k, l):
+                xres.append(-kj)
         result.append(xres)
 
     return result
@@ -53,10 +57,11 @@ def force_gradient_system_spring(
     *, k: List[float], l: List[float], x: List[float]
 ) -> List[float]:
     result = []
-    for xi in x[0]:
+    for xconf in x:
         xres = []
-        for kj, lj in zip(k, l):
-            xres.append((-kj, -1.0))
+        for xi in xconf:
+            for kj, lj in zip(k, l):
+                xres.append((-kj, -1.0))
         result.append(xres)
 
     return result
@@ -66,11 +71,12 @@ def force_system_spring(
     *, k: List[float], l: List[float], x: List[float]
 ) -> List[float]:
     result = []
-    for xi in x[0]:
+    for xconf in x:
         xres = []
-        for kj, lj in zip(k, l):
-            r = xi - lj
-            xres.append((-kj, -r))
+        for xi in xconf:
+            for kj, lj in zip(k, l):
+                r = xi - lj
+                xres.append((-kj, -r))
         result.append(xres)
 
     return result
@@ -83,6 +89,17 @@ def smiles_assignment_energy_function_spring(pos, params):
         k = params[ic]["k"]
         l = params[ic]["l"]
         ene[ic] = energy_function_spring(k=k, l=l, x=x)
+    return ene
+
+
+def smiles_assignment_energy_function_spring_matrix(pos, params):
+    ene = {}
+
+    for pi, posi, parami in enumerate(zip(pos, params)):
+        for ic, x in posi.selections.items():
+            k = parami[ic]["k"]
+            l = parami[ic]["l"]
+            ene[ic] = energy_function_spring(k=k, l=l, x=x)
     return ene
 
 
@@ -101,8 +118,8 @@ def chemical_model_bond_harmonic(
     cm.force_system = force_system_spring
     cm.force_gradient_system = force_gradient_system_spring
 
-    cm.internal_function = assignments.graph_assignment_geometry_bonds
-    cm.derivative_function = assignments.graph_assignment_jacobian_bonds
+    cm.internal_function = assignments.graph_assignment_geometry_bond_matrix
+    cm.derivative_function = assignments.graph_assignment_jacobian_bond_matrix
 
     # define the terms of this model
     cm.topology_terms = {
@@ -131,8 +148,8 @@ def chemical_model_angle_harmonic(
     cm.force_system = force_system_spring
     cm.force_gradient_system = force_gradient_system_spring
 
-    cm.internal_function = assignments.graph_assignment_geometry_angles
-    cm.derivative_function = assignments.graph_assignment_jacobian_angles
+    cm.internal_function = assignments.graph_assignment_geometry_angle_matrix
+    cm.derivative_function = assignments.graph_assignment_jacobian_angle_matrix
 
     # define the terms of this model
     cm.topology_terms = {
