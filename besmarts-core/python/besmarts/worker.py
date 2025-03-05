@@ -24,6 +24,8 @@ if __name__ == "__main__":
         queue_size=int(sys.argv[4])
 
     configs.compute_runtime["is_remote"] = True
+    configs.compute_runtime["verbosity"] = 1
+    compute.LATENCY = 1
     try:
         compute.compute_remote(ip, pt, processes=processes, queue_size=queue_size)
         print("Exiting normally.")
