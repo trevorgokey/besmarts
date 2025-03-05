@@ -11,6 +11,7 @@ from besmarts.core import tree_iterators
 from besmarts.core import hierarchies
 from besmarts.core import assignments
 from besmarts.core import perception
+from besmarts.core import topology
 
 
 class topology_term:
@@ -130,8 +131,8 @@ class chemical_model:
 
         self.procedures: List[chemical_model_procedure] = []
 
-        self.energy_function = None 
-        self.force_function = None 
+        self.energy_function = None
+        self.force_function = None
         self.internal_function = None
         self.derivative_function = None
 
@@ -185,10 +186,9 @@ class chemical_model_procedure_smarts_assignment(chemical_model_procedure):
             smiles,
             self.smarts_hierarchies[unit_i].topology
         )
-
         assn = []
         vals = []
-        for x in lbls.assignments:
+        for xi, x in enumerate(lbls.assignments):
             p = {}
             v = {}
             for ic, lbl in x.selections.items():
@@ -196,13 +196,19 @@ class chemical_model_procedure_smarts_assignment(chemical_model_procedure):
                     if self.default_parameter:
                         lbl = self.default_parameter
                     else:
+                        if self.smarts_hierarchies[unit_i].topology == topology.pair:
+                            print(ic, lbl)
                         continue
                 names = self.get_term_labels((unit_i, lbl))
-                values = self.get_term_values((unit_i, lbl))
+                values = self.get_term_values((unit_i, lbl)).copy()
                 for l, lv in overrides.items():
                     if l[1] == names.get(l[0]):
                         # print(f"Override: {l}: {values[l[0]][l[2]]} -> {lv}")
                         values[l[0]][l[2]] = lv
+                if len(ic) == 1:
+                    ic = xi, ic[0]
+                else:
+                    ic = tuple([(xi, ici) for ici in ic])
                 p[ic] = {term: l for (term, l), x  in zip(names.items(), values.values())}
                 v[ic] = {term: x for (term, l), x  in zip(names.items(), values.values())}
             assn.append(p)
@@ -567,7 +573,7 @@ def physical_system_set_value(psys: physical_system, key, value):
                     continue
                 term_lbl = ic_lbls[t]
                 if term_lbl == l:
-                    # print(f"PSYS SETTING {ic}:{t}:{i} = {value}")
+                    # print(f"PSYS SETTING {ic}:{t}:{i} = {value} from {values[ic][t][i]}")
                     values[ic][t][i] = value
     elif len(key) == 3:
         # TODO lol
@@ -647,17 +653,17 @@ def chemical_system_get_ic_measure(csys, psystems, m, fn, names=None) -> dict:
     }
     for psys in psystems:
         pm: physical_model = psys.models[m]
-        pos = pm.positions[0]
-        measure = fn(pos)
-        for ic, ic_terms in pm.labels[0].items():
-            lbl = ic_terms['l']
-            if names and lbl not in names:
-                continue
-            x = measure.selections[ic][0]
-            key = (m, 'l', lbl, None)
-            if key not in kv:
-                kv[key] = []
-            kv[key].extend(x)
+        measure = fn(pm.positions)
+        for pi, pos in enumerate(pm.positions):
+            for ic, ic_terms in pm.labels[pi].items():
+                lbl = ic_terms['l']
+                if names and lbl not in names:
+                    continue
+                x = measure.selections[ic][0]
+                key = (m, 'l', lbl, None)
+                if key not in kv:
+                    kv[key] = []
+                kv[key].extend(x)
     return kv
 
 
@@ -665,7 +671,7 @@ def chemical_system_get_bond_lengths(csys, psystems, names=None) -> dict:
     """
     """
     m = 0
-    fn = assignments.graph_assignment_geometry_bonds
+    fn = assignments.graph_assignment_geometry_bond_matrix
     return chemical_system_get_ic_measure(csys, psystems, m, fn, names=names)
 
 
@@ -673,7 +679,7 @@ def chemical_system_get_angles(csys, psystems, names=None) -> dict:
     """
     """
     m = 1
-    fn = assignments.graph_assignment_geometry_angles
+    fn = assignments.graph_assignment_geometry_angle_matrix
     return chemical_system_get_ic_measure(csys, psystems, m, fn, names=names)
 
 
@@ -721,7 +727,7 @@ def chemical_system_reset_bond_lengths(csys, psystems, names=None, skip=None) ->
 
 def chemical_system_to_physical_system(
     cs,
-    pos: assignments.graph_assignment,
+    pos: List[assignments.graph_assignment],
     ref=None,
     reuse=None
 ) -> physical_model:
@@ -730,7 +736,7 @@ def chemical_system_to_physical_system(
     for ci, cm in enumerate(cs.models):
         if (ref is not None and reuse is not None) and ci in reuse:
             values = physical_model_values_copy(ref.models[ci])
-            pm = physical_model(pos, ref.models[ci].labels, values)
+            pm = physical_model(pos, ref.models[ci].labels.copy(), values)
             # ps.models.append(ref.models[ci])
         else:
             if cm.enable:
@@ -748,7 +754,42 @@ def chemical_system_to_physical_system(
 
 def smiles_assignment_function(fn, sys_params, top_params, pos):
     result = {}
+    out = []
     for ic, x in pos.selections.items():
+        ic_params = dict(sys_params)
+
+        for t_params in top_params:
+            if len(ic[0]) == 3:
+                p = dict(t_params.get(tuple((x[:2] for x in ic)), {}))
+                p.update(dict(t_params.get(tuple((x[:3] for x in ic)), {})))
+                if 's' not in p or len(set(x[2] for x in ic)) > 1:
+                    p['s'] = [1.0]
+                ic_params.update(p)
+            elif len(ic[0]) == 2:
+                p = t_params.get(ic, {})
+            ic_params.update(p)
+
+        # if 's' in ic_params:
+        #     print(ic, ic_params)
+        if ic_params:
+            try:
+                result[ic] = fn(**ic_params, x=x)
+                out.append(f"{ic} {ic_params} {x} {result[ic]}")
+                # print(ic, ic_params, x, result[ic])
+            except TypeError as e:
+                print("\n".join(out))
+                breakpoint()
+                print("Partial parameterization: skipping. Error was:")
+                print(e)
+                raise e
+
+    # print("\n".join(out))
+    return result
+
+def smiles_assignment_matrix_function(fn, sys_params, top_params, posmat):
+    result = {}
+
+    for ic, x in posmat.selections.items():
         ic_params = dict(sys_params)
 
         for t_params in top_params:
@@ -813,6 +854,7 @@ def chemical_system_smarts_complexity(csys: chemical_system, B=1.0, C=1.0):
                     c = graphs.graph_complexity(g, scale=.01)
                     C0.append(c)
                     # atoms += len(g.nodes) - M
+                    atoms += len(g.nodes)
                     parameters += 1
                     terms += t
 
@@ -841,7 +883,7 @@ def chemical_system_print(csys, show_parameters=None):
                     sma = hidx.smarts.get(e.index, "")
                     if sma is None:
                         sma = ""
-                    
+
                     cm: chemical_model = chemical_system_get_node_model(csys, e)
                     params = []
                     for term_sym, term in cm.topology_terms.items():
