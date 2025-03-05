@@ -275,8 +275,8 @@ def configure_objectives(opt_mols):
         o.enable_minimization = False
         o.analytic = True
         o.analytic_use_gradients = False
-        o.verbose = 3
-        objs[len(objs)] = o
+        o.verbose = 0
+        #objs[len(objs)] = o
 
     for eid in opt_mols:
         o = fits.objective_config_position(
@@ -288,7 +288,7 @@ def configure_objectives(opt_mols):
         o.step_limit = 50
         o.batch_size = None
         o.tol = 1e-3
-        o.verbose = 3
+        o.verbose = 0
         o.include = True
         o.grad_mode = "f1"
         objs[len(objs)] = o
@@ -301,7 +301,7 @@ def configure_objectives(opt_mols):
             scale=1e-6,
             include=True
         )
-        o.verbose = 3
+        o.verbose = 0
         o.grad_mode = "f1"
         # objs[len(objs)] = o
 
