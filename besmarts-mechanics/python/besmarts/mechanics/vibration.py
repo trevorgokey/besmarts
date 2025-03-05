@@ -213,9 +213,9 @@ def inertia_tensor(xyz, mass):
 def trans_rot_modes(xyz, mass, X, rot=True):
     #X = np.eye(3)
     if rot:
-        D = np.zeros((6, np.product(xyz.shape)))
+        D = np.zeros((6, np.prod(xyz.shape)))
     else:
-        D = np.zeros((3, np.product(xyz.shape)))
+        D = np.zeros((3, np.prod(xyz.shape)))
     na, nd = xyz.shape
     if debug:
         print(D.shape, xyz.shape)
