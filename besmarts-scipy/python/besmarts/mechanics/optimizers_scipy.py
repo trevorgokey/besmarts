@@ -30,8 +30,8 @@ def optimize_positions_scipy(
     tol=1e-10
 ):
 
-    pos = copy.deepcopy(psys.models[0].positions[0])
-    args, keys = objectives.array_flatten_assignment(pos.selections)
+    pos = copy.deepcopy(psys.models[0].positions)
+    args, keys = objectives.array_flatten_matrix_assignment(pos)
 
     # jac = objectives.array_geom_gradient
     # jac = None
@@ -46,7 +46,7 @@ def optimize_positions_scipy(
         'gtol': tol,
         'maxiter': step_limit,
         'maxls': 1000,
-        'maxcor': len(args)**2
+        'maxcor': len(keys)**2
     }
     hess = None
 
@@ -61,8 +61,8 @@ def optimize_positions_scipy(
         method=method,
     )
 
-    for (c, n, i), v in zip(keys, arrays.array_round(result.x, PRECISION)):
-        pos.selections[n][c][i] = v
+    for (pi, c, n, i), v in zip(keys, arrays.array_round(result.x, PRECISION)):
+        pos[pi].selections[n][c][i] = v
     
     # print("Final pos", pos.selections)
     return pos
@@ -135,7 +135,7 @@ def collect(gdb, obj, full_results, new_results, batch_map, hp, verbose=False):
             x = obj[ii]
             ref = assignments.graph_db_get(gdb, x.addr)
             ready[("obj", n, ii)] = [
-                (x, ref, full_result, hp), {"verbose": verbose}
+                (ii, x, ref, full_result, hp), {"verbose": verbose}
             ]
     return ready, full_results
 
@@ -162,7 +162,7 @@ def objective_gradient_gdb(
     keys,
     csys,
     gdb,
-    objlst,
+    objbatches,
     priors,
     penalties=None,
     history=None,
@@ -170,6 +170,7 @@ def objective_gradient_gdb(
     reuse=None,
     ws=None,
     verbose=False,
+    minstep=10**(-PRECISION),
     return_gradient=True
 ):
 
@@ -197,32 +198,51 @@ def objective_gradient_gdb(
     grady_t = {}
     hessi_t = {}
 
-
     grad = list([0.0] * len(keys))
     hess = list([0.0] * len(keys))
     grady = list([0.0] * len(keys))
 
     out = []
-    args = arrays.array_round(args, 12)
+    args = arrays.array_round(args, PRECISION)
 
     h = []
 
+    dX = 0.0
+    beststep = None
+    t = arrays.array_magnitude(args)
+    dt0 = 0
+    dt = 0
+    dargs = arrays.array_scale(args, 0)
+    dargs0 = arrays.array_scale(args, 0)
+
+    if len(history):
+
+        beststep = arrays.argmin([x[0] for x in history])
+        dargs0 = arrays.array_difference(args, history[beststep][2])
+        dt0 = arrays.array_magnitude(dargs0)
+
+        dargs = arrays.array_difference(args, history[-1][2])
+        dt = arrays.array_magnitude(dargs)
+
+        if dt < minstep:
+            if dt > 0:
+                out.append(f"Step size too small: {dt:.15e} ({minstep:.15e}). Skipping evaluation")
+                if verbose:
+                    print(out[-1])
+            X, grad, args, hess, out, X_t = history[-1]
+            history.append(history[-1])
+
+            if return_gradient:
+                return X, grad
+            else:
+                return X
+
     # big job, try to start computing while tasks are being generated
     # also, reap objective as it comes due to memory consumption
-    # currently doesn't work
-    async_compute = True and (ws is not None) and len(args)*len(objlst) > 1000
+    # currently doesn't work (fixed?)
+    # async_compute = True and (ws is not None) and len(args)*len(objlst) > 1000
     # async_compute = True and (ws is not None)
     async_compute = False
-
-    verbose = verbose and not async_compute
-
-    line = (
-        f"{logs.timestamp()} Generating {len(objlst)} objectives. "
-        f"Async compute: {async_compute}"
-    )
-    out.append(line)
-    if verbose:
-        print(line)
 
     verbose = verbose and not async_compute
 
@@ -231,7 +251,8 @@ def objective_gradient_gdb(
         dcsys = None
         ws.reset()
 
-    z = arrays.array_round([v*p[1] + p[0] for v, p in zip(args, priors)], 12)
+    z = [v*p[1] + p[0] for v, p in zip(args, priors)]
+    z = arrays.array_round(z, PRECISION)
     hi = 1e-2
     h = tuple(([hi] * len(z)))
 
@@ -241,14 +262,14 @@ def objective_gradient_gdb(
 
     n_finished = 0
 
-    chunksize = configs.compute_runtime["task_chunksize"]
+    chunksize = configs.compute_runtime.get("task_chunksize", 100)
 
     # targetbatch = 1000*len(keys)
     # if not return_gradient:
     #     targetbatch *= 3
-    objbatches = []
-    cur_batch_score = 0
-    cur_batch = []
+    # objbatches = []
+    # cur_batch_score = 0
+    # cur_batch = []
 
     # total_cost = 0
     # for i, obj in objlst.items():
@@ -258,37 +279,41 @@ def objective_gradient_gdb(
     #     else:
     #         total_cost += len(keys) // bsz + bool(len(keys) % bsz)
 
-    targetbatch = 10000*len(keys)
+    # total_cost = 0
 
-    for i, obj in objlst.items():
-        bsz = obj.batch_size
-        if bsz is None:
-            cost = len(keys)
-        else:
-            cost = len(keys) // bsz + bool(len(keys) % bsz)
+    # for i, obj in objlst.items():
+    #     bsz = obj.batch_size
+    #     if bsz is None:
+    #         cost = len(keys)
+    #     else:
+    #         cost = len(keys) // bsz + bool(len(keys) % bsz)
+    #     total_cost += cost
 
-        if cur_batch_score + cost < targetbatch or len(cur_batch) == 0:
-            cur_batch.append((i, obj))
-            cur_batch_score += cost
-        else:
-            objbatches.append(cur_batch)
-            cur_batch = []
+    # targetbatch = max(1, total_cost//configs.compute_runtime.get("task_batches", 1))
 
-    if cur_batch:
-        objbatches.append(cur_batch)
-        cur_batch = []
-        cur_batch_score = 0
+    # for i, obj in objlst.items():
+    #     bsz = obj.batch_size
+    #     if bsz is None:
+    #         cost = len(keys)
+    #     else:
+    #         cost = len(keys) // bsz + bool(len(keys) % bsz)
 
-    objbatchsize = 500 if len(objlst) > 500 else len(objlst)
+    #     if (cur_batch_score + cost <= targetbatch or len(cur_batch) == 0):
+    #         cur_batch.append((i, obj))
+    #         cur_batch_score += cost
+    #     else:
+    #         objbatches.append(cur_batch)
+    #         cur_batch = []
+    #         cur_batch_score = 0
+
+    # if cur_batch:
+    #     objbatches.append(cur_batch)
+    #     # cur_batch = []
+    #     # cur_batch_score = 0
+
+    # objbatchsize = 500 if len(objlst) > 500 else len(objlst)
 
     n_objbatches = len(objbatches)
-    if len(objbatches) > 1 and verbose:
-
-        line = (
-            f"{logs.timestamp()} Processing objectives in "
-            f"{len(objbatches)} batches (target cost {targetbatch})"
-        )
-        print(line)
 
     # n_objbatches = len(objlst)//objbatchsize + bool(len(objlst)%objbatchsize)
     # for obsz, obj in enumerate(arrays.batched(objlst.items(), objbatchsize), 1):
@@ -300,62 +325,68 @@ def objective_gradient_gdb(
         chunk = {}
         batches_cum_sum += len(obj)
         # for idx, (i, x) in enumerate(obj, 1 + objbatchsize*(obsz-1)):
+        line = f"{logs.timestamp()} Objective batch {obsz}/{n_objbatches}"
+        logs.append(line, out, verbose)
+
+        objlst = dict(obj)
+
         for idx, (i, x) in enumerate(obj, batches_cum_sum - len(obj) + 1):
-            psys = None
+
+            # print(idx, i, x)
+            # line = f"{logs.timestamp()} PSystem {idx}/{len(obj)}"
+            # logs.append(line, out, verbose)
+
+            eids = x.addr.eid
+            psys = {}
+            reapply = set()
             if psysref:
-                psys = psysref[x.addr.eid[0]]
+                for eid in eids:
+                    psys[eid] = psysref[eid]
 
-                reapply = set()
-                kv = {}
-                for k, v, p in zip(keys, args, priors):
-                    v = p[1]*v + p[0]
-                    kv[k] = v
-                    # print(f"Reassigning {k}")
-                    # print(f"Setting pval to {k}={v}")
-                    mm.physical_system_set_value(psys, k, v)
-                    reapply.add(k[0])
-                for m in reapply:
-                    procs = csys.models[m].procedures
-                    if len(procs) > 1:
-                        for _ in range(1, len(psys.models[m].values)):
-                            psys.models[m].values.pop()
-                            psys.models[m].labels.pop()
-                        for proc in procs[1:]:
-                            psys.models[m] = proc.assign(
-                                csys.models[m],
-                                psys.models[m],
-                                overrides={
-                                    k[1:]: v
-                                    for k, v in kv.items() if k[0] == m
-                                }
-                            )
-            else:
-                line = (
-                    "WARNING: No parameterized system given. This will "
-                    "recharge the molecules and is likely not intended."
-                )
-                out.append(line)
-                if verbose:
-                    print(line)
-                csys = copy.deepcopy(csys)
-                for k, v in zip(keys, args):
-                    v = p[1]*v + p[0]
-                    mm.chemical_system_set_value(csys, k, v)
-                psys = mm.chemical_system_to_physical_system(
-                    csys,
-                    psys.models[0].positions,
-                    ref=None,
-                )
-                reuse = list(range(len(psys.models)))
+                    # kv = {}
+                    # for k, v, p in zip(keys, args, priors):
+                    #     v = p[1]*v + p[0]
+                    #     kv[k] = v
+                    #     # print(f"Reassigning {k}")
+                    #     # print(f"Setting pval to {k}={v}")
+                    #     mm.physical_system_set_value(psys[eid], k, v)
+                    #     reapply.add(k[0])
+                    # for m in reapply:
+                    #     procs = csys.models[m].procedures
+                    #     if len(procs) > 1:
+                    #         for _ in range(1, len(psys.models[m].values)):
+                    #             psys.models[m].values.pop()
+                    #             psys.models[m].labels.pop()
+                    #         for proc in procs[1:]:
+                    #             psys.models[m] = proc.assign(
+                    #                 csys.models[m],
+                    #                 psys.models[m],
+                    #                 overrides={
+                    #                     k[1:]: v
+                    #                     for k, v in kv.items() if k[0] == m
+                    #                 }
+                    #             )
+            # else:
+                # line = (
+                    # "WARNING: No parameterized system given. This will "
+                    # "recharge the molecules and is likely not intended."
+                # )
+                # logs.append(line, out, verbose)
+                # csys = copy.deepcopy(csys)
+                # for k, v in zip(keys, args):
+                    # v = p[1]*v + p[0]
+                    # mm.chemical_system_set_value(csys, k, v)
+                # psys = fits.gdb_to_physical_systems(gdb, csys)
+                # reuse = list(range(len(csys.models)))
 
-            dreuse = list(range(len(psys.models)))
+            dreuse = [x for x in list(range(len(csys.models))) if x not in reapply]
             grad_keys = [{}]
             task = x.get_task(
                 gdb,
                 dcsys,
                 keys=grad_keys,
                 psys=psys,
-                reuse=dreuse
+                reuse=reuse
             )
             tasks[(n, (i, (0,)))] = task
 
@@ -365,6 +396,10 @@ def objective_gradient_gdb(
             batch_map[i] = [(0,)]
 
             if return_gradient:
+
+                # line = f"{logs.timestamp()} PSystem grads"
+                # logs.append(line, out, verbose)
+
                 grad_keys = []
                 if x.batch_size is None:
                     batch_size = len(keys)
@@ -433,9 +468,9 @@ def objective_gradient_gdb(
                             ws,
                             run_objective,
                             ready,
-                            chunksize=None,
+                            chunksize=chunksize,
                             verbose=False,
-                            batchsize=100000,
+                            batchsize=chunksize*1000,
                             timeout=0.0,
                             clear=False
                         )
@@ -451,10 +486,7 @@ def objective_gradient_gdb(
                             verbose=verbose
                         )
                         obj_results.clear()
-                        if verbose:
-                            retout.clear()
-                        else:
-                            out.extend(retout)
+                        out.extend(retouti)
 
                     grad_keys = []
             if verbose and async_compute:
@@ -479,9 +511,7 @@ def objective_gradient_gdb(
             print()
 
         line = f"{logs.timestamp()} Running {len(tasks)} tasks"
-        out.append(line)
-        if verbose:
-            print(line)
+        logs.append(line, out, verbose)
 
         if ws:
             if async_compute:
@@ -509,50 +539,78 @@ def objective_gradient_gdb(
                     ws,
                     run_objective,
                     ready,
-                    chunksize=None,
+                    chunksize=chunksize,
                     verbose=False,
-                    batchsize=100000,
+                    batchsize=chunksize*1000,
                     timeout=0.0,
                     clear=False
                 )
                 ready.clear()
 
-                X, Y, grad, hess, grady, retout = process(
+                # X, Y, grad, hess, grady, retout = process(
+                #     obj_results,
+                #     Xi,
+                #     Yi,
+                #     grad,
+                #     hess,
+                #     grady,
+                #     verbose=verbose
+                # )
+                Xi, Yi, gradi, hessi, gradyi, retout = process(
                     obj_results,
                     Xi,
                     Yi,
-                    grad,
-                    hess,
-                    grady,
+                    gradi,
+                    hessi,
+                    gradyi,
                     verbose=verbose
                 )
-                for xi, v in Xi.items():
-                    t = type(obj[xi][1])
-                    X_t[t] = X_t.get(t, 0) + v
-                    grad_t[t] = arrays.array_add(grad_t.get(t, [0.0]*len(keys)), gradi[xi])
-                    hessi_t[t] = arrays.array_add(hessi_t.get(t, [0.0]*len(keys)), hessi[xi])
-                for xi, v in Xi.items():
-                    t = type(obj[xi][1])
-                    grady_t[t] = arrays.array_add(grady_t.get(t, [0.0]*len(keys)), gradyi[xi])
-                    Y_t[t] = Y_t.get(t, 0) + v
+                for (i, x) in obj:
+                    if i in Xi:
+                        t = type(x)
+                        v = Xi[i]
+                        X_t[t] = X_t.get(t, 0) + v
+                        grad_t[t] = arrays.array_add(grad_t.get(t, [0.0]*len(keys)), gradi[i])
+                        hessi_t[t] = arrays.array_add(hessi_t.get(t, [0.0]*len(keys)), hessi[i])
+                        Xi.pop(i)
+                    elif i in Yi:
+                        t = type(x)
+                        v = Yi[i]
+                        Y_t[t] = Y_t.get(t, 0) + v
+                        grady_t[t] = arrays.array_add(grady_t.get(t, [0.0]*len(keys)), gradyi[i])
+                        Yi.pop(i)
+                # for xi, v in Xi.items():
+                #     t = type(obj[xi][1])
+                #     X_t[t] = X_t.get(t, 0) + v
+                #     grad_t[t] = arrays.array_add(grad_t.get(t, [0.0]*len(keys)), gradi[xi])
+                #     hessi_t[t] = arrays.array_add(hessi_t.get(t, [0.0]*len(keys)), hessi[xi])
+                # for xi, v in Yi.items():
+                #     t = type(obj[xi][1])
+                #     grady_t[t] = arrays.array_add(grady_t.get(t, [0.0]*len(keys)), gradyi[xi])
+                #     Y_t[t] = Y_t.get(t, 0) + v
                 obj_results.clear()
-                if verbose:
-                    retout.clear()
-                else:
-                    out.extend(retout)
+                out.extend(retout)
 
             if tasks:
+
+                line = f"{logs.timestamp()} Physical prop compute"
+                logs.append(line, out, verbose)
+
                 new_results = compute.workspace_submit_and_flush(
                     ws,
                     fits.objective_run_distributed,
                     {i: ([x], {}) for i, x in tasks.items()},
                     chunksize=chunksize,
                     verbose=verbose,
-                    batchsize=100000,
+                    batchsize=chunksize*1000,
                     timeout=0.1, #max(0, math.log(len(tasks), 1000)-1),
                     clear=False
                 )
                 tasks.clear()
+
+                line = f"{logs.timestamp()} Collecting"
+                logs.append(line, out, verbose)
+
                 ready, full_results = collect(
                     gdb,
                     objlst,
@@ -564,16 +622,22 @@ def objective_gradient_gdb(
                 )
                 new_results.clear()
 
+                line = f"{logs.timestamp()} Objective compute"
+                logs.append(line, out, verbose)
+
                 obj_results = compute.workspace_submit_and_flush(
                     ws,
                     run_objective,
                     ready,
-                    chunksize=None,
+                    chunksize=chunksize,
                     verbose=verbose,
-                    batchsize=100000,
+                    batchsize=chunksize*1000,
                     timeout=0.0
                 )
                 ready.clear()
+
+                line = f"{logs.timestamp()} Objective collect"
+                logs.append(line, out, verbose)
 
                 Xi, Yi, gradi, hessi, gradyi, retout = process(
                     obj_results,
@@ -591,16 +655,15 @@ def objective_gradient_gdb(
                         X_t[t] = X_t.get(t, 0) + v
                         grad_t[t] = arrays.array_add(grad_t.get(t, [0.0]*len(keys)), gradi[i])
                         hessi_t[t] = arrays.array_add(hessi_t.get(t, [0.0]*len(keys)), hessi[i])
+                        Xi.pop(i)
                     elif i in Yi:
                         t = type(x)
                         v = Yi[i]
                         Y_t[t] = Y_t.get(t, 0) + v
                         grady_t[t] = arrays.array_add(grady_t.get(t, [0.0]*len(keys)), gradyi[i])
+                        Yi.pop(i)
                 obj_results.clear()
-                if verbose:
-                    retout.clear()
-                else:
-                    out.extend(retout)
+                out.extend(retout)
 
                 assert not full_results
 
@@ -630,6 +693,7 @@ def objective_gradient_gdb(
                         gradyi,
                         verbose=verbose
                     )
+                    out.extend(retouti)
                     for (i, x) in obj:
                         if i in Xi:
                             t = type(x)
@@ -637,16 +701,21 @@ def objective_gradient_gdb(
                             X_t[t] = X_t.get(t, 0) + v
                             grad_t[t] = arrays.array_add(grad_t.get(t, [0.0]*len(keys)), gradi[i])
                             hessi_t[t] = arrays.array_add(hessi_t.get(t, [0.0]*len(keys)), hessi[i])
+                            Xi.pop(i)
                         elif i in Yi:
                             t = type(x)
                             v = Yi[i]
                             Y_t[t] = Y_t.get(t, 0) + v
                             grady_t[t] = arrays.array_add(grady_t.get(t, [0.0]*len(keys)), gradyi[i])
+                            Yi.pop(i)
                     ret = None
                 ready.clear()
 
             full_results.clear()
             tasks.clear()
+
+    line = f"{logs.timestamp()} Restraints"
+    logs.append(line, out, verbose)
 
     kv = {k: v * p[1] + p[0] for k, v, p in zip(keys,args,priors)}
 
@@ -697,6 +766,9 @@ def objective_gradient_gdb(
             print(line)
         out.append(line)
 
+    line = f"{logs.timestamp()} Finalizing"
+    logs.append(line, out, verbose)
+
     X = sum(X_t.values())
     if hessi_t:
         hess = functools.reduce(arrays.array_add, hessi_t.values())
@@ -716,20 +788,23 @@ def objective_gradient_gdb(
         gnormy = arrays.array_inner_product(grady, grady)**.5
     else:
         gnormy = 0.0
-    dX = 0.0
-    minstep = None
+
+    t = arrays.array_magnitude(args)
     if len(history):
-        minstep = arrays.argmin([x[0] for x in history])
-        dX = X - history[minstep][0]
+        beststep = arrays.argmin([x[0] for x in history])
+        dX = X - history[beststep][0]
     out.append(
         f">>> {datetime.datetime.now()} Totals "
         f"Step= {len(history)+1:3d} "
-        f"X2= {X: 14.6e} "
-        f"|g|= {gnorm: 14.6e} "
-        f"|h|= {hnorm: 14.6e} "
-        f"DX2= {dX: 14.6e} "
-        f"Y2= {Y: 14.6e} "
-        f"|gy|={gnormy: 14.6e}"
+        f"|t| = {t:10.4e} "
+        f"|dt0| = {dt0:10.4e} "
+        f"|dt| = {dt:10.4e} "
+        f"X2= {X: 12.5e} "
+        f"|g|= {gnorm: 12.5e} "
+        f"|h|= {hnorm: 12.5e} "
+        f"DX2= {dX: 12.5e} "
+        f"Y2= {Y: 12.5e} "
+        f"|gy|={gnormy: 12.5e}"
     )
     if verbose or async_compute:
         print(out[-1])
@@ -744,45 +819,47 @@ def objective_gradient_gdb(
         gnormyi = arrays.array_inner_product(gradyi, gradyi)**.5
         
         dX = 0.0
-        if minstep is not None:
-            dX = X_t.get(t, 0) - history[minstep][5].get(t, 0)
+        if beststep is not None:
+            dX = X_t.get(t, 0) - history[beststep][5].get(t, 0)
         out.append(
             f"==> {str(t)} "
             f"Step= {len(history)+1:3d} "
-            f"X2= {X_t.get(t, 0): 14.6e} "
-            f"|g|= {gnormi: 14.6e} "
-            f"|h|= {hnormi: 14.6e} "
-            f"DX2= {dX: 14.6e} "
-            f"Y2= {Y_t.get(t, 0): 14.6e} "
-            f"|gy|={gnormyi: 14.6e}"
+            f"X2= {X_t.get(t, 0): 12.5e} "
+            f"|g|= {gnormi: 12.5e} "
+            f"|h|= {hnormi: 12.5e} "
+            f"DX2= {dX: 12.5e} "
+            f"Y2= {Y_t.get(t, 0): 12.5e} "
+            f"|gy|={gnormyi: 12.5e}"
         )
         if verbose or async_compute:
             print(out[-1])
     out.append(f"{logs.timestamp()} Done.")
     if verbose:
         print(out[-1])
-    out.append("Total Parameter Grad:")
+    out.append("Total Parameter Step and Grad:")
     if verbose:
         print(out[-1])
-    for k, g in zip(keys, grad):
-        line = f"{k} {g}"
+    for ii, (k, g, t, dti0, dti) in enumerate(zip(keys, grad, args, dargs0, dargs)):
+        line = f"{ii:4d} {str(k):20s} t= {t:11.4e} dt0= {dti0:11.4e} dt= {dti:11.4e} g= {g:11.4e}"
         out.append(line)
         if verbose:
             print(line)
-    history.append((X, grad, args, hess, out, X_t))
+
+    if history and dt < 1e-6:
+        X, grad, args, hess, out, X_t = history[-1]
+        history.append(history[-1])
+    else:
+        history.append((X, grad, args, hess, out, X_t))
     if return_gradient:
         return X, grad
     else:
         return X
 
 
-def run_objective(x, ref, results, h, verbose=False, shm=None):
+def run_objective(oid, x, ref, results, h, verbose=False, shm=None):
     X = 0
     Y = 0
 
-    ret = x.compute_diff(ref, results[0], verbose=verbose)
-    dx = ret.value
-    x2 = x.scale*arrays.array_inner_product(dx, dx)
 
     N = len(h)
     gradx = list([0.0] * N)
@@ -790,6 +867,11 @@ def run_objective(x, ref, results, h, verbose=False, shm=None):
     grady = list([0.0] * N)
 
     # if it is 1 then we are not doing gradients
+    ret = x.compute_diff(ref, results[0], verbose=verbose)
+    dx = ret.value
+    if x.weights is not None:
+        dx = arrays.array_multiply(dx, x.weights)
+    x2 = x.scale*arrays.array_inner_product(dx, dx)
     if len(results) > 1:
         for j in range(N):
             if x.grad_mode == "c2":
@@ -806,9 +888,13 @@ def run_objective(x, ref, results, h, verbose=False, shm=None):
                 # print("DXB", dxb[0][0].graphs[0].rows[0].columns[0].selections)
 
                 dxdp, d2xdp2 = x.compute_gradient(ref, [results[0], dxb], h[j])
+
+            if x.weights is not None:
+                dxdp = arrays.array_multiply(dxdp, x.weights)
+                d2xdp2 = arrays.array_multiply(d2xdp2, x.weights)
             dx2dp = 2 * arrays.array_inner_product(dx, dxdp)
             d2x2dp2 = 2 * (
-                arrays.array_inner_product(dx, d2xdp2) + sum(d2xdp2)
+                arrays.array_inner_product(dx, d2xdp2) + arrays.array_inner_product(dxdp, dxdp)
             )
             dx2dp *= x.scale
             d2x2dp2 *= x.scale**2
@@ -819,6 +905,16 @@ def run_objective(x, ref, results, h, verbose=False, shm=None):
                 hessx[j] += d2x2dp2
             else:
                 grady[j] += dx2dp
+        if x.verbose > 2:
+            ret.out.append(
+                f"OID {oid:05d} Gradient Decomposition scale: {x.scale} (sorted ascending magnitude):"
+            )
+            for j, gx in enumerate(gradx):
+                ret.out.append(
+                    f"GD Param: {j:4d} "
+                    f"d2dpx: {gx:14.6e} "
+                    f"d2dpx2: {hessx[j]:14.6e}"
+                )
 
     sym = ""
     if x.include:
@@ -832,9 +928,9 @@ def run_objective(x, ref, results, h, verbose=False, shm=None):
         gnorm = arrays.array_inner_product(grady, grady)**.5
         hnorm = 0
 
-    addr = x.addr.eid[0]
+    # addr = x.addr.eid[0]
     output = (
-        f">> EID={addr:05d} S= {x.scale: 14.6f} " +
+        f"\n>> OID={oid:05d} S= {x.scale: 14.6f} " +
         f"{sym}= {x2: 14.6e} " +
         f"|g|= {gnorm: 14.6e} " +
         f"|h|= {hnorm:14.6e}"
@@ -855,7 +951,8 @@ def singlepoint_forcefield_gdb_scipy(
     psysref=None,
     reuse=None,
     ws=None,
-    verbose=False
+    verbose=False,
+    minstep=10**(-PRECISION),
 ):
 
     if history is None:
@@ -864,29 +961,43 @@ def singlepoint_forcefield_gdb_scipy(
     if penalties is None:
         penalties = []
 
-    args = arrays.array_round(args, 12)
+    args = arrays.array_round(args, PRECISION)
 
     out = []
+    if len(history):
+
+        beststep = arrays.argmin([x[0] for x in history])
+
+        dargs = arrays.array_difference(args, history[-1][2])
+        dt = arrays.array_magnitude(dargs)
+
+        if dt < minstep:
+            X, grad, args, hess, out, X_t = history[-1]
+            line = f"Step size too small: {dt:.15e} ({minstep:.15e}). Skipping evaluation"
+            if verbose and line not in out:
+                print(line)
+            # history.append((X, grad, args, hess, out, X_t))
+            return X
     # csys = copy.deepcopy(csys)
     # if reuse is None:
     #     reuse = set(range(len(csys.models)))
     for k, v, p in zip(keys, args, priors):
         v0 = mm.chemical_system_get_value(csys, k)
-        # mm.chemical_system_set_value(csys, k, v)
         # if k[0] in reuse:
         #     reuse.remove(k[0])
         v1 = p[0] + v*p[1]
+        mm.chemical_system_set_value(csys, k, v)
 
         out.append(f"Setting {str(k):20s} from {v0:15.7g} to {v1:15.7g} d={v1-v0:15.7g}")
         if verbose:
-            dv = v-v0
+            # dv = v-v0
             # if abs(dv) < 1e-6:
             #     dv = 0.0
             # mm.chemical_system_set_value(csys, k, v0)
             print(out[-1])
 
     # reuse = list(reuse)
-    X = objective_gradient_gdb(args, keys, csys, gdb, obj.objectives, priors, penalties=penalties, history=history, psysref=psysref, reuse=reuse, ws=ws, verbose=verbose, return_gradient=False)
+    X = objective_gradient_gdb(args, keys, csys, gdb, obj, priors, penalties=penalties, history=history, psysref=psysref, reuse=reuse, ws=ws, verbose=verbose, return_gradient=False)
     # print(f"RETURN IS {X}")
     return X
 
@@ -903,7 +1014,8 @@ def fit_grad_gdb(
     psysref=None,
     reuse=None,
     ws=None,
-    verbose=False
+    verbose=False,
+    minstep=10**(-PRECISION),
 ):
 
     if history is None:
@@ -912,9 +1024,22 @@ def fit_grad_gdb(
     if penalties is None:
         penalties = []
 
-    args = arrays.array_round(args, 12)
-
+    args = arrays.array_round(args, PRECISION)
     out = []
+
+    if len(history):
+
+        dargs = arrays.array_difference(args, history[-1][2])
+        dt = arrays.array_magnitude(dargs)
+
+        if dt < minstep:
+            X, grad, args, hess, out, X_t = history[-1]
+            line = f"Step size too small: {dt:.15e} ({minstep:.15e}). Skipping evaluation"
+            if verbose and line not in out:
+                print(line)
+            history.append((X, grad, args, hess, out, X_t))
+            return X, grad
+
     for i, (k, v, p) in enumerate(zip(keys, args, priors)):
         v0 = mm.chemical_system_get_value(csys, k)
         v1 = p[0] + v*p[1]
@@ -930,19 +1055,22 @@ def fit_grad_gdb(
         if verbose:
             print(out[-1])
 
+        mm.chemical_system_set_value(csys, k, v1)
+
     X, g = objective_gradient_gdb(
         args,
         keys,
         csys,
         gdb,
-        obj.objectives,
+        obj,
         priors,
         penalties=penalties,
         history=history,
         psysref=psysref,
         reuse=reuse,
         ws=ws,
-        verbose=verbose
+        verbose=verbose,
+        minstep=minstep
     )
 
     # return X
@@ -964,12 +1092,21 @@ def print_parameterization(csys, psysref):
                     print(" ", ic, lbls[ic], ":", v)
 
 
+def callback(xk):
+    d = arrays.array_magnitude(xk)
+
+    print(f"CALLBACK: distance is {d}")
+    if d > 25:
+        raise StopIteration
+
 def optimize_forcefield_gdb_scipy(
     x0,
     args,
     bounds=None,
     step_limit=None,
     maxls=20,
+    ftol=1e-5,
+    gtol=1e-5,
     anneal=False
 ):
 
@@ -984,7 +1121,8 @@ def optimize_forcefield_gdb_scipy(
         psysref,
         reuse,
         ws,
-        verbose
+        verbose,
+        minstep
     ) = args
 
     out = []
@@ -998,10 +1136,10 @@ def optimize_forcefield_gdb_scipy(
         "L-BFGS-B": {
             "options": {
                 'maxls': maxls,
-                'maxcor': len(args)**2,
-                'iprint': 1000 if verbose else 0,
-                'ftol': 1e-5,
-                'gtol': 1e-5
+                #'maxcor': len(x0)**2,
+                'iprint': 0 if verbose else 0,
+                'ftol': ftol,
+                'gtol': gtol
             },
             "hessp": None,
             "hess": None,
@@ -1011,8 +1149,8 @@ def optimize_forcefield_gdb_scipy(
                 'xtol': 1e-7,
                 'disp': False,
                 'maxCGit': maxls,
-                'ftol': 1e-5,
-                'gtol': 1e-5,
+                'ftol': ftol,
+                'gtol': gtol,
             },
             "hessp": None,
             "hess": None,
@@ -1065,6 +1203,70 @@ def optimize_forcefield_gdb_scipy(
         else:
             x.grad_mode = "c2"
 
+    objlst = obj.objectives
+    chunksize = configs.compute_runtime.get("task_chunksize", 100)
+
+    objbatches = []
+    cur_batch_score = 0
+    cur_batch = []
+    total_cost = 0
+    line = (
+        f"{logs.timestamp()} Generating {len(objlst)} objectives. "
+    )
+    out.append(line)
+    if verbose:
+        print(line)
+
+    for i, obj in objlst.items():
+        bsz = obj.batch_size
+        if bsz is None:
+            cost = len(keys)
+        else:
+            cost = len(keys) // bsz + bool(len(keys) % bsz)
+        total_cost += cost
+
+    targetbatch = max(1, total_cost//configs.compute_runtime.get("task_batches", 1))
+
+    for i, obj in objlst.items():
+        bsz = obj.batch_size
+        if bsz is None:
+            cost = len(keys)
+        else:
+            cost = len(keys) // bsz + bool(len(keys) % bsz)
+
+        if (cur_batch_score + cost <= targetbatch or len(cur_batch) == 0):
+            cur_batch.append((i, obj))
+            cur_batch_score += cost
+        else:
+            objbatches.append(cur_batch)
+            cur_batch = []
+            cur_batch_score = 0
+
+    if cur_batch:
+        objbatches.append(cur_batch)
+
+    if verbose:
+
+        line = (
+            f"{logs.timestamp()} Processing objectives in "
+            f"{len(objbatches)} batches (target cost {targetbatch} total {total_cost})"
+        )
+        print(line)
+
+    args = (
+        keys,
+        csys,
+        gdb,
+        objbatches,
+        priors,
+        penalties,
+        history,
+        psysref,
+        reuse,
+        ws,
+        verbose,
+        minstep
+    )
 
     # if 0:
     #     method = 'L-BFGS-B'

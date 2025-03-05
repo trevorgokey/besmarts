@@ -732,6 +732,7 @@ def split_branches(
     selections,
     max_branch_depth,
     max_branches=6,
+    primitives=None,
     icd=None
 ) -> List[structure]:
 
@@ -748,7 +749,7 @@ def split_branches(
             new_bits = list(
                 (bit, mapping)
                 for bit in graph_visitors.structure_iter_bits(
-                    branch, iter_inverse=True, skip_ones=False
+                    branch, iter_inverse=True, skip_ones=False, primitives=primitives
                 )
             )
             branched_bits.extend(new_bits)
@@ -1539,7 +1540,7 @@ def split_subgraphs_distributed(
         compute.workspace_submit_and_flush(ws, None, {})
         for batch in arrays.batched(list(iterable.items()), 1000000):
             ids = set()
-            for chunk in arrays.batched(batch, 2000):
+            for chunk in arrays.batched(batch, 10):
                 tasks = {}
                 for idx, unit in chunk:
                     ids.add(idx)
@@ -1585,7 +1586,6 @@ def split_subgraphs_distributed(
                     for idx, splits in sorted(
                         these_results.items(), key=lambda x: x[0]
                     ):
-
 
                         if idx >= n or idx < n0:
                             continue
@@ -1658,7 +1658,7 @@ def split_subgraphs_distributed(
                                 # print(f"{idx+1:5d} CND DUPLICATE {sma}")
                                 continue
                             else:
-                                sma_visited.add(sma) 
+                                sma_visited.add(sma)
 
                             _matches = list([matches[0]] * matches[1])
 
@@ -1973,10 +1973,14 @@ def split_single_bits(
     # combine them together before taking a specific/general split
     iter_inverse = splitter.split_general and splitter.split_specific
 
+    primitives = None
+    if hasattr(splitter, "primitives"):
+        primitives = splitter.primitives
+
     single_bits = [
         (bit, M)
         for bit in graph_visitors.structure_iter_bits(
-            bes, iter_inverse=iter_inverse, skip_ones=True
+            bes, iter_inverse=iter_inverse, skip_ones=True, primitives=primitives
         )
     ]
 
@@ -1985,7 +1989,7 @@ def split_single_bits(
     if splitter.branch_depth_limit > 0 and splitter.branch_limit > 0:
         print(datetime.datetime.now(), "Generating branched splits")
         branch_bits = split_branches(
-            S0, G, selections, splitter.branch_depth_limit, splitter.branch_limit, icd=icd
+            S0, G, selections, splitter.branch_depth_limit, splitter.branch_limit, primitives=splitter.primitives, icd=icd
         )
         for i, b in enumerate(branch_bits, 1):
             if (splitter.branch_limit is not None) and len(b[0].select) - len(

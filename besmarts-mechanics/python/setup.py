@@ -1,15 +1,15 @@
-
 import setuptools
+import warnings
 
-requirements = ["besmarts", "besmarts-mechanics", "scipy", "numpy"]
+requirements = ["besmarts", 'numpy']
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name='besmarts-scipy',
-    version='0.1.0',
-    description="BESMARTS SciPy plugin",
+    name='besmarts-mechanics',
+    version='0.1.1',
+    description="BESMARTS molecular mechanics force field fitting",
     license="MIT",
     author="Trevor Gokey",
     author_email='tgokey@uci.edu',
@@ -18,8 +18,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     packages=[
         'besmarts',
-        'besmarts.core',
-        'besmarts.mechanics',
+        'besmarts.mechanics'
     ],
     install_requires=requirements,
     classifiers=[
@@ -36,4 +35,16 @@ setuptools.setup(
     python_requires='>=3.6',
 )
 
-
+warnings.warn("""
+    WARNING!!! The default behavior of loading SMIRNOFF force fields uses
+    the sqm program from Ambertools to determine partial charges. Ambertools
+    is not available on PyPI at the time of this writing. Please install
+    Ambertools using one of the supported methods and ensure that sqm is in
+    your PATH. Binary packages are available through the conda package manager
+    via
+    
+    conda install -c conda-forge ambertools
+    
+    """,
+    RuntimeWarning
+)

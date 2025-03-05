@@ -20,29 +20,42 @@ for the theoretical unpinnings on which this package is based.
 
 # Installation
 
-Currently, the best way to install is to clone and then install with pip.
-
-For environment users (e.g. venv or conda), one should probably create an empty
-environment first:
+BESMARTS is on PyPi, but certain dependencies are not and only exist on conda
+unless they are built from source. Currently, the best way to install all
+functionality is to use conda to create a python environment with Ambertools:
 ```
-conda create -n besmarts python
+conda create -n besmarts -c conda-forge python ambertools 
 conda activate besmarts
 ```
-or
+
+and then install BESMARTS via pip:
+
+```
+pip install besmarts[rdkit,scipy,openmm]
+```
+
+For a more custom installation, one can install from git. If ambertools is not
+needed, one may set up an environment via
 ```
 python -m venv besmarts
 . besmarts/bin/activate
 
 ```
 
-followed by the actual install:
+followed by the actual install in develop mode:
 
 ```
 git clone https://github.com/trevorgokey/besmarts besmarts-git
 cd besmarts-git/besmarts-core/python
-python -m pip install .
+python -m pip install -e .
 cd ../../besmarts-rdkit/python
-python -m pip install .
+python -m pip install -e .
+cd ../../besmarts-mechanics/python
+python -m pip install -e .
+cd ../../besmarts-openmm/python
+python -m pip install -e .
+cd ../../besmarts-scipy/python
+python -m pip install -e .
 ```
 
 RDKit is needed to decode SMILES into graphs and offers a faster implementation
@@ -52,14 +65,15 @@ Geometry optimization uses the SciPy minimizer and can be installed using
 using a similar process as above with `besmarts-scipy`. There is also an
 interface to OpenMM and this minimizer can be used instead after installing
 `besmarts-openmm`. The OpenMM plugin is quite a bit faster and is recommended
-if large or heavily numerical computations are needed (e.g. fitting frequencies
-from calculating MM Hessians with finite differences). The native interface
+if large or heavily numerical computations are needed. The native interface
 to calculating energies and gradients is useful if novel functional forms are
 needed and not in standard packages (e.g. OpenMM). We recommend using OpenMM if
 it is supported and available on your system. The energies, hessians, and
 gradients compared between the native and OpenMM implementations are nearly
 exact; for energy/gradient down to 12 decimal places for linear terms, around 6
-places for torsions, and between 4-12 places for Hessians.
+places for torsions, and between 4-12 places for Hessians. Included in the native
+implementation is a very fast analytic MM hessian method that can produce the
+entire matrix in the time it takes OpenMM to evalulate a single energy.
 
 Molecular mechanics energy and gradient evaluations are implemented, but
 require partial charges. By default, `besmarts` will try to charge molecules

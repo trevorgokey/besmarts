@@ -6,6 +6,7 @@ should be using this with compute!
 
 from enum import Enum
 from typing import Generic, TypeVar
+import time
 
 T = TypeVar("T")
 
@@ -21,10 +22,11 @@ class return_value(Generic[T]):
         self.value: T = value
         self.out: str = out
         self.err: str = err
+        self.time_ns: int = 0
         self.status: return_status = status
 
 
-def success(value: T = None, out="", err=""):
+def success(value: T = None, out="", err="", t0=None):
     """
     Indicate a successful function call
 
@@ -42,10 +44,15 @@ def success(value: T = None, out="", err=""):
         The return object with a status set to success
     """
 
-    return return_value(value, out, err, return_status.SUCCESS)
+    ret = return_value(value, out, err, return_status.SUCCESS)
+
+    if t0 is not None:
+        ret.time_ns = time.perf_counter_ns() - t0
+
+    return ret
 
 
-def fail(value: T = None, out="", err=""):
+def fail(value: T = None, out="", err="", t0=None):
     """
     Indicate a failed function call
 
@@ -62,4 +69,9 @@ def fail(value: T = None, out="", err=""):
     return_value
         The return object with a status set to fail
     """
-    return return_value(value, out, err, return_status.FAIL)
+    ret = return_value(value, out, err, return_status.FAIL)
+
+    if t0 is not None:
+        ret.time_ns = time.perf_counter_ns() - t0
+
+    return ret

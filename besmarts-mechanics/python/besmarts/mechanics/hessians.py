@@ -23,7 +23,7 @@ def transform(B):
     """
     full inv G
     """
-    B = np.asarray(B)
+    B = np.atleast_2d(np.asarray(B))
     G = np.dot(B, B.T)
     G = G.round(PRECISION)
     u, v = np.linalg.eigh(G)
@@ -57,8 +57,8 @@ def transform(B):
     """
     full inv G
     """
-    B = np.asarray(B)
-    G = np.dot(B, B.T)
+    B = np.atleast_2d(np.asarray(B))
+    G = np.atleast_2d(np.dot(B, B.T))
     G = G.round(PRECISION)
     u, v = np.linalg.eigh(G)
     u = u.round(PRECISION)
@@ -259,14 +259,14 @@ def hessian_project_onto_ics(
     shm=None
 ) -> dict:
 
-    pos = copy.deepcopy(psys.models[0].positions[0])
+    pos = psys.models[0].positions
 
-    xyz = np.vstack([x[0] for x in pos.selections.values()], dtype=float)
+    xyz = np.vstack([x[0] for posi in pos for x in posi.selections.values()], dtype=float)
     xyz = xyz.round(PRECISION)
-    sym = graphs.graph_symbols(pos.graph)
-    mass = np.array([[vibration.mass_table[sym[n]]]*3 for n in sym])
+    sym = [s for posi in pos for s in graphs.graph_symbols(posi.graph).values()]
+    mass = np.array([[vibration.mass_table[s]]*3 for s in sym])
 
-    sym = list(sym.values())
+    # sym = list(sym.values())
     remove1_3 = True
     torsions = True
     outofplanes = True
@@ -300,31 +300,35 @@ def hessian_project_onto_ics(
         ics, B = B
         B = np.array(B)
 
-    hess_qm_ic = project_ics(B, hess_qm)
+    ic_qm_fcs = {}
+    if len(B.shape) > 1 and B.shape[0] > 0 and B.shape[1] > 0:
+        hess_qm_ic = project_ics(B, hess_qm)
 
-    hess_qm_ic = np.array(np.diag(hess_qm_ic))
+        hess_qm_ic = np.array(np.diag(hess_qm_ic))
 
-    if (hess_qm_ic < 0).any() and verbose:
-        print("Warning, negative force constants found")
-    if (hess_qm_ic > 4000).any() and verbose:
-        print("Warning, large force constants found")
+        if (hess_qm_ic < 0).any() and verbose:
+            print("Warning, negative force constants found")
+        if (hess_qm_ic > 4000).any() and verbose:
+            print("Warning, large force constants found")
 
-    hess_qm_ic[hess_qm_ic < 0] = 0.0
-    hess_qm_ic[hess_qm_ic > 4000] = 4000
+        hess_qm_ic[hess_qm_ic < 0] = 0.0
+        hess_qm_ic[hess_qm_ic > 4000] = 4000
 
-    ic_qm_fcs = dict(zip(ics, hess_qm_ic))
+        ic_qm_fcs = dict(zip(ics, hess_qm_ic))
 
-    if verbose:
-        print("Projected MM Fcs")
-        pprint.pprint(ic_qm_fcs, sort_dicts=False)
+        if verbose:
+            print("Projected MM Fcs")
+            pprint.pprint(ic_qm_fcs, sort_dicts=False)
 
-    return assignments.graph_assignment(pos.smiles, ic_qm_fcs, pos.graph)
+    return ic_qm_fcs
+    # return assignments.graph_assignment(pos.smiles, ic_qm_fcs, pos.graph)
 
 
-def hessian_transform(g, hess_mm, grad_mm, DL, ics, B, B2):
+def hessian_transform(mass, hess_mm, grad_mm, DL, ics, B, B2):
 
-    sym = graphs.graph_symbols(g)
-    mass = np.array([[vibration.mass_table[sym[n]]]*3 for n in sym])
+    # sym = graphs.graph_symbols(g)
+    # mass = np.array([[vibration.mass_table[sym[n]]]*3 for n in sym])
+    mass = np.array(mass)
 
     hgx = np.zeros_like(hess_mm)
 
@@ -352,8 +356,8 @@ def hessian_transform(g, hess_mm, grad_mm, DL, ics, B, B2):
     return hess_mm_freq
 
 
-def hessian_frequencies(g, hess_mm, grad_mm, DL, ics, B, B2):
+def hessian_frequencies(mass, hess_mm, grad_mm, DL, ics, B, B2):
 
-    return np.diag(hessian_transform(g, hess_mm, grad_mm, DL, ics, B, B2))
+    return np.diag(hessian_transform(mass, hess_mm, grad_mm, DL, ics, B, B2))
 
 

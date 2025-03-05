@@ -611,7 +611,7 @@ def visit_descend(
 
 
 def structure_iter_bits(
-    bes: graphs.structure, skip_ones=False, iter_inverse=True
+    bes: graphs.structure, skip_ones=False, iter_inverse=True, primitives=None
 ) -> Generator[graphs.structure, None, None]:
     bes = graphs.structure_remove_unselected(bes)
 
@@ -639,7 +639,6 @@ def structure_iter_bits(
         tag=None,
     )
 
-    # print(datetime.datetime.now(), f"Generating single splits for {len(seq)}")
     for idx in seq:
         if type(idx) is int:
             besmarts = bes.nodes[idx]
@@ -647,7 +646,7 @@ def structure_iter_bits(
             besmarts = bes.edges[idx]
 
         for bit in chem.bechem_iter(
-            besmarts, skip_ones=skip_ones, iter_inverse=iter_inverse
+            besmarts, skip_ones=skip_ones, iter_inverse=iter_inverse, primitives=primitives
         ):
             newg = graphs.structure_copy(bes)
 

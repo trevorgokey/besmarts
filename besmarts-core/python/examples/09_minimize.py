@@ -51,7 +51,7 @@ def run(ff_fname, sdf_fname):
     # script is the xyz frames, the output can be piped into an xyz file
     # and visualized with e.g VMD.
     pos = optimizers_scipy.optimize_positions_scipy(csys, psys)
-    xyz_fmt = assignments.graph_assignment_to_format_xyz(pos)
+    xyz_fmt = assignments.graph_assignment_to_format_xyz(pos[0])
     print("\n".join(xyz_fmt))
 
 

@@ -3,9 +3,7 @@
 besmarts.mechanics.smirnoff_xml
 """
 
-from typing import List, Dict
-from besmarts.core import trees
-from besmarts.core import tree_iterators
+from typing import Dict
 from xml.etree.ElementTree import ElementTree, Element, iterparse, indent
 
 def smirnoff_xml_read(fname: str) -> Dict:
@@ -48,6 +46,7 @@ def smirnoff_xml_read(fname: str) -> Dict:
             xml[element.tag]["parameters"] = []
 
     return xml
+
 
 def smirnoff_xml_write(xml: Dict, fname: str):
     """

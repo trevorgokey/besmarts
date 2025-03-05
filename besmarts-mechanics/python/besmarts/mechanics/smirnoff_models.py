@@ -20,6 +20,7 @@ from besmarts.mechanics import force_harmonic, force_periodic, force_pairwise
 PRECISION = configs.precision
 sigma2rmin_half = 1 / 2 ** (5 / 6)
 
+
 def chemical_model_bond_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
 
     cm = force_harmonic.chemical_model_bond_harmonic(pcp)
@@ -47,7 +48,6 @@ def chemical_model_bond_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     )
     proc.smarts_hierarchies = {uid: h}
 
-
     root = proc.smarts_hierarchies[u.index].index.node_add_below(None)
     root.name = "Bonds"
     root.category = [-1, pid, uid]
@@ -56,7 +56,6 @@ def chemical_model_bond_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
 
     label_to_id = {}
     label_to_id[root.name] = root.index
-
 
     uid = u.index
     for param in d["parameters"]:
@@ -89,12 +88,12 @@ def chemical_model_bond_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     return cm
 
 
-
 def chemical_model_angle_harmonic_smirnoff(d: Dict, pcp) -> mm.chemical_model:
 
     cm = force_harmonic.chemical_model_angle_harmonic(pcp)
     cm.name = "Angles"
-    ############################################################################
+
+    ###########################################################################
     # the terms are determined by a smarts matching
     proc = mm.chemical_model_procedure_smarts_assignment(
         pcp, cm.topology_terms
@@ -227,6 +226,7 @@ def smirnoff_dihedral_load(cm, pcp, d):
 
     cm.procedures.append(proc)
 
+
 def chemical_model_dihedral_periodic_smirnoff(d, pcp):
     cm = mm.chemical_model("", "", None)
 
@@ -280,6 +280,7 @@ def chemical_model_outofplane_periodic_smirnoff(
 
 def chemical_model_electrostatics_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     cm = force_pairwise.chemical_model_coulomb(pcp)
+    cm.system_terms['c'].values = [float(d['options']['cutoff'].split()[0])]
 
     proc = force_pairwise.chemical_model_procedure_antechamber(
         cm.topology_terms
@@ -320,6 +321,16 @@ def chemical_model_electrostatics_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     }
     pid = len(cm.procedures)
 
+    # "hidden param to assign pairs from different graphs"
+    i = proc.smarts_hierarchies[0].index.node_add_below(None)
+    i.name = "s0"
+    i.type = "parameter"
+    i.category = [-1, pid, uid]
+    proc.smarts_hierarchies[0].smarts[i.index] = "[*:1].[*:2]"
+    proc.topology_parameters[(0, i.name)] = {"s": i.name}
+    cm.topology_terms["s"].values[i.name] = [1.0]
+    proc.default_parameter = "s0"
+
     # NB scaling (off)
     i = proc.smarts_hierarchies[0].index.node_add_below(None)
     i.name = "s1"
@@ -328,7 +339,6 @@ def chemical_model_electrostatics_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     proc.smarts_hierarchies[0].smarts[i.index] = "[*:1].[*:2]"
     proc.topology_parameters[(0, i.name)] = {"s": i.name}
     cm.topology_terms["s"].values[i.name] = [1.0]
-    proc.default_parameter = "s1"
 
     # 12 scaling is skipped as it is not a valid pair
     # i = proc.smarts_hierarchies[0].index.node_add_below(None)
@@ -363,6 +373,7 @@ def chemical_model_electrostatics_smirnoff(d: Dict, pcp) -> mm.chemical_model:
 
 def chemical_model_vdw_smirnoff(d: Dict, pcp) -> mm.chemical_model:
     cm = force_pairwise.chemical_model_lennard_jones(pcp)
+    cm.system_terms['c'].values = [float(d['options']['cutoff'].split()[0])]
 
     proc = mm.chemical_model_procedure_smarts_assignment(
         pcp, cm.topology_terms

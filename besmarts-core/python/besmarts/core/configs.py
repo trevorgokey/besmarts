@@ -90,6 +90,7 @@ class smarts_splitter_config:
         "split_specific",
         "unique_complements",
         "unique_complements_prefer_min",
+        "primitives",
     )
 
     def __init__(
@@ -107,6 +108,7 @@ class smarts_splitter_config:
         split_specific=True,
         unique_complements=True,
         unique_complements_prefer_min=True,
+        primitives=None,
     ):
         self.bit_search_min: int = int(bit_search_min)
         self.bit_search_limit: None | int = bit_search_limit
@@ -123,6 +125,7 @@ class smarts_splitter_config:
         self.unique_complements_prefer_min: bool = bool(
             unique_complements_prefer_min
         )
+        self.primitives = primitives
 
     def copy(self):
         return smarts_splitter_config(

@@ -422,6 +422,9 @@ def array_mean(a):
 def array_add(a, b):
     return [i+j for i,j in zip(a,b)]
 
+def array_abs(a):
+    return [abs(i) for i in a]
+
 def array_difference(a, b):
     return [i-j for i,j in zip(a,b)]
 

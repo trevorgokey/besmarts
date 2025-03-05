@@ -14,24 +14,24 @@ from besmarts.mechanics import molecular_models as mm
 
 # dihedrals
 def energy_function_periodic_cosine_2term(*, k, n, p, x) -> float:
-    return [[ki + ki*math.cos(ni * xi - pi) for ki, ni, pi in zip(k, n, p)] for xi in x[0]]
+    return [[ki + ki*math.cos(ni * xi - pi) for ki, ni, pi in zip(k, n, p)] for x0 in x for xi in x0]
 
 def force_function_periodic_cosine_2term(*, k, n, p, x) -> float:
-    return [[ki*ni*math.sin(ni * xi - pi) for ki, ni, pi in zip(k, n, p)] for xi in x[0]]
+    return [[ki*ni*math.sin(ni * xi - pi) for ki, ni, pi in zip(k, n, p)] for x0 in x for xi in x0]
 
 def force_gradient_function_periodic_cosine_2term(*, k, n, p, x) -> float:
-    return [[ki*ni*ni*math.cos(ni * xi - pi) for ki, ni, pi in zip(k, n, p)] for xi in x[0]]
+    return [[ki*ni*ni*math.cos(ni * xi - pi) for ki, ni, pi in zip(k, n, p)] for x0 in x for xi in x0]
 
 def force_system_periodic_cosine_2term(*, k, n, p, x) -> float:
-    return [[(ki, ni*math.sin(ni * xi - pi)) for ki, ni, pi in zip(k, n, p)] for xi in x[0]]
+    return [[(ki, ni*math.sin(ni * xi - pi)) for ki, ni, pi in zip(k, n, p)] for x0 in x for xi in x0]
 
 def force_gradient_system_periodic_cosine_2term(*, k, n, p, x) -> float:
-    return [[(ki, ni*ni*math.cos(ni * xi - pi)) for ki, ni, pi in zip(k, n, p)] for xi in x[0]]
+    return [[(ki, ni*ni*math.cos(ni * xi - pi)) for ki, ni, pi in zip(k, n, p)] for x0 in x for xi in x0]
 
 def init_dihedral_common(cm):
 
     cm.energy_function = energy_function_periodic_cosine_2term
-    cm.force_function = force_function_periodic_cosine_2term 
+    cm.force_function = force_function_periodic_cosine_2term
     cm.force_gradient_function = force_gradient_function_periodic_cosine_2term
 
     # define the terms of this model
@@ -49,8 +49,8 @@ def chemical_model_torsion_periodic(pcp: perception.perception_model) -> mm.chem
 
     cm = mm.chemical_model("T", "torsions", topology.torsion)
     cm = init_dihedral_common(cm)
-    cm.internal_function = assignments.graph_assignment_geometry_torsions
-    cm.derivative_function = assignments.graph_assignment_jacobian_torsions
+    cm.internal_function = assignments.graph_assignment_geometry_torsion_matrix
+    cm.derivative_function = assignments.graph_assignment_jacobian_torsion_matrix
 
     return cm
 
@@ -59,7 +59,7 @@ def chemical_model_outofplane_periodic(pcp: perception.perception_model) -> mm.c
     """
     cm = mm.chemical_model("I", "outofplane", topology.outofplane)
     cm = init_dihedral_common(cm)
-    cm.internal_function = assignments.graph_assignment_geometry_outofplanes
-    cm.derivative_function = assignments.graph_assignment_jacobian_outofplanes
+    cm.internal_function = assignments.graph_assignment_geometry_outofplane_matrix
+    cm.derivative_function = assignments.graph_assignment_jacobian_outofplane_matrix
 
     return cm
