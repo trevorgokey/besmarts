@@ -1,12 +1,13 @@
 import setuptools
 
-requirements = ["besmarts", "openmm", 'numpy<2']
+requirements = ["besmarts", "besmarts-mechanics", "openmm", 'numpy<2']
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
     name='besmarts-openmm',
+    version='0.1.0',
     description="BESMARTS OpenMM plugin",
     license="MIT",
     author="Trevor Gokey",

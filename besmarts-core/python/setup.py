@@ -7,6 +7,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name='besmarts',
+    version='0.1.0',
     description="Binary Encoded SMARTS",
     license="MIT",
     author="Trevor Gokey",
