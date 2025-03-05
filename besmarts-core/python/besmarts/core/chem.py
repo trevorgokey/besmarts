@@ -463,7 +463,7 @@ def bechem_disable(bc: bechem, field: primitive_key) -> bool:
 
 
 def bechem_iter(
-    bc: bechem, skip_ones=False, iter_inverse=False
+    bc: bechem, skip_ones=False, iter_inverse=False, primitives=None
 ) -> Generator[bechem, None, None]:
     """
     Generate a copy for every bit across all selected primitives
@@ -472,7 +472,15 @@ def bechem_iter(
     blank = bechem_copy(bc)
     bechem_clear(blank)
 
+    if not primitives:
+        primitives = bc.select
+
+    # print(f"iterating primitives: {primitives}")
     for field in bc.select:
+
+        if field not in primitives:
+            continue
+
         bv: arrays.bitvec = bc.primitives[field]
         if skip_ones and arrays.bitvec_bits(bv) == 1:
             continue
