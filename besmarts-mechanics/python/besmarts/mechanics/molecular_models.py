@@ -148,7 +148,7 @@ class chemical_system:
     """Force field parameters for application via chemical perception.
 
     A ``chemical_system`` is usually constructed from a SMIRNOFF force field via
-    the :py:func:`besmarts.mechanics.smirnoff_models.smirnoff_load` function.
+    the ``besmarts.mechanics.smirnoff_models.smirnoff_load`` function.
 
     Attributes
     ----------
@@ -157,12 +157,25 @@ class chemical_system:
         ``pcp_model`` parameter.
     models: list[chemical_model]
         The force field parameters. Initialized from the ``models`` parameter.
+
+    See Also
+    --------
+    besmarts.mechanics.smirnoff_models.smirnoff_load
     """
     def __init__(
         self,
         pcp_model: perception.perception_model,
         models: List[chemical_model]
     ):
+        """Force field parameters for application via chemical perception.
+
+        Parameters
+        ----------
+        pcp_model
+            The perception model used to apply the parameters.
+        models
+            The force field parameters.
+        """
         self.perception = pcp_model
         self.models = models
 
