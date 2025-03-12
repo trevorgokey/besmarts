@@ -22,7 +22,18 @@ class perception_model:
         compact format. Initialized automatically from the primitives specified
         by the ``gcd`` parameter.
     """
-    def __init__(self, gcd, labeler):
+    def __init__(self, gcd: codecs.graph_codec, labeler: assignments.smarts_hierarchy_assignment):
+        """Functions that can be used to load, label and serialize graphs
+
+        Parameters
+        ----------
+        gcd
+            A graph codec, responsible for loading graphs from SMILES/SMARTS
+            strings.
+        labeler
+            A labeler, responsible for assigning labels to graphs by matching them
+            against a SMARTS hierarchy.
+        """
         self.gcd: codecs.graph_codec = gcd
         self.labeler: assignments.smarts_hierarchy_assignment = labeler
         self.icd: codecs.intvec_codec = codecs.intvec_codec(

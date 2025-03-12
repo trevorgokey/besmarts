@@ -22,6 +22,8 @@ import sys
 autodoc_typehints_format = 'short'
 autodoc_typehints = "both"
 autodoc_typehints_description_target = "documented"
+# Document __init__ separately to class
+# Investigate renaming "variables" to "attributes" in rendered docs
 
 # -- Project information -----------------------------------------------------
 

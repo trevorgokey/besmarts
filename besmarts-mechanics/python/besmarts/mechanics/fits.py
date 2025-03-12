@@ -758,26 +758,16 @@ class objective_config:
     Configuration of an objective function for force field fitting.
 
     The objective has two parts. The first part is how the properties are
-    calculated and is configured with a :py:class:`compute_config` as returned
-    by the :py:meth:`get_task` method. The second is how the
+    calculated and is configured with a ``compute_config`` as returned
+    by the ``get_task`` method. The second is how the
     objective is computed from the properties and is configured here.
 
     This is a base class and should generally not be instantiated directly;
-    instead, see the following classes for commonly used objectives:
-
-    :py:class:`objective_config_position`
-        Performs a geometry optimization and calculates the sum of squared
-        error (SSE). The root of the mean SSE is the RMSD.
-    :py:class:`objective_config_gradient`
-        The geometry is held fixed at the reference, and calculates the
-        objective as the SSE of the difference in QM/MM forces.
-
-    .. todo: More of the above, write a Parameters section
+    instead, see the following classes for commonly used objectives.
 
     See Also
     --------
-    objective_config_energy, objective_config_hessian, objective_config_penalty,
-    objective_config_position, objective_config_gradient
+    compute_config, get_task
 
     """
 
@@ -960,7 +950,10 @@ class objective_config:
 
 
 class objective_config_gradient(objective_config):
-
+    """
+    The geometry is held fixed at the reference, and calculates the
+    objective as the SSE of the difference in QM/MM forces.
+    """
     def __init__(self, *args, **kwds):
         super().__init__(*args, **kwds)
         self.enable_minimization = False
@@ -1435,7 +1428,7 @@ class objective_config_hessian(objective_config):
     #         #         g, hess_mm, grad_mm, DL2, ics, B, B2)
     #         #     )
     #         #     x0.extend([0]*(len(x0) - len(x1)))
-                
+
 
     #         # keep this for when I want to try internal hess
     #         # x0 = array_numpy.dlcmatrix_project_gradients(pos, x0)
@@ -1959,7 +1952,7 @@ class objective_config_energy_total(objective_config):
             dxdp, d2xdp2 = finite_difference_forward_1(f, h)
         elif self.grad_mode == "c2":
             dxdp, d2xdp2 = finite_difference_central_2(f, h)
-            
+
         return dxdp, d2xdp2
 
 
@@ -2047,7 +2040,7 @@ class objective_config_energy_total(objective_config):
         #     tbl = tbls[tid]
         #     x1 = tbl.values
         #     x1 = arrays.array_translate(x1, -min_ene)
-            
+
         #     obj.extend(arrays.array_difference(x1, x0))
             # ene_dict = tbl.values[0][0]
             # tot_dict = tbl.values[0][1]
@@ -2124,6 +2117,10 @@ class objective_config_energy_total(objective_config):
 
 
 class objective_config_position(objective_config):
+    """
+    Performs a geometry optimization and calculates the sum of squared
+    error (SSE). The root of the mean SSE is the RMSD.
+    """
 
     def get_task(
         self,
@@ -2250,14 +2247,12 @@ class objective_tier:
     objectives: Dict[int, objective_config]
         The objective functions that should be optimized in this tier. Note that
         each molecule in the graph database requires its own entry in this dict.
-    fit_models: list[int] | None
+    fit_models: List[int] | None
         Which models in the chemical system to fit with this tier. Fits all
-        models if ``None``. See the ``models`` attribute of
-        :py:class:`besmarts.mechanics.molecular_models.chemical_system`.
-    fit_symbols: list[str] | None
+        models if ``None``. See the ``models`` attribute of ``chemical_system``.
+    fit_symbols: List[str] | Dict[str, List[int]] | None
         Which symbols of the fitted models to fit with this tier. Fits all
-        symbols if ``None``. See the ``symbol`` attribute of
-        :py:class:`besmarts.mechanics.molecular_models.chemical_model`.
+        symbols if ``None``. See the ``symbol`` attribute of ``chemical_model``.
     step_limit: int | None
         Stop after this many iterations of this tier.
     accept: int
@@ -2266,6 +2261,11 @@ class objective_tier:
 
 
     .. TODO: Why is the objectives attribute a dict rather than a list?
+
+    See Also
+    --------
+    besmarts.mechanics.molecular_models.chemical_system,
+    besmarts.mechanics.molecular_models.chemical_model
     """
 
     def __init__(self):
@@ -3007,45 +3007,12 @@ def fit(csys, gdb, objective, psystems, nodes, wq=None, verbose=False):
     )
     return ret
 
-class ChemicalObjective(Protocol):
-    """A function to compute an objective function from a chemical system.
-
-    See :py:func:`chemical_objective` for an example implementation.
-
-    Parameters
-    ----------
-    csys: besmarts.mechanics.molecular_models.chemical_system
-        The chemical system for which to compute the objective.
-    P0: float = 1.0
-        The natural logarithm of the number of physical systems being optimized
-        plus one. This is usually provided by the caller.
-    c: None | float = None
-        SMARTS complexity of the chemical system. This is sometimes provided by
-        the caller when the value is needed by calling code. When not given or
-        ``None``, this should be computed by the callee if it is needed. See
-        :py:func:`chemical_system_smarts_complexity()
-        <besmarts.mechanics.molecular_models.chemical_system_smarts_complexity>`.
-
-    Returns
-    -------
-    CC: float
-        The computed chemical objective.
-    """
-
-    def __call__(
-        self,
-        csys: mm.chemical_system,
-        *,
-        P0: float = 1.0,
-        c: None | float = None,
-    ) -> float: ...
-
 def ff_optimize(
     csys0: mm.chemical_system,
     gdb: assignments.graph_db,
     psystems: Dict[eid_t, mm.physical_system],
     strategy: forcefield_optimization_strategy,
-    chemical_objective: ChemicalObjective,
+    chemical_objective: Callable[[mm.chemical_system, dict], float],
     initial_objective: objective_tier,
     tiers: List[objective_tier],
     final_objective: objective_tier,
@@ -3067,23 +3034,27 @@ def ff_optimize(
         The graph database containing all data used to perform the fit.
     psystems
         The initial parameterized systems - this is usually ``csys0``
-        applied to ``gdb``. See :py:func:`gdb_to_physical_systems`.
+        applied to ``gdb``. See ``gdb_to_physical_systems``.
     strategy
         The fitting strategy to employ. For a reasonable default, see
-        :py:class:`forcefield_optimization_strategy_default`
+        ``forcefield_optimization_strategy_default``
     chemical_objective
         The function that will compute the chemical objective of the force
         field. This takes into account only the force field itself, not the
-        physical information in ``gdb``. See :py:func:`chemical_objective` for
-        a reasonable default, and see :py:class:`ChemicalObjective` for guidance
-        on how to write your own.
+        physical information in ``gdb``. See ``chemical_objective`` for
+        a reasonable default.
     initial_objective
         The objective_tier that will perform the initial fit
     tiers
         The tiers that will score each parameter candidate
-    final_objective:
+    final_objective
         The objective_tier that will score the remaining candidates passed by
         the tiers
+
+    See Also
+    --------
+    gdb_to_physical_systems, chemical_objective, ChemicalObjective,
+    forcefield_optimization_strategy_default
 
 
     .. TODO: When would ``psystems`` not be ``fits.gdb_to_physical_systems(gdb, csys0)``?
@@ -3427,7 +3398,7 @@ def ff_optimize(
         with multiprocessing.pool.Pool(configs.processors) as pool:
             Sj_lst = []
             for (_,_,_,oper), x in candidates.items():
-                
+
                 if oper == strategy.SPLIT:
                     # Sj_lst = [candidates[x[1]][1] for x in pq]
                     # Sj_lst = [graphs.subgraph_as_structure(x[1], topo) for x in candidates.values()]
@@ -3439,7 +3410,7 @@ def ff_optimize(
                             mm.chemical_system_get_node_hierarchy(csys, x[1]).topology
                         )
                     )
-                    
+
                     # Sj_lst = [
                     #     graphs.subgraph_as_structure(cst.hierarchy.subgraphs[x[1].index], topo)
                     #     for x in candidates.values()
@@ -3796,7 +3767,15 @@ def print_chemical_system(csys, show_parameters=None):
     mm.chemical_system_print(csys, show_parameters=show_parameters)
 
 
-def chemical_objective(csys, P0=1.0, C0=1.0, A=1.0, B=1.0, C=1.0, c=None):
+def chemical_objective(csys, kwargs=None):
+    if kwargs is None:
+        kwargs = {}
+    P0=kwargs.get("P0", 1.0)
+    C0=kwargs.get("C0", 1.0)
+    A=kwargs.get("A", 1.0)
+    B=kwargs.get("B", 1.0)
+    C=kwargs.get("C", 1.0)
+    c=kwargs.get("c", None)
 
     if c is None:
         c = mm.chemical_system_smarts_complexity(csys, B=B, C=C)
