@@ -31,7 +31,7 @@ conda activate besmarts
 and then install BESMARTS via pip:
 
 ```
-pip install besmarts[rdkit,scipy,openmm]
+pip install 'besmarts[rdkit,scipy,openmm]'
 ```
 
 For a more custom installation, one can install from git. If ambertools is not
@@ -62,8 +62,8 @@ RDKit is needed to decode SMILES into graphs and offers a faster implementation
 of SMARTS matching when labeling from a SMARTS hierarchy.
 
 Geometry optimization uses the SciPy minimizer and can be installed using
-using a similar process as above with `besmarts-scipy`. There is also an
-interface to OpenMM and this minimizer can be used instead after installing
+a similar process as above with `besmarts-scipy`. There is also an
+interface to OpenMM and its molecule energy minimizer can be used instead after installing
 `besmarts-openmm`. The OpenMM plugin is quite a bit faster and is recommended
 if large or heavily numerical computations are needed. The native interface
 to calculating energies and gradients is useful if novel functional forms are
