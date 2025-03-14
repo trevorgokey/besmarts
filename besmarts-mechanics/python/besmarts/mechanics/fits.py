@@ -10,6 +10,7 @@ import pickle
 import multiprocessing
 import collections
 import sys
+from typing import Protocol
 import math
 import itertools
 import numpy as np
@@ -754,10 +755,20 @@ class compute_config_penalty(compute_config):
 
 class objective_config:
     """
-    Configuration of an objective function for force field fitting. The
-    objective has two parts. The first part is how the properties are
-    calculated and is configured with a compute_config. The next is how the
+    Configuration of an objective function for force field fitting.
+
+    The objective has two parts. The first part is how the properties are
+    calculated and is configured with a ``compute_config`` as returned
+    by the ``get_task`` method. The second is how the
     objective is computed from the properties and is configured here.
+
+    This is a base class and should generally not be instantiated directly;
+    instead, see the following classes for commonly used objectives.
+
+    See Also
+    --------
+    compute_config, get_task
+
     """
 
     def __init__(self, addr, include=True, scale=1, coordinate_system="C"):
@@ -939,7 +950,10 @@ class objective_config:
 
 
 class objective_config_gradient(objective_config):
-
+    """
+    The geometry is held fixed at the reference, and calculates the
+    objective as the SSE of the difference in QM/MM forces.
+    """
     def __init__(self, *args, **kwds):
         super().__init__(*args, **kwds)
         self.enable_minimization = False
@@ -1404,7 +1418,7 @@ class objective_config_hessian(objective_config):
     #         #         g, hess_mm, grad_mm, DL2, ics, B, B2)
     #         #     )
     #         #     x0.extend([0]*(len(x0) - len(x1)))
-                
+
 
     #         # keep this for when I want to try internal hess
     #         # x0 = array_numpy.dlcmatrix_project_gradients(pos, x0)
@@ -1928,7 +1942,7 @@ class objective_config_energy_total(objective_config):
             dxdp, d2xdp2 = finite_difference_forward_1(f, h)
         elif self.grad_mode == "c2":
             dxdp, d2xdp2 = finite_difference_central_2(f, h)
-            
+
         return dxdp, d2xdp2
 
 
@@ -2016,7 +2030,7 @@ class objective_config_energy_total(objective_config):
         #     tbl = tbls[tid]
         #     x1 = tbl.values
         #     x1 = arrays.array_translate(x1, -min_ene)
-            
+
         #     obj.extend(arrays.array_difference(x1, x0))
             # ene_dict = tbl.values[0][0]
             # tot_dict = tbl.values[0][1]
@@ -2093,6 +2107,10 @@ class objective_config_energy_total(objective_config):
 
 
 class objective_config_position(objective_config):
+    """
+    Performs a geometry optimization and calculates the sum of squared
+    error (SSE). The root of the mean SSE is the RMSD.
+    """
 
     def get_task(
         self,
@@ -2205,12 +2223,39 @@ class objective_config_penalty(objective_config):
 
 class objective_tier:
     """
+    Description of a single tier in a multi-tier optimization.
+
     A configuration for how to compute a total objective over a list of
     objectives. A tier is meant to be calculated for 1 or more force fields,
     which is what happens during parameter searching. Tiers have a fitting
     aspect that is configured here. For example, an objective might only
     perform 1 or 2 fitting steps for each force field, and the top N force
-    fields would be accepted (and passed to the next tier.
+    fields would be accepted (and passed to the next tier).
+
+    Attributes
+    ----------
+    objectives: Dict[int, objective_config]
+        The objective functions that should be optimized in this tier. Note that
+        each molecule in the graph database requires its own entry in this dict.
+    fit_models: List[int] | None
+        Which models in the chemical system to fit with this tier. Fits all
+        models if ``None``. See the ``models`` attribute of ``chemical_system``.
+    fit_symbols: List[str] | Dict[str, List[int]] | None
+        Which symbols of the fitted models to fit with this tier. Fits all
+        symbols if ``None``. See the ``symbol`` attribute of ``chemical_model``.
+    step_limit: int | None
+        Stop after this many iterations of this tier.
+    accept: int
+        Pass the best this many candidates on to the next tier. Passes all
+        candidates on if 0.
+
+
+    .. TODO: Why is the objectives attribute a dict rather than a list?
+
+    See Also
+    --------
+    besmarts.mechanics.molecular_models.chemical_system,
+    besmarts.mechanics.molecular_models.chemical_model
     """
 
     def __init__(self):
@@ -2940,13 +2985,12 @@ def fit(csys, gdb, objective, psystems, nodes, wq=None, verbose=False):
     )
     return ret
 
-
 def ff_optimize(
     csys0: mm.chemical_system,
     gdb: assignments.graph_db,
     psystems: Dict[eid_t, mm.physical_system],
     strategy: forcefield_optimization_strategy,
-    chemical_objective,
+    chemical_objective: Callable[[mm.chemical_system, dict], float],
     initial_objective: objective_tier,
     tiers: List[objective_tier],
     final_objective: objective_tier,
@@ -2954,17 +2998,50 @@ def ff_optimize(
     """
     The toplevel function to run a full BESMARTS force field fit.
 
+    Fitting takes an initial force field (called a chemical system) and
+    optimizes it to reproduce physical information in a graph database. It is
+    configured via a strategy and a chemical objective function, and proceeds
+    through user-configurable tiers of optimization. Each tier performs an
+    optimization and then passes its results on to the next.
+
     Parameters
     ----------
-    csys0: The initial chemical system to fit
-    gdb: The graph_db with all data
-    psystems: The initial parameterized systems
-    strategy: The fitting strategy
-    chemical_objective: The function that will compute the chemical objective
-    initial_objective: The objective_tier that will perform the initial fit
-    tiers: The tiers that will score each parameter candidate
-    final_objective: The objective_tier that will score the remaining
-    candidates passed by the tiers
+    csys0
+        The initial force field to optimize.
+    gdb
+        The graph database containing all data used to perform the fit.
+    psystems
+        The initial parameterized systems - this is usually ``csys0``
+        applied to ``gdb``. See ``gdb_to_physical_systems``.
+    strategy
+        The fitting strategy to employ. For a reasonable default, see
+        ``forcefield_optimization_strategy_default``
+    chemical_objective
+        The function that will compute the chemical objective of the force
+        field. This takes into account only the force field itself, not the
+        physical information in ``gdb``. See ``chemical_objective`` for
+        a reasonable default.
+    initial_objective
+        The objective_tier that will perform the initial fit
+    tiers
+        The tiers that will score each parameter candidate
+    final_objective
+        The objective_tier that will score the remaining candidates passed by
+        the tiers
+
+    See Also
+    --------
+    gdb_to_physical_systems, chemical_objective, ChemicalObjective,
+    forcefield_optimization_strategy_default
+
+
+    .. TODO: When would ``psystems`` not be ``fits.gdb_to_physical_systems(gdb, csys0)``?
+        Can this parameter be replaced with the above?
+        or can the above be made a default?
+        Can ``forcefield_optimization_strategy_default`` be made a default for ``strategy``?
+        Can ``chemical_objective`` be made a default for ``chemical_objective``?
+        Can ``initial_objective`` and ``final_objective`` be folded into ``tiers``?
+        How do ``initial_objective`` and ``final_objective`` differ from ``tiers``?
     """
 
     started = datetime.datetime.now()
@@ -3293,7 +3370,7 @@ def ff_optimize(
         with multiprocessing.pool.Pool(configs.processors) as pool:
             Sj_lst = []
             for (_,_,_,oper), x in candidates.items():
-                
+
                 if oper == strategy.SPLIT:
                     # Sj_lst = [candidates[x[1]][1] for x in pq]
                     # Sj_lst = [graphs.subgraph_as_structure(x[1], topo) for x in candidates.values()]
@@ -3305,7 +3382,7 @@ def ff_optimize(
                             mm.chemical_system_get_node_hierarchy(csys, x[1]).topology
                         )
                     )
-                    
+
                     # Sj_lst = [
                     #     graphs.subgraph_as_structure(cst.hierarchy.subgraphs[x[1].index], topo)
                     #     for x in candidates.values()
@@ -3662,7 +3739,15 @@ def print_chemical_system(csys, show_parameters=None):
     mm.chemical_system_print(csys, show_parameters=show_parameters)
 
 
-def chemical_objective(csys, P0=1.0, C0=1.0, A=1.0, B=1.0, C=1.0, c=None):
+def chemical_objective(csys, kwargs=None):
+    if kwargs is None:
+        kwargs = {}
+    P0=kwargs.get("P0", 1.0)
+    C0=kwargs.get("C0", 1.0)
+    A=kwargs.get("A", 1.0)
+    B=kwargs.get("B", 1.0)
+    C=kwargs.get("C", 1.0)
+    c=kwargs.get("c", None)
 
     if c is None:
         c = mm.chemical_system_smarts_complexity(csys, B=B, C=C)
@@ -3938,7 +4023,7 @@ def chemical_system_cluster_force_constants(csys, gdb, sep, topo):
     )
     cfg = configs.smarts_perception_config(splitter, extender)
     optimization = cluster_optimization.optimization_strategy_default(cfg)
-    
+
     cst = cluster_optimization.cluster_means(
         gcd, labeler, sag, objective, optimization=optimization, initial_conditions=None
     )
@@ -3958,7 +4043,7 @@ def chemical_system_cluster_force_constants(csys, gdb, sep, topo):
     assert len(roots) == 1
     root = roots[0]
     assert root.type == "hierarchy"
-    
+
 
     for idx in [n.index for n in refhidx.index.nodes.values() if n.index != root.index]:
         if idx in refhidx.smarts:
@@ -4055,9 +4140,9 @@ def chemical_system_cluster_geom(csys, gdb, sep, topo):
         sag.append(assignments.smiles_assignment_float(smiles, measurements))
     sag = assignments.smiles_assignment_group(sag, topo)
     objective = cluster_objective.clustering_objective_mean_separation(sep, sep)
-    
 
-    
+
+
     gcd = csys.perception.gcd
     labeler = csys.perception.labeler
 
@@ -4069,7 +4154,7 @@ def chemical_system_cluster_geom(csys, gdb, sep, topo):
     )
     cfg = configs.smarts_perception_config(splitter, extender)
     optimization = cluster_optimization.optimization_strategy_default(cfg)
-    
+
     cst = cluster_optimization.cluster_means(
         gcd, labeler, sag, objective, optimization=optimization, initial_conditions=None
     )
@@ -4090,7 +4175,7 @@ def chemical_system_cluster_geom(csys, gdb, sep, topo):
     assert len(roots) == 1
     root = roots[0]
     assert root.type == "hierarchy"
-    
+
 
     for idx in [n.index for n in refhidx.index.nodes.values() if n.index != root.index]:
         if idx in refhidx.smarts:
@@ -6334,7 +6419,7 @@ def process_tiers(
                 # f" X0= {X0:10.5f}"
                 f" d(P+C)= {dX:14.5f}"
                 f" d%= {100*(cX-X0)/(X0):10.3f}%"
-                f" {S.name:6s}  " 
+                f" {S.name:6s}  "
                 f" {edits}"
             )
             max_line = max(len(cout_line), max_line)
@@ -6420,7 +6505,7 @@ def process_accepted_candidates(
             f" dC= {dC:14.5f}"
             f" d(P+C)= {dX:14.5f}"
             f" d%= {100*(cX-X0)/(X0):10.3f}%"
-            f" {S.name:6s} {reused_line}" 
+            f" {S.name:6s} {reused_line}"
             f" {edits}"
         )
         max_line = max(len(cout_line), max_line)
@@ -6881,7 +6966,7 @@ def insert_candidates(
             fitting_models = set((k[0] for k in fitkeys))
             fitkeys = [k for k in fitkeys if (k[1] in "skeler" and k[2] in assigned_nodes) or k[0] in fitting_models]
             reuse=[k for k,_ in enumerate(csys.models) if k not in fitting_models]
-            
+
             kv0 = {k: mm.chemical_system_get_value(csys, k) for k in fitkeys}
             # for k, v in kv0.items():
             #     print(f"{str(k):20s} | v0 {v:12.6g}")
@@ -6950,7 +7035,7 @@ def insert_candidates(
             repeat.add(S.name)
             sma = Sj_sma[cnd_i-1]
             kept.add(cnd_i)
-            # cnd_i = best[S.name][0] 
+            # cnd_i = best[S.name][0]
             # hent = Sj
             visited.add((hent.name, key[3]))
             edits = step.overlap[0]
