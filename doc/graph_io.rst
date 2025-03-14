@@ -17,12 +17,17 @@ coordinate:
 
 .. code-block:: python
 
->>> from besmarts.codecs.codec_rdkit import graph_codec_rdkit
->>> gcd = graph_codec_rdkit()
->>> smarts = '[#6:1]~[*:2]=[#8]'
->>> g = gcd.smarts_decode(smarts)
->>> print(gcd.smarts_encode(g))
-[#6:1]~[*:2]=[#8:3]
+    from besmarts.codecs.codec_rdkit import graph_codec_rdkit
+    gcd = graph_codec_rdkit()
+    smarts = '[#6:1]~[*:2]=[#8]'
+    g = gcd.smarts_decode(smarts)
+    print(gcd.smarts_encode(g))
+
+Output:
+
+.. code-block::
+
+    [#6:1]~[*:2]=[#8:3]
 
 We have just created a graph, but specifically a subgraph because the SMARTS
 pattern has indexed atoms. All atoms are indexed if at least one atom is
@@ -31,9 +36,13 @@ provided in the input. The index is preserved in the graph, as shown below:
 
 .. code-block:: python
 
->>> g.nodes[1]
-bechem(element:  0b1000000 hydrogen: ~0b0 connectivity_total: ~0b0 connectivity_ring: ~0b0 ring_smallest: ~0b0 a
-romatic: ~0b0 formal_charge: ~0b0)
+    g.nodes[1]
+
+Output:
+
+.. code-block:: python
+
+    bechem(element:  0b1000000 hydrogen: ~0b0 connectivity_total: ~0b0 connectivity_ring: ~0b0 ring_smallest: ~0b0 aromatic: ~0b0 formal_charge: ~0b0)
 
 which corresponds to the carbon atom in the pattern. *NOTE*: because of this feature, 
 the graphs are 1-indexed data structures. 
@@ -43,11 +52,16 @@ decoding twice:
 
 .. code-block:: python
 
->>> from besmarts.codecs import codec_native
->>> success = codec_native.graph_codec_native_save("g.bes", [g])
->>> g = codec_native.graph_codec_native_load("g.bes")[0]
->>> print(gcd.smarts_encode(g))
-[#6:1]~[*:2]=[#8:3]
+    from besmarts.codecs import codec_native
+    success = codec_native.graph_codec_native_save("g.bes", [g])
+    g = codec_native.graph_codec_native_load("g.bes")[0]
+    print(gcd.smarts_encode(g))
+
+Output:
+
+.. code-block::
+
+    [#6:1]~[*:2]=[#8:3]
 
 Letting one start quickly and from a known point and decouples the perception
 from the rest of the code. The load and save functions process list of graphs,
@@ -60,12 +74,17 @@ Now we move onto SMILES:
 
 .. code-block:: python
 
->>> from besmarts.codecs.codec_rdkit import graph_codec_rdkit
->>> gcd = graph_codec_rdkit()
->>> g = 'CCC=O'
->>> g = gcd.smiles_decode(g)
->>> print(gcd.smiles_encode(g))
-C([H])([H])([H])C([H])([H])C([H])=O
+    from besmarts.codecs.codec_rdkit import graph_codec_rdkit
+    gcd = graph_codec_rdkit()
+    g = 'CCC=O'
+    g = gcd.smiles_decode(g)
+    print(gcd.smiles_encode(g))
+
+Output:
+
+.. code-block::
+
+    C([H])([H])([H])C([H])([H])C([H])=O
 
 Here the graphs generated from the SMARTS code path and the SMILES code path are
 the same. The only difference is that the SMARTS was tagged, and was therefore
@@ -86,39 +105,41 @@ and then only print SMARTS patterns using the element and bond order primitives:
 
 .. code-block:: python
 
->>> from besmarts.codecs.codec_rdkit import graph_codec_rdkit
->>> from besmarts.core import graphs
->>> from besmarts.core.primitives import primitive_key
->>> # the default primitives
->>> atom_primitives = tuple(
->>>     (
->>>         "element",
->>>         "hydrogen",
->>>         "connectivity_total",
->>>         "connectivity_ring",
->>>         "ring_smallest",
->>>         "aromatic",
->>>         "formal_charge",
->>>     )
->>> )
->>> bond_primitives = tuple(
->>>     (
->>>         "bond_ring",
->>>         "bond_order",
->>>     )
->>> )
->>> gcd = graph_codec_rdkit(
->>>     atom_primitives=atom_primitives, bond_primitives=bond_primitives
->>> )
->>> g = 'CC'
->>> g = gcd.smiles_decode(g)
->>> graphs.graph_set_primitives_atom(g, [primitive_key.ELEMENT])
->>> graphs.graph_set_primitives_bond(g, [primitive_key.BOND_ORDER])
->>> print(gcd.smarts_encode(g))
-[#6](-[#1])(-[#1])(-[#1])-[#6](-[#1])(-[#1])-[#1]
->>> graphs.graph_set_primitives_atom(g, atom_primitives[::-1])
->>> print(gcd.smarts_encode(g))
-[+0A!rx0X4H3#6](-[+0A!rx0X1H0#1])(-[+0A!rx0X1H0#1])(-[+0A!rx0X1H0#1])-[+0A!rx0X4H3#6](-[+0A!rx0X1H0#1])(-[+0A!rx0X1H0#1])-[+0A!rx0X1H0#1]
+    from besmarts.codecs.codec_rdkit import graph_codec_rdkit
+    from besmarts.core import graphs
+    from besmarts.core.primitives import primitive_key
+    # the default primitives
+    atom_primitives = tuple(
+        (
+            "element",
+            "hydrogen",
+            "connectivity_total",
+            "connectivity_ring",
+            "ring_smallest",
+            "aromatic",
+            "formal_charge",
+        )
+    )
+    bond_primitives = tuple(
+        (
+            "bond_ring",
+            "bond_order",
+        )
+    )
+    gcd = graph_codec_rdkit(
+        atom_primitives=atom_primitives, bond_primitives=bond_primitives
+    )
+    g = 'CC'
+    g = gcd.smiles_decode(g)
+    graphs.graph_set_primitives_atom(g, [primitive_key.ELEMENT])
+    graphs.graph_set_primitives_bond(g, [primitive_key.BOND_ORDER])
+    print(gcd.smarts_encode(g))
+
+Output:
+
+.. code-block::
+
+    [#6](-[#1])(-[#1])(-[#1])-[#6](-[#1])(-[#1])-[#1]
 
 This will not delete the other primitives as show above. Subsequent operations,
 such as mapping, printing, and hashing, will only use the set primitives.
@@ -135,16 +156,21 @@ atoms define the topology. For example, if have the SMARTS
 
 .. code-block:: python
 
->>> from besmarts.codecs.codec_rdkit import graph_codec_rdkit
->>> from besmarts.core import graphs
->>> from besmarts.core import topology
->>> gcd = graph_codec_rdkit()
->>> g = "[#6:1]([#6])[#6:2]"
->>> g = gcd.smarts_decode(g)
->>> topo = topology.bond_topology()
->>> bond = graphs.subgraph_to_structure(g, topo)
->>> print(gcd.smarts_encode(bond))
-[#6:1]([#6:2])[#6]
+    from besmarts.codecs.codec_rdkit import graph_codec_rdkit
+    from besmarts.core import graphs
+    from besmarts.core import topology
+    gcd = graph_codec_rdkit()
+    g = "[#6:1]([#6])[#6:2]"
+    g = gcd.smarts_decode(g)
+    topo = topology.bond_topology()
+    bond = graphs.subgraph_to_structure(g, topo)
+    print(gcd.smarts_encode(bond))
+
+Output:
+
+.. code-block::
+
+    [#6:1]([#6:2])[#6]
 
 Note that loading a SMARTS always produces a subgraph data type, and so the
 untagged atom in the pattern will also be part of the subgraph. This would
@@ -157,75 +183,80 @@ to identify the indices for each of the structure types:
 
 .. code-block:: python
 
->>> from besmarts.codecs.codec_rdkit import graph_codec_rdkit
->>> from besmarts.core import graphs 
->>> gcd = graph_codec_rdkit()
->>> g = 'CC'
->>> g = gcd.smiles_decode(g)
->>> print("Atoms:")
->>> for indices in graphs.graph_atoms(g):
->>>     print(indices)
->>> print("Bonds:")
->>> for indices in graphs.graph_bonds(g):
->>>     print(indices)
->>> print("Angles:")
->>> for indices in graphs.graph_angles(g):
->>>     print(indices)
->>> print("Torsions:")
->>> for indices in graphs.graph_torsions(g):
->>>     print(indices)
->>> print("Out-of-Planes:")
->>> for indices in graphs.graph_outofplanes(g):
->>>     print(indices)
-Atoms:
-(1,)
-(2,)
-(3,)
-(4,)
-(5,)
-(6,)
-(7,)
-(8,)
-Bonds:
-(1, 2)
-(1, 3)
-(1, 4)
-(1, 5)
-(2, 6)
-(2, 7)
-(2, 8)
-Angles:
-(2, 1, 3)
-(2, 1, 4)
-(2, 1, 5)
-(3, 1, 4)
-(3, 1, 5)
-(4, 1, 5)
-(1, 2, 6)
-(1, 2, 7)
-(1, 2, 8)
-(6, 2, 7)
-(6, 2, 8)
-(7, 2, 8)
-Torsions:
-(3, 1, 2, 6)
-(3, 1, 2, 7)
-(3, 1, 2, 8)
-(4, 1, 2, 6)
-(4, 1, 2, 7)
-(4, 1, 2, 8)
-(5, 1, 2, 6)
-(5, 1, 2, 7)
-(5, 1, 2, 8)
-Out-of-Planes:
-(2, 1, 3, 4)
-(2, 1, 3, 5)
-(2, 1, 4, 5)
-(3, 1, 4, 5)
-(1, 2, 6, 7)
-(1, 2, 6, 8)
-(1, 2, 7, 8)
-(6, 2, 7, 8)
+    from besmarts.codecs.codec_rdkit import graph_codec_rdkit
+    from besmarts.core import graphs 
+    gcd = graph_codec_rdkit()
+    g = 'CC'
+    g = gcd.smiles_decode(g)
+    print("Atoms:")
+    for indices in graphs.graph_atoms(g):
+        print(indices)
+    print("Bonds:")
+    for indices in graphs.graph_bonds(g):
+        print(indices)
+    print("Angles:")
+    for indices in graphs.graph_angles(g):
+        print(indices)
+    print("Torsions:")
+    for indices in graphs.graph_torsions(g):
+        print(indices)
+    print("Out-of-Planes:")
+    for indices in graphs.graph_outofplanes(g):
+        print(indices)
+
+Output:
+
+.. code-block::
+
+    Atoms:
+    (1,)
+    (2,)
+    (3,)
+    (4,)
+    (5,)
+    (6,)
+    (7,)
+    (8,)
+    Bonds:
+    (1, 2)
+    (1, 3)
+    (1, 4)
+    (1, 5)
+    (2, 6)
+    (2, 7)
+    (2, 8)
+    Angles:
+    (2, 1, 3)
+    (2, 1, 4)
+    (2, 1, 5)
+    (3, 1, 4)
+    (3, 1, 5)
+    (4, 1, 5)
+    (1, 2, 6)
+    (1, 2, 7)
+    (1, 2, 8)
+    (6, 2, 7)
+    (6, 2, 8)
+    (7, 2, 8)
+    Torsions:
+    (3, 1, 2, 6)
+    (3, 1, 2, 7)
+    (3, 1, 2, 8)
+    (4, 1, 2, 6)
+    (4, 1, 2, 7)
+    (4, 1, 2, 8)
+    (5, 1, 2, 6)
+    (5, 1, 2, 7)
+    (5, 1, 2, 8)
+    Out-of-Planes:
+    (2, 1, 3, 4)
+    (2, 1, 3, 5)
+    (2, 1, 4, 5)
+    (3, 1, 4, 5)
+    (1, 2, 6, 7)
+    (1, 2, 6, 8)
+    (1, 2, 7, 8)
+    (6, 2, 7, 8)
 
 These indices are sorted in a special order. The first indices describe the atoms
 of the structure (bond, angle, etc). Because these topologies are invariant to
@@ -234,59 +265,64 @@ used to get the canonical ordering:
 
 .. code-block:: python
 
->>> from besmarts.codecs.codec_rdkit import graph_codec_rdkit
->>> from besmarts.core import graphs 
->>> from besmarts.core import geometry
->>> gcd = graph_codec_rdkit()
->>> g = 'CC'
->>> g = gcd.smiles_decode(g)
->>> for indices in graphs.graph_bonds(g):
->>>     print(indices, indices == geometry.bond(indices[::-1]))
->>> for indices in graphs.graph_angles(g):
->>>     print(indices, indices == geometry.angle(indices[::-1]))
->>> for indices in graphs.graph_torsions(g):
->>>     print(indices, indices == geometry.torsion(indices[::-1]))
->>> for indices in graphs.graph_outofplanes(g):
->>>     idx = [indices[2], indices[1], indices[0], indices[3]]
->>>     print(indices, indices == geometry.outofplane(idx))
-(1, 2) True
-(1, 3) True
-(1, 4) True
-(1, 5) True
-(2, 6) True
-(2, 7) True
-(2, 8) True
-(2, 1, 3) True
-(2, 1, 4) True
-(2, 1, 5) True
-(3, 1, 4) True
-(3, 1, 5) True
-(4, 1, 5) True
-(1, 2, 6) True
-(1, 2, 7) True
-(1, 2, 8) True
-(6, 2, 7) True
-(6, 2, 8) True
-(7, 2, 8) True
-(3, 1, 2, 6) True
-(3, 1, 2, 7) True
-(3, 1, 2, 8) True
-(4, 1, 2, 6) True
-(4, 1, 2, 7) True
-(4, 1, 2, 8) True
-(5, 1, 2, 6) True
-(5, 1, 2, 7) True
-(5, 1, 2, 8) True
-(2, 1, 3, 4) True
-(2, 1, 3, 5) True
-(2, 1, 4, 5) True
-(3, 1, 4, 5) True
-(1, 2, 6, 7) True
-(1, 2, 6, 8) True
-(1, 2, 7, 8) True
-(6, 2, 7, 8) True
+    from besmarts.codecs.codec_rdkit import graph_codec_rdkit
+    from besmarts.core import graphs 
+    from besmarts.core import geometry
+    gcd = graph_codec_rdkit()
+    g = 'CC'
+    g = gcd.smiles_decode(g)
+    for indices in graphs.graph_bonds(g):
+        print(indices, indices == geometry.bond(indices[::-1]))
+    for indices in graphs.graph_angles(g):
+        print(indices, indices == geometry.angle(indices[::-1]))
+    for indices in graphs.graph_torsions(g):
+        print(indices, indices == geometry.torsion(indices[::-1]))
+    for indices in graphs.graph_outofplanes(g):
+        idx = [indices[2], indices[1], indices[0], indices[3]]
+        print(indices, indices == geometry.outofplane(idx))
 
-*NOTE* The central atom in out-of-planes is always index 1 (0-based).
+Output:
+
+.. code-block::
+
+    (1, 2) True
+    (1, 3) True
+    (1, 4) True
+    (1, 5) True
+    (2, 6) True
+    (2, 7) True
+    (2, 8) True
+    (2, 1, 3) True
+    (2, 1, 4) True
+    (2, 1, 5) True
+    (3, 1, 4) True
+    (3, 1, 5) True
+    (4, 1, 5) True
+    (1, 2, 6) True
+    (1, 2, 7) True
+    (1, 2, 8) True
+    (6, 2, 7) True
+    (6, 2, 8) True
+    (7, 2, 8) True
+    (3, 1, 2, 6) True
+    (3, 1, 2, 7) True
+    (3, 1, 2, 8) True
+    (4, 1, 2, 6) True
+    (4, 1, 2, 7) True
+    (4, 1, 2, 8) True
+    (5, 1, 2, 6) True
+    (5, 1, 2, 7) True
+    (5, 1, 2, 8) True
+    (2, 1, 3, 4) True
+    (2, 1, 3, 5) True
+    (2, 1, 4, 5) True
+    (3, 1, 4, 5) True
+    (1, 2, 6, 7) True
+    (1, 2, 6, 8) True
+    (1, 2, 7, 8) True
+    (6, 2, 7, 8) True
+
+*NOTE*: The central atom in out-of-planes is always index 1 (0-based).
 
 Next, we get a structure for each type of topology. This will create a new graph
 for each internal coordinate. Some atoms are indistinguishable, and so we would
@@ -295,40 +331,45 @@ data structure.
 
 .. code-block:: python
 
->>> from besmarts.codecs.codec_rdkit import graph_codec_rdkit
->>> from besmarts.core import graphs 
->>> gcd = graph_codec_rdkit()
->>> g = 'CC'
->>> g = gcd.smiles_decode(g)
->>> print("Atoms:")
->>> for struct in set(graphs.graph_to_structure_atoms(g)):
->>>     print(gcd.smarts_encode(struct))
->>> print("Bonds:")
->>> for struct in set(graphs.graph_to_structure_bonds(g)):
->>>     print(gcd.smarts_encode(struct))
->>> print("Angles:")
->>> for struct in set(graphs.graph_to_structure_angles(g)):
->>>     print(gcd.smarts_encode(struct))
->>> print("Torsions:")
->>> for struct in set(graphs.graph_to_structure_torsions(g)):
->>>     print(gcd.smarts_encode(struct))
->>> print("Out-of-Planes:")
->>> for struct in set(graphs.graph_to_structure_outofplanes(g)):
->>>     print(gcd.smarts_encode(struct))
-Atoms:
-[#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#6H3X4x0!rA+0](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
-[#1H0X1x0!rA+0:3]!@;-[#6H3X4x0!rA+0](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#6H3X4x0!rA+0](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
-Bonds:
-[#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#6H3X4x0!rA+0:2](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
-[#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0:3])(!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#6H3X4x0!rA+0](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
-Angles:
-[#1H0X1x0!rA+0:3]!@;-[#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0:4])(!@;-[#1H0X1x0!rA+0])!@;-[#6H3X4x0!rA+0](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
-[#6H3X4x0!rA+0:2](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0:3])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
-Torsions:
-[#1H0X1x0!rA+0:3]!@;-[#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#6H3X4x0!rA+0:2](!@;-[#1H0X1x0!rA+0:6])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
-Out-of-Planes:
-[#6H3X4x0!rA+0:2](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0:3])(!@;-[#1H0X1x0!rA+0:4])!@;-[#1H0X1x0!rA+0]
-[#1H0X1x0!rA+0:3]!@;-[#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0:4])(!@;-[#1H0X1x0!rA+0:5])!@;-[#6H3X4x0!rA+0](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
+    from besmarts.codecs.codec_rdkit import graph_codec_rdkit
+    from besmarts.core import graphs 
+    gcd = graph_codec_rdkit()
+    g = 'CC'
+    g = gcd.smiles_decode(g)
+    print("Atoms:")
+    for struct in set(graphs.graph_to_structure_atoms(g)):
+        print(gcd.smarts_encode(struct))
+    print("Bonds:")
+    for struct in set(graphs.graph_to_structure_bonds(g)):
+        print(gcd.smarts_encode(struct))
+    print("Angles:")
+    for struct in set(graphs.graph_to_structure_angles(g)):
+        print(gcd.smarts_encode(struct))
+    print("Torsions:")
+    for struct in set(graphs.graph_to_structure_torsions(g)):
+        print(gcd.smarts_encode(struct))
+    print("Out-of-Planes:")
+    for struct in set(graphs.graph_to_structure_outofplanes(g)):
+        print(gcd.smarts_encode(struct))
+
+Output:
+
+.. code-block::
+
+    Atoms:
+    [#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#6H3X4x0!rA+0](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
+    [#1H0X1x0!rA+0:3]!@;-[#6H3X4x0!rA+0](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#6H3X4x0!rA+0](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
+    Bonds:
+    [#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#6H3X4x0!rA+0:2](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
+    [#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0:3])(!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#6H3X4x0!rA+0](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
+    Angles:
+    [#1H0X1x0!rA+0:3]!@;-[#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0:4])(!@;-[#1H0X1x0!rA+0])!@;-[#6H3X4x0!rA+0](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
+    [#6H3X4x0!rA+0:2](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0:3])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
+    Torsions:
+    [#1H0X1x0!rA+0:3]!@;-[#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#6H3X4x0!rA+0:2](!@;-[#1H0X1x0!rA+0:6])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
+    Out-of-Planes:
+    [#6H3X4x0!rA+0:2](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0:3])(!@;-[#1H0X1x0!rA+0:4])!@;-[#1H0X1x0!rA+0]
+    [#1H0X1x0!rA+0:3]!@;-[#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0:4])(!@;-[#1H0X1x0!rA+0:5])!@;-[#6H3X4x0!rA+0](!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
 
 As expected, there are only 2 unique atoms, bonds, angles, torsions, and
 out-of-planes for ethane. A few words about the returned structures. The
@@ -342,40 +383,45 @@ contain the primary nodes in the internal coordinate:
 
 .. code-block:: python
    
->>> from besmarts.codecs.codec_rdkit import graph_codec_rdkit
->>> from besmarts.core import graphs, mapper
->>> gcd = graph_codec_rdkit()
->>> g = 'CC'
->>> g = gcd.smiles_decode(g)
->>> print("Atoms:")
->>> for struct in set(graphs.graph_to_structure_atoms(g)):
->>>     print(gcd.smarts_encode(graphs.structure_up_to_depth(struct, 0)))
->>> print("Bonds:")
->>> for struct in set(graphs.graph_to_structure_bonds(g)):
->>>     print(gcd.smarts_encode(graphs.structure_up_to_depth(struct, 0)))
->>> print("Angles:")
->>> for struct in set(graphs.graph_to_structure_angles(g)):
->>>     print(gcd.smarts_encode(graphs.structure_up_to_depth(struct, 0)))
->>> print("Torsions:")
->>> for struct in set(graphs.graph_to_structure_torsions(g)):
->>>     print(gcd.smarts_encode(graphs.structure_up_to_depth(struct, 0)))
->>> print("Out-of-Planes:")
->>> for struct in set(graphs.graph_to_structure_outofplanes(g)):
->>>     print(gcd.smarts_encode(graphs.structure_up_to_depth(struct, 0)))
-Atoms:
-[#1H0X1x0!rA+0:3]
-[#6H3X4x0!rA+0:1]
-Bonds:
-[#6H3X4x0!rA+0:1]!@;-[#6H3X4x0!rA+0:2]
-[#6H3X4x0!rA+0:1]!@;-[#1H0X1x0!rA+0:3]
-Angles:
-[#1H0X1x0!rA+0:3]!@;-[#6H3X4x0!rA+0:1]!@;-[#1H0X1x0!rA+0:4]
-[#6H3X4x0!rA+0:2]!@;-[#6H3X4x0!rA+0:1]!@;-[#1H0X1x0!rA+0:3]
-Torsions:
-[#1H0X1x0!rA+0:3]!@;-[#6H3X4x0!rA+0:1]!@;-[#6H3X4x0!rA+0:2]!@;-[#1H0X1x0!rA+0:6]
-Out-of-Planes:
-[#6H3X4x0!rA+0:2]!@;-[#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0:3])!@;-[#1H0X1x0!rA+0:4]
-[#1H0X1x0!rA+0:3]!@;-[#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0:4])!@;-[#1H0X1x0!rA+0:5]
+    from besmarts.codecs.codec_rdkit import graph_codec_rdkit
+    from besmarts.core import graphs, mapper
+    gcd = graph_codec_rdkit()
+    g = 'CC'
+    g = gcd.smiles_decode(g)
+    print("Atoms:")
+    for struct in set(graphs.graph_to_structure_atoms(g)):
+        print(gcd.smarts_encode(graphs.structure_up_to_depth(struct, 0)))
+    print("Bonds:")
+    for struct in set(graphs.graph_to_structure_bonds(g)):
+        print(gcd.smarts_encode(graphs.structure_up_to_depth(struct, 0)))
+    print("Angles:")
+    for struct in set(graphs.graph_to_structure_angles(g)):
+        print(gcd.smarts_encode(graphs.structure_up_to_depth(struct, 0)))
+    print("Torsions:")
+    for struct in set(graphs.graph_to_structure_torsions(g)):
+        print(gcd.smarts_encode(graphs.structure_up_to_depth(struct, 0)))
+    print("Out-of-Planes:")
+    for struct in set(graphs.graph_to_structure_outofplanes(g)):
+        print(gcd.smarts_encode(graphs.structure_up_to_depth(struct, 0)))
+
+Output:
+
+.. code-block::
+
+    Atoms:
+    [#1H0X1x0!rA+0:3]
+    [#6H3X4x0!rA+0:1]
+    Bonds:
+    [#6H3X4x0!rA+0:1]!@;-[#6H3X4x0!rA+0:2]
+    [#6H3X4x0!rA+0:1]!@;-[#1H0X1x0!rA+0:3]
+    Angles:
+    [#1H0X1x0!rA+0:3]!@;-[#6H3X4x0!rA+0:1]!@;-[#1H0X1x0!rA+0:4]
+    [#6H3X4x0!rA+0:2]!@;-[#6H3X4x0!rA+0:1]!@;-[#1H0X1x0!rA+0:3]
+    Torsions:
+    [#1H0X1x0!rA+0:3]!@;-[#6H3X4x0!rA+0:1]!@;-[#6H3X4x0!rA+0:2]!@;-[#1H0X1x0!rA+0:6]
+    Out-of-Planes:
+    [#6H3X4x0!rA+0:2]!@;-[#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0:3])!@;-[#1H0X1x0!rA+0:4]
+    [#1H0X1x0!rA+0:3]!@;-[#6H3X4x0!rA+0:1](!@;-[#1H0X1x0!rA+0:4])!@;-[#1H0X1x0!rA+0:5]
 
 Keep in mind that the `graphs.graph_to_structure_*` functions remove nodes and
 therefore change the graph. Also, since the `graphs.structure_up_to_depth`
@@ -384,22 +430,27 @@ larger graphs. Instead, one should extend the selection beforehand:
 
 .. code-block:: python
 
->>> from besmarts.core import mapper, configs
->>> cfg = configs.smarts_extender_config(9,9,True)
->>> for struct in set(graphs.graph_to_structure_atoms(g)):
->>>     # modifies structures in-place (just structure.select)
->>>     mapper.mapper_smarts_extend(cfg, [struct])
->>>     print("Atom structure:")
->>>     for d in range(0, graphs.structure_max_depth(struct)):
->>>         s = graphs.structure_up_to_depth(struct, d)
->>>         print(f"Depth {d}: {gcd.smarts_encode(s)}")
-Atom structure:
-Depth 0: [#1H0X1x0!rA+0:3]
-Depth 1: [#1H0X1x0!rA+0:3]!@;-[#6H3X4x0!rA+0]
-Depth 2: [#1H0X1x0!rA+0:3]!@;-[#6H3X4x0!rA+0](!@;-[#6H3X4x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
-Atom structure:
-Depth 0: [#6H3X4x0!rA+0:1]
-Depth 1: [#6H3X4x0!rA+0:1](!@;-[#6H3X4x0!rA+0])(!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
+    from besmarts.core import mapper, configs
+    cfg = configs.smarts_extender_config(9,9,True)
+    for struct in set(graphs.graph_to_structure_atoms(g)):
+        # modifies structures in-place (just structure.select)
+        mapper.mapper_smarts_extend(cfg, [struct])
+        print("Atom structure:")
+        for d in range(0, graphs.structure_max_depth(struct)):
+            s = graphs.structure_up_to_depth(struct, d)
+            print(f"Depth {d}: {gcd.smarts_encode(s)}")
+
+Output:
+
+.. code-block::
+
+    Atom structure:
+    Depth 0: [#1H0X1x0!rA+0:3]
+    Depth 1: [#1H0X1x0!rA+0:3]!@;-[#6H3X4x0!rA+0]
+    Depth 2: [#1H0X1x0!rA+0:3]!@;-[#6H3X4x0!rA+0](!@;-[#6H3X4x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
+    Atom structure:
+    Depth 0: [#6H3X4x0!rA+0:1]
+    Depth 1: [#6H3X4x0!rA+0:1](!@;-[#6H3X4x0!rA+0])(!@;-[#1H0X1x0!rA+0])(!@;-[#1H0X1x0!rA+0])!@;-[#1H0X1x0!rA+0]
 
 At this point we have created a graph from a SMILES and examined the SMARTS
 patterns of all generated internal coordinates and showed how to generate

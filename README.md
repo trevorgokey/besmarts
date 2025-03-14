@@ -20,7 +20,7 @@ for the theoretical unpinnings on which this package is based.
 
 # Installation
 
-BESMARTS is on PyPi, but certain dependencies are not and only exist on conda
+BESMARTS is on PyPI, but certain dependencies are not and only exist on conda
 unless they are built from source. Currently, the best way to install all
 functionality is to use conda to create a python environment with Ambertools:
 ```

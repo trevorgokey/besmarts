@@ -18,28 +18,28 @@ same labels. Here is how to do it:
 
 .. code-block:: python
 
->>> from besmarts.cluster.cluster_assignment import smiles_assignment_str
->>> from besmarts.core.assignments import smiles_assignment_group_bonds
->>> from besmarts.cluster.cluster_optimization import cluster_classifications
->>> from besmarts.codecs.codec_rdkit import graph_codec_rdkit
->>> from besmarts.assign.hierarchy_assign_rdkit import smarts_hierarchy_assignment_rdkit
->>> from besmarts.core import hierarchies
->>> from besmarts.core import configs
->>> 
->>> configs.workqueue_port = 54321 # make sure this port is open/unused
->>> configs.remote_compute_enable = False # port is only open to localhost
->>> 
->>> gcd = graph_codec_rdkit()
->>> labeler = smarts_hierarchy_assignment_rdkit()
->>> 
->>> smi = "[C:1]([H:3])#[C:2][H:4]"
->>> assns = {(1,2): "a", (1,3): "b", (2,4): "b"}
->>> sa  = smiles_assignment_str(smi, assns)
->>> 
->>> sag = smiles_assignment_group_bonds([sa])
->>> cst = cluster_classifications(gcd, labeler, sag)
->>> 
->>> hierarchies.smarts_hierarchy_print(cst.hierarchy)
+    from besmarts.cluster.cluster_assignment import smiles_assignment_str
+    from besmarts.core.assignments import smiles_assignment_group_bonds
+    from besmarts.cluster.cluster_optimization import cluster_classifications
+    from besmarts.codecs.codec_rdkit import graph_codec_rdkit
+    from besmarts.assign.hierarchy_assign_rdkit import smarts_hierarchy_assignment_rdkit
+    from besmarts.core import hierarchies
+    from besmarts.core import configs
+    
+    configs.workqueue_port = 54321 # make sure this port is open/unused
+    configs.remote_compute_enable = False # port is only open to localhost
+    
+    gcd = graph_codec_rdkit()
+    labeler = smarts_hierarchy_assignment_rdkit()
+    
+    smi = "[C:1]([H:3])#[C:2][H:4]"
+    assns = {(1,2): "a", (1,3): "b", (2,4): "b"}
+    sa  = smiles_assignment_str(smi, assns)
+    
+    sag = smiles_assignment_group_bonds([sa])
+    cst = cluster_classifications(gcd, labeler, sag)
+    
+    hierarchies.smarts_hierarchy_print(cst.hierarchy)
 
 
 .. code-block::
@@ -534,31 +534,31 @@ hierarchy that separates bond 1-2 from bonds 1-3 and 2-4 since the difference
 is 0.2 A and above the 0.1 threshold.
 
 .. code-block:: python
->>> from besmarts.cluster.cluster_assignment import smiles_assignment_float
->>> from besmarts.core.assignments import smiles_assignment_group_bonds
->>> from besmarts.cluster.cluster_optimization import cluster_means
->>> from besmarts.cluster.cluster_objective import clustering_objective_mean_separation
->>> from besmarts.codecs.codec_rdkit import graph_codec_rdkit
->>> from besmarts.assign.hierarchy_assign_rdkit import smarts_hierarchy_assignment_rdkit
->>> from besmarts.core import hierarchies
->>> from besmarts.core import configs
->>> 
->>> configs.workqueue_port = 54321 # make sure this port is open/unused
->>> configs.remote_compute_enable = False # port is only open to localhost
->>> 
->>> gcd = graph_codec_rdkit()
->>> labeler = smarts_hierarchy_assignment_rdkit()
->>> 
->>> smi = "[C:1]([H:3])#[C:2][H:4]"
->>> assns = {(1,2): [1.1], (1,3): [1.3], (2,4): [1.3]}
->>> sa  = smiles_assignment_float(smi, assns)
->>> 
->>> objective = clustering_objective_mean_separation(split_separation=0.1)
->>> 
->>> sag = smiles_assignment_group_bonds([sa])
->>> cst = cluster_means(gcd, labeler, sag, objective=objective)
->>> 
->>> hierarchies.smarts_hierarchy_print(cst.hierarchy)
+    from besmarts.cluster.cluster_assignment import smiles_assignment_float
+    from besmarts.core.assignments import smiles_assignment_group_bonds
+    from besmarts.cluster.cluster_optimization import cluster_means
+    from besmarts.cluster.cluster_objective import clustering_objective_mean_separation
+    from besmarts.codecs.codec_rdkit import graph_codec_rdkit
+    from besmarts.assign.hierarchy_assign_rdkit import smarts_hierarchy_assignment_rdkit
+    from besmarts.core import hierarchies
+    from besmarts.core import configs
+    
+    configs.workqueue_port = 54321 # make sure this port is open/unused
+    configs.remote_compute_enable = False # port is only open to localhost
+    
+    gcd = graph_codec_rdkit()
+    labeler = smarts_hierarchy_assignment_rdkit()
+    
+    smi = "[C:1]([H:3])#[C:2][H:4]"
+    assns = {(1,2): [1.1], (1,3): [1.3], (2,4): [1.3]}
+    sa  = smiles_assignment_float(smi, assns)
+    
+    objective = clustering_objective_mean_separation(split_separation=0.1)
+    
+    sag = smiles_assignment_group_bonds([sa])
+    cst = cluster_means(gcd, labeler, sag, objective=objective)
+    
+    hierarchies.smarts_hierarchy_print(cst.hierarchy)
 
 .. code-block::
 
