@@ -749,7 +749,7 @@ def chemical_model_to_xml_dict(csys):
 def smirnoff_load(
     fname, pcp: perception.perception_model
 ) -> mm.chemical_system:
-    """Load a SMIRNOFF ``.offxml`` file into a :py:class:`chemical_system`.
+    """Load a SMIRNOFF ``.offxml`` file into a ``chemical_system``.
 
     Parameters
     ----------
@@ -776,6 +776,11 @@ def smirnoff_load(
     ...     )
     ... )
     <besmarts.mechanics.molecular_models.chemical_system at ...>
+
+    See Also
+    ========
+    besmarts.mechanics.molecular_models.chemical_system
+
     """
     d = smirnoff_xml.smirnoff_xml_read(fname)
 
