@@ -579,7 +579,7 @@ class primitive_codec_formal_charge_rdkit(primitive_codec_formal_charge):
         x = int(obj.GetFormalCharge())
         array = dtype()
         array[self.encode_int(x)] = True
-        array.maxbits = 8
+        array.maxbits = 9
         return array
 
 
