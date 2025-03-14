@@ -21,7 +21,6 @@ setuptools.setup(
         'besmarts.cluster',
         'besmarts.codecs',
         'besmarts.core',
-        'besmarts.mechanics'
     ],
     install_requires=requirements,
     classifiers=[
