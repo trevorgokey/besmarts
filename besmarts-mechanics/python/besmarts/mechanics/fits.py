@@ -10,7 +10,7 @@ import pickle
 import multiprocessing
 import collections
 import sys
-from typing import Protocol
+from typing import Any, Literal, Mapping, Protocol
 import math
 import itertools
 import numpy as np
@@ -45,6 +45,7 @@ from besmarts.mechanics import smirnoff_models
 import scipy.optimize
 # import scipy.stats
 eid_t = int
+gid_t = int
 
 PRECISION = configs.precision
 
@@ -5888,15 +5889,51 @@ def reset_project_torsions(csys, gdb, psystems, max_n=6, alpha=-.25, m=2, verbos
 
 
 def generate_candidates(
-    csys,
-    psystems,
-    gdb,
-    G0,
-    macro,
-    strategy,
-    union_cache,
-    wq
+    csys: mm.chemical_system,
+    psystems: dict[eid_t, mm.physical_system],
+    gdb: assignments.graph_db,
+    G0: dict[gid_t, arrays.intvec],
+    macro: optimization.optimization_iteration,
+    strategy: forcefield_optimization_strategy,
+    union_cache: dict,
+    wq: compute.workqueue,
 ):
+    """
+    Generate candidate modifications to the provided chemical system.
+
+    Parameters
+    ==========
+    csys
+        The chemical system to generate candidate modifications of
+    psystems
+        Physical systems parametrized by ``csys``.
+    gdb
+        Graph DB containing data to use to produce candidates.
+    G0
+        The same graph in vectorized format.
+    macro
+        The current macro iteration.
+    strategy
+        The strategy whose current step we are generating candidates for.
+    union_cache
+        A cache of SMARTS unions. Pass the same dictionary instance to
+        subsequent calls of this function to cache this work.
+    wq
+        The work queue to execute work on.
+
+    Returns
+    =======
+    candidates
+        A dictionary that describes the suggested changes to the input chemical
+        system.
+    iteration
+        The number of iterations performed in this call to ``generate_candidates``
+
+    .. todo:
+        What are psystems, gdb, and G0 used for?
+        How should we think about macro iterations?
+        What is the format of the returned candidates dict?
+    """
 
     step = None
     gcd = csys.perception.gcd
