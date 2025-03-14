@@ -147,8 +147,8 @@ class physical_system:
 class chemical_system:
     """Force field parameters for application via chemical perception.
 
-    A ``chemical_system`` is usually constructed from a SMIRNOFF force field via
-    the ``besmarts.mechanics.smirnoff_models.smirnoff_load`` function.
+    A ``chemical_system`` may be constructed from a SMIRNOFF force field via
+    the ``smirnoff_load`` function.
 
     Attributes
     ----------
