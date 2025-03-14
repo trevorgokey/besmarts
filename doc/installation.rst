@@ -6,24 +6,28 @@ unless they are built from source. Currently, the best way to install all
 functionality is to use conda to create a python environment with Ambertools:
 
 .. code-block:: bash
+
      conda create -n besmarts -c conda-forge python ambertools 
      conda activate besmarts
 
 and then install BESMARTS via pip:
 
 .. code-block:: bash
+
     pip install 'besmarts[rdkit,scipy,openmm]'
 
 For a more custom installation, one can install from git. If ambertools is not
 needed, one may set up an environment via
 
 .. code-block:: bash
+
     python -m venv besmarts
     . besmarts/bin/activate
 
 followed by the actual install in develop mode:
 
 .. code-block:: bash
+
     git clone https://github.com/trevorgokey/besmarts besmarts-git
     cd besmarts-git/besmarts-core/python
     python -m pip install -e .
