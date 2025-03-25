@@ -1897,6 +1897,7 @@ def split_subgraphs_distributed(
                 if not ilst:
                     continue
 
+                ilst = sorted(ilst, key=lambda x: graphs.graph_complexity(sj[x-1].H))
                 i = ilst[0]
                 match = [*reversed(all_matched)][i-1]
                 unmatch = sorted(indices.difference(match))
