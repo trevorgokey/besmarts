@@ -619,7 +619,7 @@ class compute_config_hessian(compute_config):
                     HESSIANS: tbl_hess,
                     GRADIENTS: tbl_grad
                 }
-                if not self.enable_minimization:
+                if not (self.enable_minimization or self.method_vib_modes == "min"):
                     r.pop(POSITIONS)
 
                 results.append(r)
@@ -1067,10 +1067,11 @@ class objective_config_gradient(objective_config):
                         x1 = [arrays.array_magnitude(x1[i:i+3]) for i in range(0, len(x1), 3)]
 
                 x = arrays.array_difference(x1, x0)
+
                 xcart = arrays.array_difference(x1cart, x0cart)
                 nlines = len(out)
                 if self.verbose > 0:
-                    mode = "magnitude" if self.force_mode == "magnitude" else ""
+                    mode = self.force_mode
                     if self.verbose > 1:
                         out.append(f" EID {eid} TID {tid} Gradient {mode} objective:")
                     if mode == "magnitude":
@@ -1093,9 +1094,10 @@ class objective_config_gradient(objective_config):
                             totalxx = arrays.array_add(totalxx, xx)
                             xyz1 = " ".join([f"{xi:12.4e}" for xi in x1cart[3*i:3*i+3]])
                             xyz0 = " ".join([f"{xi:12.4e}" for xi in x0cart[3*i:3*i+3]])
-                            dxyz = " ".join([f"{xi:12.4e}" for xi in xx])
+                            dxyz = " ".join([f"{xi:12.4e}" for xi in x[3*i:3*i+3]])
+                            mag = f"{arrays.array_magnitude(x[3*i:3*i+3]):12.4e}" 
                             if self.verbose > 1:
-                                out.append(f"   {i+1:4d} MM: {xyz1} QM: {xyz0} dG: {dxyz}")
+                                out.append(f"   {i+1:4d} MM: {xyz1} QM: {xyz0} dG: {dxyz} mag: ")
                             rmse.append(arrays.array_inner_product(xx, xx))
                     # if self.verbose > 1:
                     #     xyz1 = " ".join([f"{xi:12.4e}" for xi in totalx1])
@@ -1224,9 +1226,16 @@ class objective_config_hessian(objective_config):
 
 
                 xyz = []
-                for pi, posi in enumerate(pos):
-                    for xyzi in posi.selections.values():
-                        xyz.extend(xyzi)
+
+                if self.method_vib_modes in ["min"]:
+                    for pi, posi in enumerate(etbls[POSITIONS].values):
+                        for xyzi in posi.selections.values():
+                            xyz.extend(xyzi)
+
+                else:
+                    for pi, posi in enumerate(pos):
+                        for xyzi in posi.selections.values():
+                            xyz.extend(xyzi)
 
                 sym = [s for posi in pos for s in graphs.graph_symbols(posi.graph).values()]
                 mass = np.array([[vibration.mass_table[s]]*3 for s in sym])
@@ -1234,6 +1243,7 @@ class objective_config_hessian(objective_config):
                 hess_mm = etbls[HESSIANS].values
 
                 if self.method_vib_modes in ["min", "mm", "mm+"]:
+
 
                     remove = 0
                     if self.method_vib_modes == "mm":
@@ -1521,7 +1531,7 @@ class objective_config_hessian(objective_config):
                         f"FC reset mode is {self.fc_reset_config}"
                     )
 
-                if self.method_vib_modes in ["min", "mm", "mm+"]:
+                if self.method_vib_modes in ["min", "mm", "mm+", "min+"]:
                     # sym = graphs.graph_symbols(g)
                     # mass = [[vibration.mass_table[sym[n]]]*3 for n in sym]
                     # sym = list(sym.values())
@@ -1543,7 +1553,7 @@ class objective_config_hessian(objective_config):
                     )
                     # if self.method_vib_modes in ["min", "mm"]:
                     #     DL = mm_dl
-                    if self.method_vib_modes != "mm+":
+                    if not self.method_vib_modes.endswith('+'):
                         x1 = list(sorted(x1))
                     else:
                         DL = self.cache['IC:dl']
@@ -1764,7 +1774,7 @@ class objective_config_energy_sapt(objective_config):
                 # dimer_interaction = {ic: v for ic, v in LJ.items() if ic[0][1] <= n and ic[1][1] > n}
                 # ene = sum([x for y in dimer_interaction.values() for x in y])
                 # dxa.extend([lj+el])
-                dxa.extend([lj])
+                dxa.extend([lj+el])
             f.append(dxa)
 
         if self.grad_mode == "f1":
@@ -1851,24 +1861,24 @@ class objective_config_energy_sapt(objective_config):
                 out.extend([" ".join([
                     f"Model {m} Energy: {e:10.5f} (kJ/mol)"
                 ]) for m, e in tot_dict.items()])
-                out.append(" ".join([
-                    f"Dimer Electrostatics  QM: {el_qm:10.5f} MM: {el_mm:10.5f} SSE: {el:10.5f} (kJ/mol)^2 N: 1",
-                    f"RMSE: {el**.5:10.5f} kJ/mol "
-                    f"Delta: {obj[0]:10.5f} kJ/mol"
-                ]))
-                out.append(" ".join([
-                    f"Dimer Exchange+Induction+Dispersion+dHF QM: {lj_qm:10.5f} MM: {lj_mm:10.5f} SSE: {lj:10.5f} (kJ/mol)^2 N: 1",
-                    f"RMSE: {lj**.5:10.5f} kJ/mol "
-                    f"Delta: {obj[1]:10.5f} kJ/mol"
-                ]))
+                # out.append(" ".join([
+                #     f"Dimer Electrostatics  QM: {el_qm:10.5f} MM: {el_mm:10.5f} SSE: {el:10.5f} (kJ/mol)^2 N: 1",
+                #     f"RMSE: {el**.5:10.5f} kJ/mol "
+                #     f"Delta: {obj[0]:10.5f} kJ/mol"
+                # ]))
+                # out.append(" ".join([
+                #     f"Dimer Exchange+Induction+Dispersion+dHF QM: {lj_qm:10.5f} MM: {lj_mm:10.5f} SSE: {lj:10.5f} (kJ/mol)^2 N: 1",
+                #     f"RMSE: {lj**.5:10.5f} kJ/mol "
+                #     f"Delta: {obj[1]:10.5f} kJ/mol"
+                # ]))
                 out.append(" ".join([
                     f"Dimer Total QM: {lj_qm+el_qm:10.5f} MM: {lj_mm+el_mm:10.5f} SSE: {tot2:10.5f} (kJ/mol)^2 N: 1",
                     f"RMSE: {tot2**.5:10.5f} kJ/mol "
                     f"Delta: {tot:10.5f} kJ/mol"
                 ]))
 
-        return returns.success(arrays.array_round([obj[1]], PRECISION), out=out, err=[])
-        # return returns.success(arrays.array_round([tot], PRECISION), out=out, err=[])
+        # return returns.success(arrays.array_round([obj[1]], PRECISION), out=out, err=[])
+        return returns.success(arrays.array_round([tot], PRECISION), out=out, err=[])
 
 class objective_config_energy_total(objective_config):
 
@@ -2265,11 +2275,23 @@ class objective_tier:
         self.gtol = 1e-5
 
     def key_filter(self, x):
-        if self.fit_models is None or self.fit_symbols is None:
+
+        if x[1] == 'n':
+            return False
+
+        if self.fit_models is None and self.fit_symbols is None:
             return True
+
+        if self.fit_models is not None and self.fit_symbols is None:
+            return x[0] in self.fit_models
 
         if type(self.fit_symbols) is dict:
             r = self.fit_symbols.get(x[0]) == x[1]
+            lst = self.fit_symbols.get(x[0])
+            if type(lst) is str:
+                r = lst == x[1]
+            else:
+                r = x[1] in lst
         else:
             r = (x[0] in self.fit_models) and (x[1] in self.fit_symbols)
         if r and self.fit_names:
@@ -3077,8 +3099,14 @@ def ff_optimize(
     ]
     assigned_nodes = set([x[1] for x in assigned_nodes])
 
+    # print("### BESMARTS chemical perception on the following assignments ###")
+    # mm.chemical_system_print(csys, show_parameters=assigned_nodes)
+    # print("#################################################################")
+
+    splitting = [x[2] for x in keys if x[2] in assigned_nodes]
+    print()
     print("### BESMARTS chemical perception on the following assignments ###")
-    mm.chemical_system_print(csys, show_parameters=assigned_nodes)
+    mm.chemical_system_print(csys, show_parameters=splitting)
     print("#################################################################")
 
     reuse0 = set(range(len(csys.models))).difference((k[0] for k in keys))
@@ -3680,6 +3708,9 @@ def perform_operations(
 
     nodes = {}
     ignore = set()
+
+    # split all first, then merge
+
     for cnd_i, key in keys.items():
         (S, Sj, step, _, _, _, _) = candidates[key]
         (edits, _, p_j, oper) = key
@@ -3710,7 +3741,14 @@ def perform_operations(
 
             nodes[cnd_i] = node
 
-        elif oper == optimization.optimization_strategy.MERGE:
+    for cnd_i, key in keys.items():
+        (S, Sj, step, _, _, _, _) = candidates[key]
+        (edits, _, p_j, oper) = key
+        # param_name = "p."
+        cid, pid, uid = S.category
+        cm = csys.models[cid]
+
+        if oper == optimization.optimization_strategy.MERGE:
 
             # S might have been deleted previously
             # and Sj is a graph in splitting
@@ -3728,7 +3766,14 @@ def perform_operations(
             ignore.add(Sj.name)
             nodes[cnd_i] = Sj
 
-        elif oper == optimization.optimization_strategy.MODIFY:
+    for cnd_i, key in keys.items():
+        (S, Sj, step, _, _, _, _) = candidates[key]
+        (edits, _, p_j, oper) = key
+        # param_name = "p."
+        cid, pid, uid = S.category
+        cm = csys.models[cid]
+        
+        if oper == optimization.optimization_strategy.MODIFY:
 
             if (S.name, 1) in ignore:
                 continue
@@ -4930,6 +4975,8 @@ def reset(
                 )
                 out.append(line)
                 icb, B = assignments.bmatrix(pos, **bmat_config)
+                labeled_ic = set([y for model in psystems[eid].models for x in model.labels[0].values() for y in x.values()])
+                print(labeled_ic)
 
                 labeled_ic = [x for model in psystems[eid].models for x in model.labels[0]]
                 B = {ic:x for ic, x in zip(icb, B) if ic in labeled_ic}
@@ -4963,6 +5010,7 @@ def reset(
         psys_hics = []
         psyss = []
         for eid in eid_hess:
+            psys = psystems[eid]
             bidx = assignments.graph_assignment_matrix_bond_indices(psys.models[0].positions)
             if not bidx:
                 continue
@@ -4987,6 +5035,7 @@ def reset(
         psys_hics = []
         psyss = []
         for eid in eid_hess:
+            psys = psystems[eid]
             aidx = assignments.graph_assignment_matrix_angle_indices(psys.models[0].positions)
             if not aidx:
                 continue
@@ -5010,14 +5059,17 @@ def reset(
         psys_hics = []
         psyss = []
         for eid in eid_hess:
+            psys = psystems[eid]
             tidx = assignments.graph_assignment_matrix_torsion_indices(psys.models[0].positions)
             if not tidx:
                 continue
             if eid not in psystems or eid not in psys_hic_all:
                 continue
 
+            # labeled_ic = [x for model in psystems[eid].models for x in model.labels[0]]
+            # labeled_ic_vals = [x for model in psystems[eid].models for x in model.labels[0].values()]
+            # print(dict(zip(labeled_ic, labeled_ic_vals)))
             hic = psys_hic_all[eid]
-            psys = psystems[eid]
             psys_hics.append({
                 k: [[hic[k]]]
                 for k in tidx
@@ -5031,13 +5083,13 @@ def reset(
         psys_hics.clear()
 
         for eid in eid_grad:
+            psys = psystems[eid]
+            pos = psys.models[0].positions
             indices = assignments.smiles_assignment_geometry_torsion_matrix_nonlinear(pos)
             if not indices:
                 continue
             if eid not in psystems or eid not in psys_gic_all:
                 continue
-            psys = psystems[eid]
-            pos = psys.models[0].positions
             hic = psys_gic_all[eid]
             psys_hics.append({
                 k: [[hic[k]]]
@@ -5051,12 +5103,12 @@ def reset(
         psys_hics = []
         psyss = []
         for eid in eid_hess:
+            psys = psystems[eid]
             oidx = assignments.graph_assignment_matrix_outofplane_indices(psys.models[0].positions)
             if not oidx:
                 continue
             if eid not in psystems or eid not in psys_hic_all:
                 continue
-            psys = psystems[eid]
             hic = psys_hic_all[eid]
             psys_hics.append({
                 k: [[hic[k]]]
@@ -5070,12 +5122,12 @@ def reset(
         psys_hics.clear()
 
         for eid in eid_grad:
+            psys = psystems[eid]
             oidx = assignments.graph_assignment_matrix_outofplane_indices(psys.models[0].positions)
             if not oidx:
                 continue
             if eid not in psystems or eid not in psys_gic_all:
                 continue
-            psys = psystems[eid]
             hic = psys_gic_all[eid]
             psys_hics.append({
                 k: [[hic[k]]]
