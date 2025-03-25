@@ -986,15 +986,12 @@ def singlepoint_forcefield_gdb_scipy(
         # if k[0] in reuse:
         #     reuse.remove(k[0])
         v1 = p[0] + v*p[1]
-        mm.chemical_system_set_value(csys, k, v)
 
         out.append(f"Setting {str(k):20s} from {v0:15.7g} to {v1:15.7g} d={v1-v0:15.7g}")
         if verbose:
-            # dv = v-v0
-            # if abs(dv) < 1e-6:
-            #     dv = 0.0
-            # mm.chemical_system_set_value(csys, k, v0)
             print(out[-1])
+
+        mm.chemical_system_set_value(csys, k, v1)
 
     # reuse = list(reuse)
     X = objective_gradient_gdb(args, keys, csys, gdb, obj, priors, penalties=penalties, history=history, psysref=psysref, reuse=reuse, ws=ws, verbose=verbose, return_gradient=False)
@@ -1037,7 +1034,7 @@ def fit_grad_gdb(
             line = f"Step size too small: {dt:.15e} ({minstep:.15e}). Skipping evaluation"
             if verbose and line not in out:
                 print(line)
-            history.append((X, grad, args, hess, out, X_t))
+            #history.append((X, grad, args, hess, out, X_t))
             return X, grad
 
     for i, (k, v, p) in enumerate(zip(keys, args, priors)):
@@ -1056,6 +1053,7 @@ def fit_grad_gdb(
             print(out[-1])
 
         mm.chemical_system_set_value(csys, k, v1)
+
 
     X, g = objective_gradient_gdb(
         args,
