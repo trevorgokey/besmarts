@@ -2614,16 +2614,20 @@ class forcefield_optimization_strategy(optimization.optimization_strategy):
 
     def __init__(self, bounds):
 
-        self.bounds = bounds
+        self.bounds: dict[int, configs.smarts_perception_config] = bounds
+        """Mapping from model numbers (eg, 0 for bonds, 1 for angles, etc) to splitter/extender config"""
 
+        # not used
         self.objective_accept_total = [0]
 
         # Only consider the top N clusters of each objective state
+        # not used
         self.objective_accept_clusters = [0]
 
         # Update objective on each evaluation. Some objectives change if new
         # clusters are added. This option determines whether accepting causes a
         # refresh
+        # # Not used
         self.objective_update_on_each_accept = True
 
         self.cursor = -1
@@ -2631,39 +2635,50 @@ class forcefield_optimization_strategy(optimization.optimization_strategy):
         self.repeat = False
 
         self.direct_enable = False
+        """turn on analytic searching for SMARTS patterns if numerical search finds too few splits"""
         self.direct_limit = 10
+        """Do a direct search if numerical search finds fewer than this many splits"""
 
         self.iterative_enable = True
+        """Enable numerical search for SMARTS patterns"""
 
+        # Enable operations for candidate generation
         self.enable_merge = True
         self.enable_split = True
         self.enable_modify = False
 
         # when modifying dihedrals, set the frequency limit
+        # This is the largest periodicity that the ff will generate
         self.modify_outofplane_frequency_limit = 3
         self.modify_torsion_frequency_limit = 3
 
         self.steps: List[optimization.optimization_iteration] = []
+        """Steps in the strategy. Initialized as empty and then filled with ``build_steps()`` based on config"""
         self.tree_iterator: Callable = mm.chemical_system_iter_smarts_hierarchies_nodes
+        """Change this to visit clusters of SMARTS in a particular order, filter nodes, etc"""
 
         self.step_tracker = {}
+        """Keeps track of when a thing was last changed and if you need to evaluate it again. Not configurable."""
 
         # Number of operations to accept per macro step
         # Relabeling is done here
         # self.accept_max = 1 will give best performance, but will cost the
         # most self.accept_max = 0 is no max
         self.macro_accept_max_total: int = 1
+        """How many candidates to pass from one macro step to the next."""
 
         # Number of operations to accept per micro step
         # We do not relabel here but instead just keep this many
         # self.accept_max = 1 will give best performance, but will cost the
         # most self.accept_max = 0 is no max
         self.micro_accept_max_total: int = 1
+        """Less relevance in force field fitting than other accept max"""
 
         # Number of operations to accept per step per cluster
         # self.accept_max = 1 will give best performance, but will cost the
         # most self.accept_max = 0 is no max
         self.macro_accept_max_per_cluster: int = 1
+        """How many candidates to accept per parameter. Bounded by macro_accept_max_total"""
 
         # Number of operations to accept per step per cluster
         # self.accept_max = 1 will give best performance, but will cost the
@@ -2677,6 +2692,8 @@ class forcefield_optimization_strategy(optimization.optimization_strategy):
 
         # Set the bond and angle lengths to whatever the inputs are based on
         # FF assignment
+        # True = re-initialize with MSM or similar
+        # False = use parameter from parent
         self.enable_reset_bond_lengths = False
         self.enable_reset_angle_lengths = False
 
@@ -2710,20 +2727,25 @@ class forcefield_optimization_strategy(optimization.optimization_strategy):
         # The reference list to use for merge protect and target splitting.
         # Because parameters can be added later, we only try to protect
         # the original (reference) set.
+        # Configured in build_steps
         self.reference_list = []
 
         # Do not merge these
+        # Configured in build_steps
         self.merge_protect_list = []
 
         # Only operate on these
+        # Configured in build_steps
         self.target_list = []
 
         # This removes candidates which have an estimated objective diff above
         # this value
         # None disables
         # 0.0 will prune anything that is deemed useless
+        # Configured in build_steps
         self.filter_above: float = 0.0
 
+        # Configured in build_steps
         self.keep_below: float = 0.0
 
     def macro_iteration(
@@ -3017,7 +3039,7 @@ def ff_optimize(
     initial_objective: objective_tier,
     tiers: List[objective_tier],
     final_objective: objective_tier,
-) -> mm.chemical_system:
+) -> tuple[mm.chemical_system, tuple[Any, ...], tuple[Any, ...]]:
     """
     The toplevel function to run a full BESMARTS force field fit.
 
