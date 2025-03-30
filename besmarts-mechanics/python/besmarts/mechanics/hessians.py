@@ -67,15 +67,14 @@ def transform(B):
 
     # w = []
 
-    c = 0.99
+    c = 1 - 1e-5
     s = 0
     N = sum(u)
+    # print(f"N={N}")
     ginv = np.zeros_like(G)
     for ui, vi in zip(u[::-1], v.T[::-1]):
-        s += ui
         if s/N < c:
-            # w.append(vi)
-            # ginv += np.outer(vi/ui,vi)
+            s += ui
             vv = np.outer(vi/ui, vi)
             vv = vv.round(PRECISION)
             # print(f"VV is u={ui}", vv.min(), vv.mean(), vv.max())
