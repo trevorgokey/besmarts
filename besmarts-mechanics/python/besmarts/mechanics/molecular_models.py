@@ -623,14 +623,13 @@ def chemical_system_groupby_names(
 
     for i, (psys, measure) in enumerate(zip(psystems, selections), 1):
         pm: physical_model = psys.models[m]
-        pos = pm.positions[0]
         for ic, ic_terms in pm.labels[0].items():
             lbl = ic_terms['k']
             if names and lbl not in names:
                 continue
             if ic not in measure:
                 if warn_linear:
-                    print(f"Warning, key {ic} did not have data (linear torsion?). Skipping.")
+                    print(f"Warning, Index {i} Key {ic} did not have data (linear torsion?). Skipping.")
                     warned = True
             else:
                 x = measure[ic][0]
@@ -778,7 +777,6 @@ def smiles_assignment_function(fn, sys_params, top_params, pos):
                 # print(ic, ic_params, x, result[ic])
             except TypeError as e:
                 print("\n".join(out))
-                breakpoint()
                 print("Partial parameterization: skipping. Error was:")
                 print(e)
                 raise e
