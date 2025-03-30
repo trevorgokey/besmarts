@@ -1382,11 +1382,11 @@ def smiles_assignment_geometry_torsion_matrix_nonlinear(
         xyzl = pos[c4[0]].selections[c4[1],]
         a = geometry.measure_angle(xyzj, xyzk, xyzl)
         if any(abs(x)*deg > angle_degrees for ai in a for x in ai):
-            print(f"Warning, pruned linear torsion {torsion}")
-            print(f"Conf is")
-            for posi in pos:
-                for ic, conf in posi.selections.items():
-                    print(conf[0][0], conf[0][1], conf[0][2])
+            # print(f"Warning, pruned linear torsion {torsion}")
+            # print(f"Conf is")
+            # for posi in pos:
+            #     for ic, conf in posi.selections.items():
+            #         print(conf[0][0], conf[0][1], conf[0][2])
             continue
         selections[torsion] = geometry.measure_dihedral(xyzi, xyzj, xyzk, xyzl)
 
@@ -1791,7 +1791,6 @@ def graph_db_add_single_molecule_state(
 
         tid = ENERGY
         gde.tables[tid] = gdt
-        print("Appending energies")
     if tables is not None:
         for tid, values in tables.items():
             gdt = graph_db_table(topology.null)
@@ -1801,7 +1800,6 @@ def graph_db_add_single_molecule_state(
             gdt.values.append(values)
 
             gde.tables[tid] = gdt
-            print(f"Appending TID {tid}")
 
 
     return eid, gid
@@ -1993,7 +1991,7 @@ def bmatrix(
     outofplanes=True,
     pairs=True,
     remove1_3=False,
-    linear_torsions=145.0
+    linear_torsions=160.0
 ):
 
     def print_ic(ic, i=0):
@@ -2016,6 +2014,7 @@ def bmatrix(
                 pos,
                 angle_degrees=linear_torsions
             )
+            # print(f"There were {len(torsions.selections) - len(t.selections)} linear torsions")
             torsions.selections = {
                 k: torsions.selections[k] for k in t.selections
             }
