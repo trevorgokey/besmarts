@@ -76,6 +76,12 @@ class compute_config:
         self.dimer_start = 0
 
     def run(self) -> List[Dict[assignments.tid_t, assignments.graph_db_table]]:
+        """Run the computation.
+
+        Particular computations should only need to implement this function.
+        Each evaluation of this method for a given compute_config instance
+        should return the same number of numbers.
+        """
 
         return []
 
@@ -759,9 +765,9 @@ class objective_config:
     Configuration of an objective function for force field fitting.
 
     The objective has two parts. The first part is how the properties are
-    calculated and is configured with a ``compute_config`` as returned
-    by the ``get_task`` method. The second is how the
-    objective is computed from the properties and is configured here.
+    calculated and is configured with a ``compute_config`` as returned by the
+    ``get_task`` method. The second is how the objective is computed from the
+    properties and is configured here.
 
     This is a base class and should generally not be instantiated directly;
     instead, see the following classes for commonly used objectives.
@@ -769,7 +775,6 @@ class objective_config:
     See Also
     --------
     compute_config, get_task
-
     """
 
     def __init__(self, addr, include=True, scale=1, coordinate_system="C"):
@@ -806,6 +811,9 @@ class objective_config:
         """
         Build and return a compute_config that will compute the needed
         properties.
+
+        Subclasses should call super() and then add any additional data the
+        compute task will need.
         """
         cc = compute_config(self.addr)
 
@@ -830,6 +838,21 @@ class objective_config:
     ):
         """
         Compute the parameter gradients of this objective.
+
+        These are used during the fit associated with evaluating this objective.
+        A gradient of 0 will skip fitting. `tier.step_limit=0` likely skips
+        computing this function altogether.
+
+        Parameters
+        ==========
+        ref
+            The reference data from the database
+        evals
+            The evaluated values of the objective. The objective is computed
+            with small steps in various parameters so that the gradient can
+            be numerically estimated.
+        h
+            The step size
         """
 
         f = []
@@ -899,9 +922,23 @@ class objective_config:
         GDB: assignments.graph_db,
         D: List[Dict[int, assignments.graph_db_table]],
         verbose=False
-    ):
+    ) -> returns.return_value:
         """
         Compute the difference of the computed properties versus a reference
+
+        Parameters
+        ==========
+        GDB
+            Graph database with reference data
+        D
+            Data returned from compute module
+
+        Returns
+        =======
+        return_value
+            return_value.value is a list of deltas that are dot producted
+            together to compute the objective.
+
         """
 
         obj = []
@@ -1110,7 +1147,7 @@ class objective_config_gradient(objective_config):
                             xyz1 = " ".join([f"{xi:12.4e}" for xi in x1cart[3*i:3*i+3]])
                             xyz0 = " ".join([f"{xi:12.4e}" for xi in x0cart[3*i:3*i+3]])
                             dxyz = " ".join([f"{xi:12.4e}" for xi in x[3*i:3*i+3]])
-                            mag = f"{arrays.array_magnitude(x[3*i:3*i+3]):12.4e}" 
+                            mag = f"{arrays.array_magnitude(x[3*i:3*i+3]):12.4e}"
                             if self.verbose > 1:
                                 out.append(f"   {i+1:4d} MM: {xyz1} QM: {xyz0} dG: {dxyz} mag: ")
                             rmse.append(arrays.array_inner_product(xx, xx))
@@ -2692,8 +2729,8 @@ class forcefield_optimization_strategy(optimization.optimization_strategy):
 
         # Set the bond and angle lengths to whatever the inputs are based on
         # FF assignment
-        # True = re-initialize with MSM or similar
-        # False = use parameter from parent
+        # True = re-initialize from training set
+        # False = use parameter from parent force field
         self.enable_reset_bond_lengths = False
         self.enable_reset_angle_lengths = False
 
@@ -2727,25 +2764,25 @@ class forcefield_optimization_strategy(optimization.optimization_strategy):
         # The reference list to use for merge protect and target splitting.
         # Because parameters can be added later, we only try to protect
         # the original (reference) set.
-        # Configured in build_steps
+        # Configured in build_steps()
         self.reference_list = []
 
         # Do not merge these
-        # Configured in build_steps
+        # Configured in build_steps()
         self.merge_protect_list = []
 
         # Only operate on these
-        # Configured in build_steps
+        # Configured in build_steps()
         self.target_list = []
 
         # This removes candidates which have an estimated objective diff above
         # this value
         # None disables
         # 0.0 will prune anything that is deemed useless
-        # Configured in build_steps
+        # Configured in build_steps()
         self.filter_above: float = 0.0
 
-        # Configured in build_steps
+        # Configured in build_steps()
         self.keep_below: float = 0.0
 
     def macro_iteration(
@@ -3880,7 +3917,7 @@ def perform_operations(
         # param_name = "p."
         cid, pid, uid = S.category
         cm = csys.models[cid]
-        
+
         if oper == optimization.optimization_strategy.MODIFY:
 
             if (S.name, 1) in ignore:
