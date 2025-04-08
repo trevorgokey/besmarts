@@ -3072,7 +3072,7 @@ def ff_optimize(
     gdb: assignments.graph_db,
     psystems: Dict[eid_t, mm.physical_system],
     strategy: forcefield_optimization_strategy,
-    chemical_objective: Callable[[mm.chemical_system, dict], float],
+    chemical_objective: Callable[[mm.chemical_system, dict[str, Any]], float],
     initial_objective: objective_tier,
     tiers: List[objective_tier],
     final_objective: objective_tier,
@@ -3279,7 +3279,7 @@ def ff_optimize(
 
     CX0 = mm.chemical_system_smarts_complexity(csys)
 
-    C00 = chemical_objective(csys, P0=math.log(len(psystems)+1), c=CX0)
+    C00 = chemical_objective(csys, {"P0": math.log(len(psystems)+1), "c": CX0})
     C0 = C00
     C = C00
     print(f"{datetime.datetime.now()} C0={C0}")
@@ -3581,7 +3581,7 @@ def ff_optimize(
 
     print(f"{datetime.datetime.now()} Strategy done.")
     CX0 = mm.chemical_system_smarts_complexity(csys)
-    C = chemical_objective(csys, P0=math.log(len(psystems)+1), c=CX0)
+    C = chemical_objective(csys, {"P0": math.log(len(psystems)+1), "c": CX0})
 
     if final_objective and (initial_objective or tiers):
 
@@ -6517,7 +6517,7 @@ def process_tiers(
             # cnd_i, key, unit = unit
             (S, Sj, step, _, _, _, _) = candidates[cnd_keys[cnd_i]]
 
-            cC = chemical_objective(csys, P0=math.log(len(psystems)+1), c=c)
+            cC = chemical_objective(csys, {"P0": math.log(len(psystems)+1), "c": c})
             cX = cP + (cC - C0)
             if keep:
                 heapq.heappush(tier_scores, (cX, cnd_i))
@@ -6552,7 +6552,7 @@ def process_tiers(
                 edits = str(edits)
             else:
                 edits = f"{Sj_sma[cnd_i-1]}"
-            cC = chemical_objective(csys, P0=math.log(len(psystems)+1), c=c)
+            cC = chemical_objective(csys, {"P": math.log(len(psystems)+1), "c": c})
             dP = cP - P0
             dC = cC - C0
             cX = cP + cC
@@ -6622,7 +6622,7 @@ def process_accepted_candidates(
 
         dP = cP - P0
         # cC = C0 + dcC
-        cC = chemical_objective(csys, P0=math.log(cscale+1), c=c)
+        cC = chemical_objective(csys, {"P0": math.log(cscale+1), "c": c})
         cX = cP + cC
         dP = cP - P0
         dC = cC - C0
@@ -7038,7 +7038,7 @@ def insert_candidates(
             (keep, cP, c, match_len, kv, out) = work[cnd_keep[0][3]]
             print(f"\n".join(out))
 
-            C = chemical_objective(csys, P0=math.log(len(psystems)+1), c=c)
+            C = chemical_objective(csys, {"P0": math.log(len(psystems)+1), "c": c})
             X = cnd_keep[0][1]
             P = X - C
             print(datetime.datetime.now(), f"Macro objective: P={P:13.6g} C={C:13.6g} DX={P+C-X0:13.6g}")
@@ -7131,7 +7131,7 @@ def insert_candidates(
             )
             kv, _, P, gp = ret.value
             print("\n".join(ret.out))
-            C = chemical_objective(csys, P0=math.log(len(psystems)+1))
+            C = chemical_objective(csys, {"P0": math.log(len(psystems)+1)})
             X = P + C
             dX = X - X0
             print(datetime.datetime.now(), f"Macro objective: {P:13.6g} C={C:13.6g} DX={P+C-X0:13.6g}")
