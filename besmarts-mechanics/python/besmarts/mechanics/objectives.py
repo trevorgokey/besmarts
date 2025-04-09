@@ -471,7 +471,7 @@ def physical_system_hessian_analytic(psys: mm.physical_system, csys: mm.chemical
         torsions=True,
         outofplanes=True,
         pairs=True,
-        remove1_3=False,
+        remove1_3=True,
         linear_torsions=None
     )
     if not B:
@@ -480,9 +480,9 @@ def physical_system_hessian_analytic(psys: mm.physical_system, csys: mm.chemical
     B = dict(zip(ics, B))
     # get the bmatrix and project hq into hx
     psys_hq = physical_system_force_gradient_internal(psys, csys)
-    hqmat = np.diag([-h[0] for mhq in psys_hq.values() for h in mhq.values()])
+    hqmat = np.diag([-h[0] for m, mhq in psys_hq.items() for h in mhq.values() if m < 10])
 
-    hqic = [ic for mhq in psys_hq.values() for ic in mhq]
+    hqic = [ic for m, mhq in psys_hq.items() for ic in mhq if m < 10]
     bmat = np.array([B[ic] for ic in hqic])
     hxmat = np.dot(bmat.T, np.dot(hqmat, bmat))
 

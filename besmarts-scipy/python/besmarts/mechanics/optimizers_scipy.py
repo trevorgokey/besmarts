@@ -847,7 +847,7 @@ def objective_gradient_gdb(
 
     if history and dt < 1e-6:
         X, grad, args, hess, out, X_t = history[-1]
-        history.append(history[-1])
+        # history.append(history[-1])
     else:
         history.append((X, grad, args, hess, out, X_t))
     if return_gradient:
@@ -953,6 +953,7 @@ def singlepoint_forcefield_gdb_scipy(
     ws=None,
     verbose=False,
     minstep=10**(-PRECISION),
+    force_grad=False
 ):
 
     if history is None:
@@ -994,7 +995,7 @@ def singlepoint_forcefield_gdb_scipy(
         mm.chemical_system_set_value(csys, k, v1)
 
     # reuse = list(reuse)
-    X = objective_gradient_gdb(args, keys, csys, gdb, obj, priors, penalties=penalties, history=history, psysref=psysref, reuse=reuse, ws=ws, verbose=verbose, return_gradient=False)
+    X = objective_gradient_gdb(args, keys, csys, gdb, obj, priors, penalties=penalties, history=history, psysref=psysref, reuse=reuse, ws=ws, verbose=verbose, return_gradient=force_grad)
     # print(f"RETURN IS {X}")
     return X
 
@@ -1105,7 +1106,8 @@ def optimize_forcefield_gdb_scipy(
     maxls=20,
     ftol=1e-5,
     gtol=1e-5,
-    anneal=False
+    anneal=False,
+    force_grad=False
 ):
 
     (
@@ -1407,12 +1409,12 @@ def optimize_forcefield_gdb_scipy(
             disp=True,
             niter=anneal,
             stepsize=.01,
-            T=len(args[3].objectives) * 10,
+            T=len(objlst) * 2,
             minimizer_kwargs=kwds,
         )
 
     elif step_limit == 0:
-        singlepoint_forcefield_gdb_scipy(x0, *args)
+        singlepoint_forcefield_gdb_scipy(x0, *args, force_grad=force_grad)
     else:
         scipy.optimize.minimize(
             fit_grad_gdb,
@@ -1427,6 +1429,7 @@ def optimize_forcefield_gdb_scipy(
             method=method,
         )
     y0 = history[0][0]
+    g0 = history[0][1]
 
     min_step = history[0]
     for step in history:
@@ -1437,5 +1440,5 @@ def optimize_forcefield_gdb_scipy(
 
     out = [line for step in history for line in step[4]]
 
-    return returns.success((x1, y0, y1, g1), out=out, err=[])
+    return returns.success((x1, y0, y1, g0, g1), out=out, err=[])
 
