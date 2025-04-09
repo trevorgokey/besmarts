@@ -2273,6 +2273,7 @@ class objective_tier:
         self.minstep = 10**(-PRECISION)
         self.ftol = 1e-5
         self.gtol = 1e-5
+        self.score_mode = "objective" # "max_gradient"
 
     def key_filter(self, x):
 
@@ -2468,6 +2469,8 @@ def objective_tier_run(
         minstep
     )
 
+    
+    force_grad = (ot.score_mode == "max_gradient" and ot.step_limit == 0)
     ret = optimizers_scipy.optimize_forcefield_gdb_scipy(
         x0,
         args,
@@ -2476,19 +2479,43 @@ def objective_tier_run(
         maxls=ot.maxls,
         ftol=ot.ftol,
         gtol=ot.gtol,
-        anneal=ot.anneal
+        anneal=ot.anneal,
+        force_grad=force_grad
     )
 
-    result, y0, y1, gx = ret.value
+    result, y0, y1, g0, g1 = ret.value
 
-    ret.out.append(f">>> Initial Objective {y0:10.5g}")
-    ret.out.append(f">>> Final Objective   {y1:10.5g}")
-    if y0 > 0.0:
-        ret.out.append(f">>> Percent change    {(y1-y0)/y0*100:10.5g}%")
+    if ot.score_mode == "objective":
+        ret.out.append(f">>> Initial Objective {y0:10.5g}")
+        ret.out.append(f">>> Final Objective   {y1:10.5g}")
+        if y0 > 0.0:
+            ret.out.append(f">>> Percent change    {(y1-y0)/y0*100:10.5g}%")
 
-    if verbose:
-        for i in [-3, -2, -1]:
-            print(ret.out[i])
+        if verbose:
+            for i in [-3, -2, -1]:
+                print(ret.out[i])
+
+    elif ot.score_mode == "max_gradient":
+
+        if ot.step_limit == 0:
+            i0 = 0
+            i1 = 0
+        else:
+            i0 = arrays.argmin(arrays.array_abs(g0))[-1]
+            i1 = arrays.argmin(arrays.array_abs(g1))[-1]
+        y0 = abs(g0[i0])
+        y1 = abs(g0[i1])
+        ret.out.append(f">>> Initial max gradient {y0:10.5g} parameter {i0}")
+        ret.out.append(f">>> Final max gradient   {y1:10.5g} parameter {i1}")
+        if y0 > 0.0:
+            ret.out.append(f">>> Percent change    {(y1-y0)/y0*100:10.5g}%")
+
+        if verbose:
+            for i in [-3, -2, -1]:
+                print(ret.out[i])
+        y0 = -abs(g0[i0])
+        y1 = -abs(g0[i1])
+
 
     if ws:
         if wq:
@@ -2498,7 +2525,7 @@ def objective_tier_run(
 
     kv = {k: v*p[1] + p[0] for k, v, p in zip(keys, result, priors)}
 
-    return returns.success((kv, y0, y1, gx), out=ret.out, err=[])
+    return returns.success((kv, y0, y1, g1), out=ret.out, err=[])
 
 
 def objective_run_distributed(obj, shm=None):
@@ -3017,7 +3044,7 @@ def ff_optimize(
             n1 = s.branch_limit
             # probably print the models
             print(
-                f"{cur} {ma_i:3d}:{micro.index:02d}. op={micro.operation:2d} m={m} a={a} b={b0}->{b1} d={d0}->{d1} n={n0}->{n1}"
+                f"{cur} {ma_i:3d}:{micro.index:02d}. op={micro.operation:2d} m={m} a={a} b={b0}->{b1} d={d0}->{d1} n={n0}->{n1} p={s.primitives}"
             )
 
     gcd = csys0.perception.gcd
@@ -3515,7 +3542,7 @@ def calc_tier_distributed(S, Sj, operation, edits, oid, verbose=False, wq=None, 
     # copy once
     csys = copy.deepcopy(shm.csys)
     # csys = shm.csys
-    print(f"{verbose=}")
+    # print(f"{verbose=}")
 
     hidx = mm.chemical_system_get_node_hierarchy(csys, S)
     cm = mm.chemical_system_get_node_model(csys, S)
@@ -5932,13 +5959,20 @@ def generate_candidates(
                 graphs.graph_set_primitives_bond(s0split, config.splitter.primitives)
             print("S0:", gcd.smarts_encode(S0), "split_space:", gcd.smarts_encode(s0split))
 
-            if not aa:
+            if not assn_s:
                 print("No matches.")
                 step_tracker[tkey][oper] = strategy.cursor
                 continue
 
+            if graphs.structure_max_depth(S0) > config.splitter.branch_depth_min:
+                print("This parameter exceeds current depth. Skipping")
+                step_tracker[tkey][oper] = strategy.cursor
+                continue
+
             print(f"Matched N={len(aa)}")
-            seen = set()
+
+
+            seen = list()
             extend_config = config.extender.copy()
             extend_config.depth_max = config.splitter.branch_depth_limit
             extend_config.depth_min = config.splitter.branch_depth_min
@@ -5946,7 +5980,8 @@ def generate_candidates(
             # For each node, I present just.. the chemical objective
             # until I can make a case for IC objective accounting
 
-            for seen_i, i in enumerate(aa, 1):
+            aa = []
+            for seen_i, i in enumerate(assn_s, 1):
                 g = graphs.graph_to_structure(
                     icd.graph_decode(G[i[0]]),
                     i[1],
@@ -5959,27 +5994,21 @@ def generate_candidates(
                     graphs.graph_set_primitives_atom(gs, config.splitter.primitives)
                     graphs.graph_set_primitives_bond(gs, config.splitter.primitives)
 
-                if seen_i < 100:
-                    print(
-                        f"{seen_i:06d} {str(i):24s}",
-                        # objective.report([x]),
-                        gcd.smarts_encode(gs), "<",
-                        gcd.smarts_encode(g),
-                    )
-                    seen.add(gs)
+                h = hash(gs)
+                if h not in seen:
+                    seen.append(h)
+                    aa.append(i)
+                    if len(seen) < 100:
+                        print(
+                            f"{seen_i:06d} {str(i):24s}",
+                            # objective.report([x]),
+                            gcd.smarts_encode(gs), "<",
+                            gcd.smarts_encode(g),
+                        )
+            print(f"Matched N={len(assn_s)} Unique N={len(aa)}")
             print()
-            if len(seen) < 2 and len(assn_s) < 100:
+            if len(seen) < 2:
                 print(f"Skipping {S.name} since all graphs are the same")
-                step_tracker[tkey][oper] = strategy.cursor
-                continue
-
-            if len(seen) < 2 and len(assn_s) < 100:
-                print(f"Skipping {S.name} since all graphs are the same")
-                step_tracker[tkey][oper] = strategy.cursor
-                continue
-
-            if graphs.structure_max_depth(S0) > config.splitter.branch_depth_min:
-                print("This parameter exceeds current depth. Skipping")
                 step_tracker[tkey][oper] = strategy.cursor
                 continue
 
@@ -6372,8 +6401,8 @@ def process_tiers(
             else:
                 edits = f"{Sj_sma[cnd_i-1]}"
             cC = chemical_objective(csys, P0=math.log(len(psystems)+1), c=c)
-            dP = cP - P0
-            dC = cC - C0
+            dP = cP #- P0
+            dC = 0 # cC #- C0
             cX = cP + cC
             dX = dP + dC
             K = "Y" if j <= len(accepted_keys) else "N"
@@ -6619,6 +6648,7 @@ def insert_candidates(
     )
     micro_added = 0
     success = False
+    ws = None
     # wq = compute.workqueue_local("", configs.workqueue_port)
     # print(f"{datetime.datetime.now()} workqueue started on {wq.mgr.address}")
     n_nano = 0

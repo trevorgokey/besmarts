@@ -1730,11 +1730,13 @@ def union_list(
         if reference:
             max_nodes = min(max_nodes, graphs.structure_max_depth(reference))
 
-    # ref = A[0]
-    ref = graphs.structure_copy(A[0])
+    A = list(set(A))
+    ref = A[0]
+    # ref = graphs.structure_copy(A[0])
 
     if max_depth is not None and max_depth >= 0:
         ref = graphs.structure_up_to_depth(ref, max_depth)
+
 
     to_check = A[1:]
     total = len(to_check)
