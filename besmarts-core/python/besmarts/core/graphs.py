@@ -622,7 +622,7 @@ def graph_to_structure(
         A sequence of structures, one for each input selection
     """
     g = graph_copy(g)
-    return structure(g.nodes, g.edges, select, topo)
+    return structure(g.nodes, g.edges, tuple(select), topo)
 
 def graph_as_structure(
     g: graph, select: Sequence[node_id], topo: topology.structure_topology

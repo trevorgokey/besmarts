@@ -56,9 +56,13 @@ class mapper_config:
         self.add_nodes: bool = bool(add_nodes)
         self.fill_new_nodes: bool = bool(fill_new_nodes)
         self.mode: str = str(mode)
+        self.primitives = None
 
     def copy(self):
-        return mapper_config(self.add_nodes, self.fill_new_nodes, self.mode)
+        o = mapper_config(self.add_nodes, self.fill_new_nodes, self.mode)
+        o.primitives = self.primitives.copy()
+        if self.primitives:
+            o.primitives = self.primitives.copy()
 
 
 class smarts_extender_config:
