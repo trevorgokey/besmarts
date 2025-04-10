@@ -278,8 +278,28 @@ def split_partition(
 ) -> return_value[Tuple[structure, structure, List, List]]:
     """
     Find a shard that induces the given partition in a sequence of fragments.
+
     Up to two shards can be found; one will match everything in the specified
-    partition, and the other will match the fragments not in the partition.
+    partition, and the other will match the fragments not in the partition. A
+    shard is a generalization of a SMARTS graph that has some primitives set to
+    null, which does not represent a valid SMARTS but may be combined with other
+    shards to form one.
+
+    Parameters
+    ==========
+    topology
+        The topology that the subgraphs represent.
+    perception
+        The perception model
+    fragments
+        A sequence of subgraphs from structures sharing ``topology``.
+    partition
+        A set of indices into ``fragments`` that define the target partition
+    gcd
+        The graph codec
+    maxmoves
+        The number of single fragment additions or deletions from ``partition``
+        that should be permitted.
     """
 
     add_nodes = True
@@ -1969,7 +1989,7 @@ def split_single_bits(
     )
     print(datetime.datetime.now(), "Generating single splits")
 
-    # if both are set then we are looking for combos of specific and 
+    # if both are set then we are looking for combos of specific and
     # general, e.g. [#6H2!X3] so we need both bits here since we
     # combine them together before taking a specific/general split
     iter_inverse = splitter.split_general and splitter.split_specific
@@ -2008,11 +2028,42 @@ def split_structures_distributed(
     splitter: smarts_splitter_config,
     S0: structure,
     G: Sequence[graphs.graph],
-    selections,
-    wq: compute.workqueue_local,
-    icd,
-    Q=None,
+    selections: Sequence[tuple[int, tuple[int, ...]]],
+    wq: compute.workqueue,
+    icd: codecs.intvec_codec,
+    Q: structure | None = None,
 ) -> split_return_type:
+    """
+    Find splits that partition the structures of some molecules via numerical search.
+
+    This function performs a search distributed over a work queue; for a single-
+    threaded search, ``split_structures`` can provide cleaner tracebacks.
+
+    Parameters
+    ==========
+    splitter
+        The splitter config
+    S0
+        The parent SMARTS to split
+    G
+        The molecules whose structures we want to split on
+    selections
+        The indexes into the graphs in G that specify each structure. Each entry
+        is a tuple of the index into G and a tuple of integers with length
+        defined by ``S0.topology`` specifying indices of that graph.
+    wq
+        Work queue for distributed compute
+    icd
+        intvec graph codec for compression of data to be send over the network
+    Q
+        The union of the structures given by the selections and G. If None, this
+        is computed automatically, but it can be provided to avoid
+        recomputation.
+
+    See also
+    ========
+    split_structures
+    """
     topology = S0.topology
     # sg_list = tuple([subgraph(ai.nodes, ai.edges, ai.select) for ai in A])
 
@@ -2043,9 +2094,40 @@ def split_structures(
     splitter: smarts_splitter_config,
     S0: structure,
     G: Sequence[structure],
-    selections,
-    Q=None,
+    selections: Sequence[tuple[int, tuple[int, ...]]],
+    Q: structure | None =None,
 ) -> split_return_type:
+    """
+    Find splits that partition the structures of some molecules via numerical search.
+
+    This function performs a single threaded search; for a multi-threaded or
+    otherwise distributed search, see ``split_structures_distributed``.
+
+    Parameters
+    ==========
+    splitter
+        The splitter config
+    S0
+        The parent SMARTS to split
+    G
+        The molecules whose structures we want to split on
+    selections
+        The indexes into the graphs in G that specify each structure. Each entry
+        is a tuple of the index into G and a tuple of integers with length
+        defined by ``S0.topology`` specifying indices of that graph.
+    wq
+        Work queue for distributed compute
+    icd
+        intvec graph codec for compression of data to be send over the network
+    Q
+        The union of the structures given by the selections and G. If None, this
+        is computed automatically, but it can be provided to avoid
+        recomputation.
+
+    See also
+    ========
+    split_structures_distributed
+    """
     topology = S0.topology
     sg_list = tuple([subgraph(ai.nodes, ai.edges, ai.select) for ai in A])
 
