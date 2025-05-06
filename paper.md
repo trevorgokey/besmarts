@@ -10,9 +10,9 @@ authors:
     orcid: 0000-0001-7856-1156
     affiliation: "1" # (Multiple affiliations must be quoted)
 affiliations:
- - name: Department of Chemistry, University of California, Irvine, USA 
+ - name: Department of Chemistry, University of California, Irvine, United States of America
    index: 1
-date: 15 March 2024
+date: 06 May 2025
 bibliography: paper.bib
 ---
 
